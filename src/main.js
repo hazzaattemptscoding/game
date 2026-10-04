@@ -228,6 +228,9 @@ function averageColour(texture) {
 function applyLook() {
   markers.visible = topDown;
   scene.fog.far = topDown ? 20000 : 2600;
+  // the race view only looks 2.6 km and starts at 0.5 m: that keeps the depth buffer fine enough that
+  // nothing a few millimetres apart flickers
+  if (typeof rig !== 'undefined') { rig.camera.near = topDown ? 1 : 0.5; rig.camera.far = topDown ? 6000 : 2600; rig.camera.updateProjectionMatrix(); }
   setDebugColours(world, topDown);
   if (!topDown) setBlockout(world, settings.blockout);
 }

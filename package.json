@@ -11,7 +11,10 @@
     "laptest": "node tools/laptest.js",
     "reports": "node tools/reports.js",
     "trackmap": "node tools/trackmap.js",
-    "cornersheet": "node tools/cornersheet.js"
+    "cornersheet": "node tools/cornersheet.js",
+    "bumps": "node tools/bumps.js",
+    "surfaces": "node tools/surfaces.js",
+    "check": "node tools/check.js"
   },
   "dependencies": {
     "peerjs": "^1.5.5",

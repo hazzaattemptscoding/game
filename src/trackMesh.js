@@ -12,7 +12,7 @@ import * as tex from './textures.js';
 import { buildGroundRibbon } from './groundRibbon.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
-const DECAL = 0.012;          // paint sits this far above the surface, drawn with polygonOffset so it never fights
+const DECAL = 0.006;          // paint sits this far above the surface, drawn with polygonOffset so it never fights
 const SPONSOR_CHUNK = 9;      // length of one sponsor panel, metres (three 3 m wall units)
 
 // colours for the top-down debug view

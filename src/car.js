@@ -6,6 +6,8 @@
 
 import * as THREE from 'three';
 
+const VIBRATION = 0.006;   // metres of body movement per unit of surface roughness (rumble is 1.2, gravel 0.6)
+
 export class CarView {
   constructor(cfg, colour = 0xffd21f) {
     this.cfg = cfg;
@@ -111,13 +113,20 @@ export class CarView {
 
     // road slope along the car
     const along = Math.cos(heading) * car.loc.tx + Math.sin(heading) * car.loc.tz;
-    this.slope.rotation.z = Math.atan(car.loc.grade * along);
+    this.slope.rotation.z = Math.atan(car.loc.grade * along) + (car.groundPitch || 0);
+    this.slope.rotation.x = -(car.groundRoll || 0);
 
     // weight transfer: nose dips under braking, body leans out of corners
     const ax = lerp(p.ax, car.ax), ay = lerp(p.ay, car.ay);
     this.body.rotation.z = THREE.MathUtils.clamp(ax * 0.0018, -0.035, 0.035);
     this.body.rotation.x = THREE.MathUtils.clamp(-ay * 0.0028, -0.05, 0.05);
-    this.body.position.y = car.bump ? (Math.random() - 0.5) * 0.02 * car.bump : 0;
+    // vibration from the surface: a smooth wobble, pitched by speed over the bump spacing, a few mm tall
+    const now = performance.now() / 1000, dt = Math.min(0.1, now - (this._t || now)); this._t = now;
+    this._amp = (this._amp || 0) + ((car.bump || 0) - (this._amp || 0)) * Math.min(1, dt / 0.12);
+    const hz = Math.min(32, Math.max(4, Math.abs(car.fwdSpeed) / (car.bumpSpacing || 4)));
+    this._ph = ((this._ph || 0) + hz * dt) % 1000;
+    car.vibration = this._amp * VIBRATION * (0.65 * Math.sin(this._ph * Math.PI * 2) + 0.35 * Math.sin(this._ph * Math.PI * 2 * 2.31 + 1.3));
+    this.body.position.y = car.vibration;
 
     const steer = lerp(p.steer, car.steer), wheel = lerp(p.wheel, car.wheelSpinAngle);
     for (const w of this.wheels) {

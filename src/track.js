@@ -125,8 +125,25 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   smoothKerbs(track);
   buildReach(track);
 
+  // Road height under a point beside sample n: that sample's height, carried along the grade.
+  const roadAt = (n, px, pz) => h[n] + grade[n] * Math.max(-ds, Math.min(ds, (px - x[n]) * tx[n] + (pz - z[n]) * tz[n]));
+
+  // Ground height at (px, pz). With `hint` (a sample index) and a point on that sample's normal that
+  // is within the paved width, as every mesh vertex of the tarmac, kerb and apron is, the height
+  // belongs to that sample exactly, so a band built from sample i never takes its height from a
+  // neighbour (which made the road bumpy on bends). Outside the paved width the ground is the same
+  // whatever the hint.
   track.groundAt = (px, pz, hint) => {
     let near = 0, best = Infinity;
+    if (Number.isInteger(hint) && !track.isBridge[wrap(hint, N)]) {
+      const n0 = wrap(hint, N), dx = px - x[n0], dz = pz - z[n0];
+      if (Math.abs(dx * tx[n0] + dz * tz[n0]) < 0.02) {
+        const lat = dx * nx[n0] + dz * nz[n0], sd = lat < 0 ? 0 : 1, a = Math.abs(lat);
+        let pv = track.halfWidth + track.kerb[sd][n0] + track.sausage[sd][n0] + track.runoff[sd][n0];
+        if (sd === 0 && track.pitOut[n0]) pv = Math.max(pv, track.pitOut[n0]);
+        if (a <= pv) return h[n0];
+      }
+    }
     if (Number.isInteger(hint)) near = wrap(hint, N);
     else {
       for (let i = 0; i < N; i += 8) {
@@ -169,16 +186,16 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
     let paved = track.halfWidth + track.kerb[side][near] + track.sausage[side][near] + track.runoff[side][near];
     if (side === 0 && track.pitOut[near]) paved = Math.max(paved, track.pitOut[near]);
     if (track.isBridge[near]) paved = track.wall[side][near];
-    if (lateral <= paved) return h[near];
+    if (lateral <= paved) return roadAt(near, px, pz);
     if (!bridgeHint) {
       near = landNear;
       side = (px - x[near]) * nx[near] + (pz - z[near]) * nz[near] < 0 ? 0 : 1;
       lateral = Math.abs((px - x[near]) * nx[near] + (pz - z[near]) * nz[near]);
       paved = track.halfWidth + track.kerb[side][near] + track.sausage[side][near] + track.runoff[side][near];
       if (side === 0 && track.pitOut[near]) paved = Math.max(paved, track.pitOut[near]);
-      if (lateral <= paved) return h[near];
+      if (lateral <= paved) return roadAt(near, px, pz);
     }
-    const roadHeight = h[near];
+    const roadHeight = roadAt(near, px, pz);
     const slope = bridgeHint ? 1 / 3 : 0.12;
     const rise = Math.min(Math.abs(land - roadHeight), (lateral - paved) * slope);
     return roadHeight + Math.sign(land - roadHeight) * rise;

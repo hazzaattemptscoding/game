@@ -17,17 +17,18 @@ const MIN_SLIP_SPEED = 5; // below this speed (m/s) slip angles are calculated a
 //   drag: extra rolling drag as a share of the car's weight (gravel is huge)
 //   bump: how much it shakes the car (for camera, rumble and sound)
 export const SURFACE = {
-  [SURF.TARMAC]: { grip: 1.0, drag: 0, bump: 0 },
+  // spacing: metres between the bumps this surface makes, which sets the pitch of the vibration
+  [SURF.TARMAC]: { grip: 1.0, drag: 0, bump: 0, spacing: 4 },
   [SURF.PAINT]: { grip: 0.93, drag: 0, bump: 0 },
-  [SURF.KERB]: { grip: 0.95, drag: 0.004, bump: 0.35 },
-  [SURF.SAUSAGE]: { grip: 0.6, drag: 0.03, bump: 1 },
+  [SURF.KERB]: { grip: 0.95, drag: 0.004, bump: 0.35, spacing: 0.9 },
+  [SURF.SAUSAGE]: { grip: 0.6, drag: 0.03, bump: 1, spacing: 0.7 },
   [SURF.RUNOFF]: { grip: 0.97, drag: 0, bump: 0 },
-  [SURF.GRASS]: { grip: 0.55, drag: 0.06, bump: 0.2 },
-  [SURF.GRAVEL]: { grip: 0.35, drag: 0.7, bump: 0.6 },
+  [SURF.GRASS]: { grip: 0.55, drag: 0.06, bump: 0.2, spacing: 1.1 },
+  [SURF.GRAVEL]: { grip: 0.35, drag: 0.7, bump: 0.6, spacing: 0.35 },
   [SURF.PIT]: { grip: 1.0, drag: 0, bump: 0 },
-  [SURF.CONCRETE]: { grip: 0.97, drag: 0.002, bump: 0.25 },   // old runway concrete run-off: no penalty, mild rumble
-  [SURF.RUMBLE]: { grip: 0.95, drag: 0.02, bump: 1.2 },
-  [SURF.CONCRETE_OUTER]: { grip: 0.95, drag: 0.002, bump: 0.25 },
+  [SURF.CONCRETE]: { grip: 0.97, drag: 0.002, bump: 0.25, spacing: 4 },   // old runway concrete run-off: no penalty, mild rumble
+  [SURF.RUMBLE]: { grip: 0.95, drag: 0.02, bump: 1.2, spacing: 0.45 },
+  [SURF.CONCRETE_OUTER]: { grip: 0.95, drag: 0.002, bump: 0.25, spacing: 4 },
 };
 
 const WALL_BOUNCE = 0.25;   // how much speed comes back off a barrier (0 = dead stop, 1 = rubber ball)
@@ -78,7 +79,7 @@ export class Car {
     this.loc = { i, h: this.y };
     this.track.locate(this.x, this.z, i, this.loc);
     this.y = T.groundAt ? T.groundAt(this.x, this.z, i) : this.loc.h;
-    this.groundY = this.y;
+    this.groundY = this.y; this.relY = 0; this.groundRoll = 0; this.groundPitch = 0; this.bumpSpacing = 4;
     this.savePrev();
   }
 
@@ -109,7 +110,7 @@ export class Car {
     const fwdN = ch * loc.nx + sh * loc.nz;     // how much "forward" points across the track
     const rightN = -sh * loc.nx + ch * loc.nz;  // how much "right" points across the track
     const wheelX = [this.a, this.a, -this.b, -this.b], wheelY = [-hw, hw, -hw, hw];
-    let gripF = 0, gripR = 0, surfDrag = 0, bump = 0;
+    let gripF = 0, gripR = 0, surfDrag = 0, bump = 0, spacing = 4;
     for (let w = 0; w < 4; w++) {
       const d = loc.d + wheelX[w] * fwdN + wheelY[w] * rightN;
       const sf = T.surfaceAt(loc.i, d);
@@ -121,9 +122,10 @@ export class Car {
       const roughness = sf === SURF.CONCRETE_OUTER ? 0.25 + 0.75 * progress : S.bump;
       if (w < 2) gripF += grip / 2; else gripR += grip / 2;
       surfDrag += drag / 4;
-      bump = Math.max(bump, roughness);
+      if (roughness > bump) { bump = roughness; spacing = S.spacing || 4; }
     }
     this.bump = bump * Math.min(1, speed / 15);
+    this.bumpSpacing = spacing;
 
     // --- DRS: opens in a zone when asked, shuts on the brakes or leaving the zone ---
     const inZone = T.inDRS(loc.s);
@@ -258,9 +260,21 @@ export class Car {
     // --- back onto the road surface, then barriers ---
     T.locate(this.x, this.z, loc.i, loc);
     this.collideWalls();
+    // the road under the car, plus the real height of the kerb or sausage under each wheel
     const groundY = T.groundAt ? T.groundAt(this.x, this.z, loc.i) : loc.h;
-    this.groundY += (groundY - this.groundY) * (1 - Math.exp(-dt / 0.05));
-    this.y = this.groundY;
+    const hwt = c.trackWidth / 2, fN = Math.cos(this.heading) * loc.nx + Math.sin(this.heading) * loc.nz, rN = -Math.sin(this.heading) * loc.nx + Math.cos(this.heading) * loc.nz;
+    const wheelRel = [0, 0, 0, 0];
+    for (let w = 0; w < 4; w++) {
+      const dw = loc.d + wheelX[w] * fN + wheelY[w] * rN;
+      wheelRel[w] = T.relief ? T.relief(dw < 0 ? 0 : 1, loc.i, Math.abs(dw)) : 0;
+    }
+    const meanRel = (wheelRel[0] + wheelRel[1] + wheelRel[2] + wheelRel[3]) / 4;
+    const roll = ((wheelRel[1] + wheelRel[3]) - (wheelRel[0] + wheelRel[2])) / 2 / (2 * hwt);
+    const pitch = ((wheelRel[0] + wheelRel[1]) - (wheelRel[2] + wheelRel[3])) / 2 / (this.a + this.b);
+    const ease = 1 - Math.exp(-dt / 0.05);
+    this.groundY += (groundY - this.groundY) * ease;
+    this.relY += (meanRel - this.relY) * ease; this.groundRoll += (roll - this.groundRoll) * ease; this.groundPitch += (pitch - this.groundPitch) * ease;
+    this.y = this.groundY + this.relY;
 
     // --- outputs for camera, sound, HUD ---
     const fx2 = Math.cos(this.heading), fz2 = Math.sin(this.heading);
