@@ -6,7 +6,7 @@ compatibility_date = "2026-09-01"
 # Websites allowed to open a room. Comma separated, no trailing slash, exactly as shown in the browser address bar
 # (https://your-domain.example). Use * only for testing. Change this before you deploy.
 [vars]
-ALLOWED_ORIGINS = "https://your-domain.example"
+ALLOWED_ORIGINS = "https://beta.powerrmediaa.com,http://beta.powerrmediaa.com"
 
 [[durable_objects.bindings]]
 name = "ROOM"
