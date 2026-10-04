@@ -13,6 +13,7 @@ import { buildGroundRibbon } from './groundRibbon.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
 const DECAL = 0.006;          // paint sits this far above the surface, drawn with polygonOffset so it never fights
+const POWERMEDIA_SHARE = 0.15;   // share of the sponsor panels that are PowerMedia (the start gantry and bridge banners are always PowerMedia)
 const SPONSOR_CHUNK = 9;      // length of one sponsor panel, metres (three 3 m wall units)
 
 // colours for the top-down debug view
@@ -261,7 +262,9 @@ function sponsorPoly(b, pts, nrm, len, inFront, y0, y1, side, every = 1) {
   const rows = tex.SPONSORS.length, modern = tex.MODERN_SPONSORS, total = len[len.length - 1];
   for (let m = 0, n = 0; m < total - 1; m += SPONSOR_CHUNK, n++) {
     const m1 = Math.min(total, m + SPONSOR_CHUNK), steps = Math.max(1, Math.round((m1 - m) / 1.5));
-    const row = every === 1 || n % every === 0 ? modern[(n * 5 + side * 3 + Math.round(pts[0][0])) % modern.length] : 0;
+    // pick by a hash of the panel, so every brand appears; PowerMedia gets 15% of the panels
+    const hash = Math.imul((n + 1) * 2654435761 ^ (Math.round(pts[0][0] * 7) + side * 977) * 40503, 2246822519) >>> 0;
+    const row = hash / 4294967296 < POWERMEDIA_SHARE ? 0 : modern[(hash >>> 8) % modern.length];
     const vTop = 1 - row / rows, vBot = 1 - (row + 1) / rows, idx = [];
     for (let q = 0; q <= steps; q++) idx.push(m + (m1 - m) * q / steps);
     const flipU = side === 1;
@@ -420,7 +423,7 @@ function bridge(T, mat, ground) {
     const mid = idx.slice(Math.floor(idx.length * 0.25), Math.floor(idx.length * 0.75));
     const len = mid.length - 1;
     banners.strip(mid, i => P(i, gg * (T.wall[sd][i] + 0.5), -1.25), i => P(i, gg * (T.wall[sd][i] + 0.5), 1.0),
-      (i, j) => (sd ? j / len : 1 - j / len), 7 / 8, 1);
+      (i, j) => (sd ? j / len : 1 - j / len), 1 - 1 / tex.SPONSORS.length, 1);
   }
   const deck = tag(new THREE.Mesh(b.geometry(), mat.concrete), 'parapet');
   deck.receiveShadow = deck.castShadow = true;
@@ -495,8 +498,8 @@ function gantry(T, mat, sponsorTex) {
   g.add(beam);
   // PowerMedia banner on both faces, 14 m by 1.2 m
   const boardTex = sponsorTex.clone();
-  boardTex.repeat.set(1, 1 / 8);
-  boardTex.offset.set(0, 7 / 8);
+  boardTex.repeat.set(1, 1 / tex.SPONSORS.length);
+  boardTex.offset.set(0, 1 - 1 / tex.SPONSORS.length);
   boardTex.needsUpdate = true;
   const boardMat = new THREE.MeshStandardMaterial({ map: boardTex, roughness: 0.5 });
   for (const x of [-1, 1]) {

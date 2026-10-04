@@ -227,67 +227,138 @@ export function garageTexture() {
 // Sponsor sheet: one board per row, 1024 x 128 each. PowerMedia is the
 // title partner; the rest are the invented brands from the reference pack.
 // Rows 6 and 7 are 1950s and 60s brands, faded, for the old circuit.
-export const SPONSORS = ['powermedia', 'veyra', 'norrland', 'merrow', 'quillon', 'powermedia2', 'pennant', 'brannocks'];
-export const MODERN_SPONSORS = [0, 1, 2, 3, 4, 5];
+export const SPONSORS = ['powermedia', 'veyra', 'norrland', 'merrow', 'quillon', 'tarnwick', 'pennant', 'brannocks',
+  'zephra', 'corvane', 'lumenor', 'oxley', 'brightfold', 'kingsbury', 'aldershaw', 'powermedia-yellow'];
+// Row numbers of the brands that appear on today's circuit (everything but PowerMedia, which has its
+// own share of the boards, and the faded 1950s and 60s boards kept for the old circuit)
+export const MODERN_SPONSORS = [1, 2, 3, 4, 5, 8, 9, 10, 11, 12];
+export const PERIOD_SPONSORS = [6, 7, 13, 14];
+const BRAND_BG = { powermedia: '#111111', veyra: '#0e7c86', norrland: '#101214', merrow: '#1d2e5c', quillon: '#d4145a', tarnwick: '#0B6B4F',
+  zephra: '#FF6A13', corvane: '#D3202B', lumenor: '#FFC93C', oxley: '#1F4E9E', brightfold: '#19B5C9', 'powermedia-yellow': '#ffd21f' };
+
+// A logo file at public/sponsors/<id>.png replaces the generated board for that brand, scaled to fit on the
+// brand colour. public/sponsors/manifest.json lists the ids that have a file (so nothing 404s).
+function loadSponsorFiles(x, texture) {
+  const base = import.meta.env?.BASE_URL ?? './';
+  fetch(base + 'sponsors/manifest.json').then(r => (r.ok ? r.json() : [])).then(ids => {
+    for (const id of ids) {
+      const row = SPONSORS.indexOf(id);
+      if (row < 0) continue;
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(960 / img.width, 108 / img.height), w = img.width * scale, h = img.height * scale;
+        x.save(); x.translate(0, row * 128); x.fillStyle = BRAND_BG[id] || '#222'; x.fillRect(0, 0, 1024, 128);
+        x.drawImage(img, (1024 - w) / 2, (128 - h) / 2, w, h); x.restore();
+        texture.needsUpdate = true;
+      };
+      img.src = base + `sponsors/${id}.png`;
+    }
+  }).catch(() => {});
+}
 
 export function sponsorAtlas() {
   const rows = SPONSORS.length, [c, x] = canvas(1024, 128 * rows);
   const sans = (w, s) => `${w} ${s}px "Arial Narrow", "Roboto Condensed", Arial, sans-serif`;
   const serif = (w, s) => `${w} ${s}px Georgia, "Times New Roman", serif`;
-  const board = (row, bg, draw) => {
-    x.save(); x.translate(0, row * 128);
+  const board = (id, bg, draw) => {
+    x.save(); x.translate(0, SPONSORS.indexOf(id) * 128);
     x.fillStyle = bg; x.fillRect(0, 0, 1024, 128);
     x.textBaseline = 'middle'; x.textAlign = 'center';
     draw();
     x.restore();
   };
 
-  board(0, '#111111', () => {          // PowerMedia, black
+  board('powermedia', '#111111', () => {          // PowerMedia, black
     x.fillStyle = '#ffd21f'; x.fillRect(0, 0, 1024, 14); x.fillRect(0, 114, 1024, 14);
     x.font = 'italic ' + sans('900', 84);
     x.fillStyle = '#fff'; x.fillText('POWER', 400, 66);
     x.fillStyle = '#ffd21f'; x.fillText('MEDIA', 640, 66);
   });
-  board(1, '#0e7c86', () => {          // Veyra Tyres: wavy V mark
+  board('veyra', '#0e7c86', () => {          // Veyra Tyres: wavy V mark
     x.strokeStyle = '#ff5a1f'; x.lineWidth = 10; x.beginPath();
     x.moveTo(90, 34); x.quadraticCurveTo(120, 60, 140, 98); x.quadraticCurveTo(165, 55, 200, 34); x.stroke();
     x.font = sans('900', 86); x.fillStyle = '#f2f2f2'; x.fillText('VEYRA', 470, 66);
     x.font = sans('bold', 40); x.fillStyle = '#ff5a1f'; x.fillText('TYRES', 790, 68);
   });
-  board(2, '#101214', () => {          // Norrland Energy
+  board('norrland', '#101214', () => {          // Norrland Energy
     x.font = sans('900', 90); x.fillStyle = '#c6f432'; x.fillText('NORRLAND', 440, 66);
     x.fillStyle = '#c6f432'; x.fillRect(780, 36, 170, 56);
     x.font = sans('900', 40); x.fillStyle = '#101214'; x.fillText('ENERGY', 865, 66);
   });
-  board(3, '#1d2e5c', () => {          // Merrow Mutual Insurance: serif and shield
+  board('merrow', '#1d2e5c', () => {          // Merrow Mutual Insurance: serif and shield
     x.fillStyle = '#e4b64a'; x.beginPath(); x.moveTo(80, 24); x.lineTo(150, 24); x.lineTo(150, 70); x.quadraticCurveTo(150, 100, 115, 110); x.quadraticCurveTo(80, 100, 80, 70); x.closePath(); x.fill();
     x.font = serif('normal', 64); x.fillStyle = '#e4b64a'; x.fillText('Merrow Mutual', 520, 56);
     x.font = sans('normal', 26); x.fillStyle = '#d9dde8'; x.fillText('I N S U R A N C E', 520, 102);
   });
-  board(4, '#d4145a', () => {          // Quillon Mobile: rounded lowercase
+  board('quillon', '#d4145a', () => {          // Quillon Mobile: rounded lowercase
     x.font = sans('bold', 92); x.fillStyle = '#f2f2f2'; x.fillText('quillon', 470, 62);
     x.beginPath(); x.arc(800, 64, 34, 0, 7); x.fillStyle = '#f2f2f2'; x.fill();
     x.font = sans('bold', 26); x.fillStyle = '#d4145a'; x.fillText('5G', 800, 66);
   });
-  board(5, '#ffd21f', () => {          // PowerMedia, yellow variant
+  board('tarnwick', '#0B6B4F', () => {          // Tarnwick Bank: green and white, a bank
+    x.fillStyle = '#fff'; x.fillRect(70, 84, 120, 10); x.fillRect(78, 40, 12, 40); x.fillRect(104, 40, 12, 40); x.fillRect(130, 40, 12, 40); x.fillRect(156, 40, 12, 40);
+    x.beginPath(); x.moveTo(62, 40); x.lineTo(130, 14); x.lineTo(198, 40); x.closePath(); x.fill();
+    x.font = serif('bold', 74); x.fillStyle = '#fff'; x.fillText('Tarnwick', 530, 54);
+    x.font = sans('bold', 34); x.fillText('B A N K', 810, 98);
+  });
+  board('zephra', '#FF6A13', () => {          // Zephra Sportswear: black, slanted
+    x.save(); x.transform(1, 0, -0.25, 1, 30, 0);
+    x.font = sans('900', 96); x.fillStyle = '#000'; x.fillText('ZEPHRA', 470, 62);
+    x.restore();
+    x.fillStyle = '#000'; x.fillRect(740, 40, 220, 8); x.fillRect(740, 80, 220, 8);
+    x.font = sans('bold', 28); x.fillText('SPORTSWEAR', 850, 64);
+  });
+  board('corvane', '#D3202B', () => {          // Corvane Fuels: red with a grey band
+    x.fillStyle = '#6A6D72'; x.fillRect(0, 96, 1024, 32);
+    x.font = sans('900', 86); x.fillStyle = '#fff'; x.fillText('CORVANE', 420, 50);
+    x.font = sans('bold', 32); x.fillStyle = '#d9dadd'; x.fillText('FUELS', 770, 52);
+    x.beginPath(); x.arc(930, 50, 26, 0, 7); x.fillStyle = '#6A6D72'; x.fill();
+  });
+  board('lumenor', '#FFC93C', () => {          // Lumenor Lighting: navy on yellow, a bulb
+    x.fillStyle = '#14264A'; x.beginPath(); x.arc(120, 54, 34, 0, 7); x.fill(); x.fillRect(104, 88, 32, 14);
+    x.font = sans('bold', 84); x.fillText('LUMENOR', 500, 58);
+    x.font = sans('normal', 30); x.fillText('L I G H T I N G', 800, 100);
+  });
+  board('oxley', '#1F4E9E', () => {          // Oxley Freight: white, a lorry
+    x.fillStyle = '#fff'; x.fillRect(60, 44, 90, 44); x.fillRect(154, 58, 36, 30); x.beginPath(); x.arc(86, 92, 12, 0, 7); x.arc(170, 92, 12, 0, 7); x.fill();
+    x.font = sans('900', 84); x.fillText('OXLEY', 460, 58);
+    x.font = sans('bold', 40); x.fillText('FREIGHT', 770, 62);
+  });
+  board('brightfold', '#19B5C9', () => {          // Brightfold Energy: dark on cyan, folded flame
+    x.fillStyle = '#0E2A33'; x.beginPath(); x.moveTo(70, 100); x.lineTo(110, 20); x.lineTo(150, 100); x.lineTo(110, 78); x.closePath(); x.fill();
+    x.font = sans('900', 80); x.fillText('BRIGHTFOLD', 520, 56);
+    x.font = sans('bold', 30); x.fillText('E N E R G Y', 770, 100);
+  });
+  board('powermedia-yellow', '#ffd21f', () => {          // PowerMedia, yellow variant (gantry and bridge only)
     x.font = 'italic ' + sans('900', 80); x.fillStyle = '#111';
     x.fillText('POWERMEDIA', 420, 62); x.font = sans('bold', 30); x.fillText('MOTORSPORT PHOTOGRAPHY', 820, 64);
   });
-  board(6, '#ede3c8', () => {          // Pennant Petroleum, 1950s
+  board('pennant', '#ede3c8', () => {          // Pennant Petroleum, 1950s
     x.fillStyle = '#d9381e'; x.beginPath(); x.moveTo(70, 24); x.lineTo(200, 64); x.lineTo(70, 104); x.closePath(); x.fill();
     x.fillStyle = '#2a4a7a'; x.fillRect(62, 18, 8, 96);
     x.font = serif('bold', 72); x.fillStyle = '#2a4a7a'; x.fillText('PENNANT', 520, 58);
     x.font = serif('italic', 30); x.fillStyle = '#d9381e'; x.fillText('Petroleum Spirit', 520, 104);
   });
-  board(7, '#1f4d36', () => {          // Brannock's Pale Ale, 1950s
+  board('brannocks', '#1f4d36', () => {          // Brannock's Pale Ale, 1950s
     x.strokeStyle = '#d8a83a'; x.lineWidth = 6; x.strokeRect(14, 12, 996, 104);
     x.font = serif('bold', 70); x.fillStyle = '#d8a83a'; x.fillText("BRANNOCK'S", 512, 56);
     x.font = serif('italic', 30); x.fillStyle = '#ede3c8'; x.fillText('Pale Ale  ·  Brewed in the Weald', 512, 100);
   });
+  board('kingsbury', '#1B4F9C', () => {          // Kingsbury Plugs, 1960s: chunky block capitals
+    x.fillStyle = '#C8102E'; x.fillRect(0, 0, 1024, 16); x.fillRect(0, 112, 1024, 16);
+    x.font = sans('900', 94); x.fillStyle = '#F4F1E6'; x.fillText('KINGSBURY', 440, 60);
+    x.font = sans('900', 46); x.fillStyle = '#F4F1E6'; x.fillText('PLUGS', 870, 62);
+  });
+  board('aldershaw', '#2E7D74', () => {          // Aldershaw Radio and Television, 1960s: script and a dial
+    x.fillStyle = '#EDE3C8'; x.beginPath(); x.arc(110, 64, 40, 0, 7); x.fill();
+    x.strokeStyle = '#16181B'; x.lineWidth = 6; x.beginPath(); x.moveTo(110, 64); x.lineTo(132, 40); x.stroke();
+    x.font = 'italic bold 78px Georgia, "Times New Roman", serif'; x.fillStyle = '#EDE3C8'; x.fillText('Aldershaw', 520, 52);
+    x.font = sans('bold', 28); x.fillStyle = '#16181B'; x.fillText('RADIO  ·  TELEVISION', 560, 102);
+  });
 
   // fade the period boards: desaturate, rust streaks, lichen, broken paint
   const r = rng(53);
-  for (const row of [6, 7]) {
+  for (const row of PERIOD_SPONSORS) {
     const y0 = row * 128, img = x.getImageData(0, y0, 1024, 128), d = img.data;
     for (let k = 0; k < d.length; k += 4) {
       const grey = (d[k] + d[k + 1] + d[k + 2]) / 3;
@@ -300,6 +371,7 @@ export function sponsorAtlas() {
   }
   const t = finish(c, { repeat: false });
   t.wrapS = THREE.RepeatWrapping;
+  loadSponsorFiles(x, t);
   return t;
 }
 
