@@ -18,7 +18,7 @@ const SPONSOR_CHUNK = 9;      // length of one sponsor panel, metres (three 3 m 
 
 // colours for the top-down debug view
 export const DEBUG_COLOURS = {
-  road: 0x3a3a3a, line: 0xffffff, kerb: 0xe03030, sausage: 0xffcc00, apron: 0x9a9a9a, concrete: 0xd8c99a, rumble: 0xe85d4a,
+  road: 0x3a3a3a, line: 0xffffff, kerb: 0xe03030, sausage: 0xffcc00, runoff: 0xb8b0a0, rumble: 0xe85d4a,
   gravel: 0xf0b040, grass: 0x4f8f3a, pit: 0x8a5cd6, island: 0xc0a8ff, tyres: 0xff2020, armco: 0x1e5bff,
   armcoSingle: 0x66ccff, street: 0xffffff, parapet: 0xbbbbbb, pitwall: 0xff55ff, fence: 0xffa000,
   board: 0xffff00, sign: 0x00ffff, building: 0x777777,
@@ -51,7 +51,7 @@ export function buildTrackScene(T, ground) {
     sausage: new THREE.MeshStandardMaterial({ map: tex.kerbTexture('#f2c200', '#111111'), roughness: 0.6 }),
     apron: new THREE.MeshStandardMaterial({ map: tex.runoffTexture(), roughness: 0.9, ...off(-2) }),
     concrete: new THREE.MeshStandardMaterial({ map: tex.runwayTexture(), roughness: 0.95, ...off(-2) }),
-    rumble: new THREE.MeshStandardMaterial({ map: tex.kerbTexture('#f2eee4', '#ba2f30'), roughness: 0.75, ...off(-2) }),
+    rumble: new THREE.MeshStandardMaterial({ map: tex.rumbleTexture(), roughness: 0.85, ...off(-3) }),
     grass: new THREE.MeshStandardMaterial({ map: tex.grassTexture(), roughness: 1 }),
     gravel: new THREE.MeshStandardMaterial({ map: tex.gravelTexture(), roughness: 1, ...off(-2) }),
     gravelEdge: new THREE.MeshStandardMaterial({ color: 0x6e5a3c, roughness: 1, ...off(-3) }),
@@ -74,7 +74,7 @@ export function buildTrackScene(T, ground) {
     lampOff: new THREE.MeshStandardMaterial({ color: 0x2a0606, emissive: 0xff1a1a, emissiveIntensity: 0 }),
   };
   const DEBUG_OF = {
-    road: 'road', line: 'line', kerb: 'kerb', sausage: 'sausage', apron: 'apron', concrete: 'concrete', rumble: 'rumble', grass: 'grass',
+    road: 'road', line: 'line', kerb: 'kerb', sausage: 'sausage', apron: 'runoff', concrete: 'runoff', rumble: 'rumble', grass: 'grass',
     gravel: 'gravel', gravelEdge: 'gravel', pit: 'pit', island: 'island', armco: 'armco', armcoSingle: 'armcoSingle',
     wallConcrete: 'pitwall', street: 'street', parapet: 'parapet', sponsor: 'tyres', tyre: 'tyres', white: 'tyres',
     fence: 'fence', garage: 'building', glass: 'building', roof: 'building', attenuator: 'pitwall', pitOuter: 'pitwall',
@@ -99,8 +99,8 @@ export function buildTrackScene(T, ground) {
     for (const run of runs(T.N, i => T.concrete[sd][i] && T.runoff[sd][i] > 1.8)) {
       const inner = i => hw + T.kerb[sd][i] + T.sausage[sd][i];
       for (const fraction of [1 / 3, 2 / 3]) {
-        strips('rumble').strip(run, i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction - 0.3), DECAL),
-          i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction + 0.3), DECAL),
+        strips('rumble').strip(run, i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction - 0.275), 0.006),
+          i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction + 0.275), 0.006),
           (i, j) => sOf(i, j, run) / 2, 0, 1);
       }
     }

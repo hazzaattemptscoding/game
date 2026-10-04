@@ -2,9 +2,9 @@
 // assist lights, plus a handling readout (I or F3) for tuning. The full HUD
 // with position, minimap and weather comes in phase 4.
 
-import { SURF } from './track.js';
+import { SURF, SURF_NAMES } from './track.js';
 
-const SURF_NAME = Object.fromEntries(Object.entries(SURF).map(([k, v]) => [v, k.toLowerCase()]));
+const SURF_NAME = SURF_NAMES;
 
 export function fmtTime(t) {
   if (t == null) return '-:--.---';

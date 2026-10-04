@@ -19,16 +19,15 @@ const MIN_SLIP_SPEED = 5; // below this speed (m/s) slip angles are calculated a
 export const SURFACE = {
   // spacing: metres between the bumps this surface makes, which sets the pitch of the vibration
   [SURF.TARMAC]: { grip: 1.0, drag: 0, bump: 0, spacing: 4 },
-  [SURF.PAINT]: { grip: 0.93, drag: 0, bump: 0 },
+  [SURF.PAINT]: { grip: 0.93, drag: 0, bump: 0, spacing: 4 },
   [SURF.KERB]: { grip: 0.95, drag: 0.004, bump: 0.35, spacing: 0.9 },
   [SURF.SAUSAGE]: { grip: 0.6, drag: 0.03, bump: 1, spacing: 0.7 },
-  [SURF.RUNOFF]: { grip: 0.97, drag: 0, bump: 0 },
+  [SURF.RUNOFF]: { grip: 0.97, drag: 0, bump: 0.15, spacing: 4 },   // old runway concrete: a mild rumble from its joints
   [SURF.GRASS]: { grip: 0.55, drag: 0.06, bump: 0.2, spacing: 1.1 },
   [SURF.GRAVEL]: { grip: 0.35, drag: 0.7, bump: 0.6, spacing: 0.35 },
   [SURF.PIT]: { grip: 1.0, drag: 0, bump: 0 },
-  [SURF.CONCRETE]: { grip: 0.97, drag: 0.002, bump: 0.25, spacing: 4 },   // old runway concrete run-off: no penalty, mild rumble
   [SURF.RUMBLE]: { grip: 0.95, drag: 0.02, bump: 1.2, spacing: 0.45 },
-  [SURF.CONCRETE_OUTER]: { grip: 0.95, drag: 0.002, bump: 0.25, spacing: 4 },
+  [SURF.RUNOFF_ROUGH]: { grip: 0.95, drag: 0.002, bump: 0.25, spacing: 4 },   // starts like RUNOFF; physics.js fades it towards the gravel
 };
 
 const WALL_BOUNCE = 0.25;   // how much speed comes back off a barrier (0 = dead stop, 1 = rubber ball)
@@ -116,10 +115,10 @@ export class Car {
       const sf = T.surfaceAt(loc.i, d);
       this.wheelSurf[w] = sf;
       const S = SURFACE[sf];
-      const progress = sf === SURF.CONCRETE_OUTER && T.concreteProgressAt ? T.concreteProgressAt(loc.i, d) : 0;
-      const grip = sf === SURF.CONCRETE_OUTER ? 0.95 - 0.25 * progress : S.grip;
-      const drag = sf === SURF.CONCRETE_OUTER ? 0.002 + 0.018 * progress : S.drag;
-      const roughness = sf === SURF.CONCRETE_OUTER ? 0.25 + 0.75 * progress : S.bump;
+      const progress = sf === SURF.RUNOFF_ROUGH && T.concreteProgressAt ? T.concreteProgressAt(loc.i, d) : 0;
+      const grip = sf === SURF.RUNOFF_ROUGH ? 0.95 - 0.25 * progress : S.grip;
+      const drag = sf === SURF.RUNOFF_ROUGH ? 0.002 + 0.018 * progress : S.drag;
+      const roughness = sf === SURF.RUNOFF_ROUGH ? 0.25 + 0.75 * progress : S.bump;
       if (w < 2) gripF += grip / 2; else gripR += grip / 2;
       surfDrag += drag / 4;
       if (roughness > bump) { bump = roughness; spacing = S.spacing || 4; }

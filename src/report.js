@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { SURF } from './track.js';
+import { SURF, SURF_NAMES } from './track.js';
 
 const DB_NAME = 'lakeside-report-store';
 const STORE_NAME = 'reports';
-const SURFACE_NAME = Object.fromEntries(Object.entries(SURF).map(([name, value]) => [value, name.toLowerCase()]));
+const SURFACE_NAME = SURF_NAMES;
 
 export class ReportTool {
   constructor({ canvas, renderer, camera, scene, world, terrain, car, track, input, settings, history, onClose }) {

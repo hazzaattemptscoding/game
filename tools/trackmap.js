@@ -11,7 +11,7 @@ const out = process.argv[2] || 'trackmap.svg';
 const hex = n => '#' + n.toString(16).padStart(6, '0');
 // keep in step with DEBUG_COLOURS in src/trackMesh.js
 const C = {
-  road: 0x3a3a3a, kerb: 0xe03030, sausage: 0xffcc00, apron: 0x9a9a9a, concrete: 0xd8c99a, gravel: 0xf0b040,
+  road: 0x3a3a3a, kerb: 0xe03030, sausage: 0xffcc00, runoff: 0xb8b0a0, gravel: 0xf0b040,
   grass: 0x4f8f3a, pit: 0x8a5cd6, island: 0xc0a8ff, tyres: 0xff2020, armco: 0x1e5bff, armcoSingle: 0x66ccff,
   street: 0x222222, parapet: 0x888888, pitwall: 0xff55ff, fence: 0xffa000, board: 0xd4b000, sign: 0x00b0d0,
 };
@@ -51,8 +51,8 @@ for (const sd of [0, 1]) {
   const kerbOut = i => hw + T.kerb[sd][i], sausOut = i => kerbOut(i) + T.sausage[sd][i], runOut = i => sausOut(i) + T.runoff[sd][i];
   svg += bands(i => [g * hw, g * T.wall[sd][i]], hex(C.grass));
   svg += bands(i => T.gravelOut[sd][i] > 0 ? [g * T.gravelIn[sd][i], g * T.gravelOut[sd][i]] : null, hex(C.gravel));
-  svg += bands(i => T.runoff[sd][i] > 0.2 && !T.concrete[sd][i] ? [g * sausOut(i), g * runOut(i)] : null, hex(C.apron));
-  svg += bands(i => T.runoff[sd][i] > 0.2 && T.concrete[sd][i] ? [g * sausOut(i), g * runOut(i)] : null, hex(C.concrete));
+  svg += bands(i => T.runoff[sd][i] > 0.2 && !T.concrete[sd][i] ? [g * sausOut(i), g * runOut(i)] : null, hex(C.runoff));
+  svg += bands(i => T.runoff[sd][i] > 0.2 && T.concrete[sd][i] ? [g * sausOut(i), g * runOut(i)] : null, hex(C.runoff));
   svg += bands(i => T.kerb[sd][i] > 0 ? [g * hw, g * kerbOut(i)] : null, hex(C.kerb));
   svg += bands(i => T.sausage[sd][i] > 0 ? [g * kerbOut(i), g * sausOut(i)] : null, hex(C.sausage));
 }
@@ -85,7 +85,7 @@ for (const c of T.corners) {
   svg += `<text x="${X(x)}" y="${Z(z)}" font-size="14" fill="#fff" text-anchor="middle" font-weight="bold">${c.name}${c.constrained ? ' *' : ''}</text>`;
 }
 
-const legend = [['Track', C.road], ['Kerb', C.kerb], ['Sausage kerb', C.sausage], ['Paved apron', C.apron], ['Old runway apron', C.concrete],
+const legend = [['Track', C.road], ['Kerb', C.kerb], ['Sausage kerb', C.sausage], ["Paved run-off", C.runoff],
   ['Gravel', C.gravel], ['Pit road', C.pit], ['Pit island', C.island], ['Tyre wall + double armco', C.tyres], ['Single armco', C.armcoSingle],
   ['Street wall', C.street], ['Bridge parapet', C.parapet], ['Pit wall', C.pitwall], ['Catch fence (dashed)', C.fence],
   ['Distance board', C.board], ['Sign', C.sign]];

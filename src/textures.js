@@ -416,6 +416,16 @@ export function pitLaneTexture() {
   return finish(c);
 }
 
+// A rumble band across a concrete apron: flat, with fine grooves across the direction of travel.
+// One tile is 2 m of track long and 0.55 m wide.
+export function rumbleTexture() {
+  const [c, x] = canvas(256, 64), r = rng(61);
+  x.fillStyle = '#b4aea0'; x.fillRect(0, 0, 256, 64);
+  speckle(x, 256, 64, r, 1200, ['#a29c8e', '#c3bdb0', '#8f897c'], 1.2);
+  for (let i = 0; i < 256; i += 8) { x.fillStyle = '#6a665c'; x.fillRect(i, 0, 3, 64); x.fillStyle = '#d2ccbf'; x.fillRect(i + 3, 0, 1, 64); }
+  return finish(c);
+}
+
 // Pit lane asphalt: lighter than the circuit, no markings (lines are drawn separately).
 export function pitAsphaltTexture() {
   const [c, x] = canvas(256, 256), r = rng(37);

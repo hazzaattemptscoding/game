@@ -14,19 +14,22 @@
 import { LAYOUT } from './layout.js';
 import { CORNERS } from './corners.js';
 
+// One name, one meaning. These are the names in the debug view and in the reports.
 export const SURF = {
-  TARMAC: 0,
-  PAINT: 1,      // white edge lines
-  KERB: 2,       // flat rumble strip
-  SAUSAGE: 3,    // raised kerb, unsettles the car
-  RUNOFF: 4,     // tarmac run-off, no penalty
+  TARMAC: 0,        // the racing surface
+  PAINT: 1,         // the 15 cm edge line: still tarmac (named so), but a little slicker, as before
+  KERB: 2,          // flat kerb at the track edge, 2 cm high at its outer edge
+  SAUSAGE: 3,       // raised kerb, 5 cm, unsettles the car
+  RUNOFF: 4,        // paved run-off (tarmac or old runway concrete): full grip, no penalty
   GRASS: 5,
   GRAVEL: 6,
-  PIT: 7,        // pit lane tarmac
-  CONCRETE: 8,   // old runway concrete used as paved run-off (the Sebring look): no penalty, mild rumble
-  RUMBLE: 9,     // painted rumble bands across the concrete apron
-  CONCRETE_OUTER: 10, // outer concrete apron, with grip falling away towards gravel
+  PIT: 7,           // pit lane tarmac
+  RUNOFF_ROUGH: 8,  // the outer part of a concrete apron: grip and smoothness fade away towards the gravel
+  RUMBLE: 9,        // a flat grooved band across a concrete apron, 8 mm at most
 };
+export const SURF_NAMES = { 0: 'tarmac', 1: 'tarmac', 2: 'kerb', 3: 'sausage', 4: 'runoff', 5: 'grass', 6: 'gravel', 7: 'pit', 8: 'runoff-rough', 9: 'rumble' };
+const RUMBLE_HALF = 0.275;    // rumble bands are 0.55 m wide
+const RUMBLE_RELIEF = 0.006;   // and 6 mm high
 
 // Barrier types. Each barrier is a placed section (a polyline), used for
 // looks, collisions and the checks in tools/laptest.js.
@@ -277,8 +280,8 @@ function surfaceAt(T, i, d) {
   if (a <= edge) {
     if (!T.concrete[side][i]) return SURF.RUNOFF;
     const apronOffset = a - apronStart, apronWidth = T.runoff[side][i];
-    if (Math.abs(apronOffset - apronWidth / 3) <= 0.3 || Math.abs(apronOffset - apronWidth * 2 / 3) <= 0.3) return SURF.RUMBLE;
-    return apronOffset > apronWidth / 3 ? SURF.CONCRETE_OUTER : SURF.CONCRETE;
+    if ((Math.abs(apronOffset - apronWidth / 3) <= RUMBLE_HALF || Math.abs(apronOffset - apronWidth * 2 / 3) <= RUMBLE_HALF)) return SURF.RUMBLE;
+    return apronOffset > apronWidth / 3 ? SURF.RUNOFF_ROUGH : SURF.RUNOFF;
   }
   if (T.gravelOut[side][i] > 0 && a >= T.gravelIn[side][i] && a <= T.gravelOut[side][i]) return SURF.GRAVEL;
   if (T.street[side][i] && a <= T.wall[side][i]) return SURF.RUNOFF;   // the paved gap between a street kerb and its wall
@@ -469,7 +472,13 @@ function buildReach(T) {
 const KERB_RISE = 0.02, SAUSAGE_RISE = 0.05;
 function relief(T, sd, i, a) {
   const hw = T.halfWidth, kw = T.kerb[sd][i], sw = T.sausage[sd][i];
-  if (a <= hw || a >= hw + kw + sw) return 0;
+  if (a >= hw + kw + sw) {
+    // a grooved rumble band across a concrete apron: flat, 6 mm up
+    const rw = T.runoff[sd][i], o = a - (hw + kw + sw);
+    if (T.concrete[sd][i] && rw > 1.8 && o <= rw && (Math.abs(o - rw / 3) <= RUMBLE_HALF || Math.abs(o - rw * 2 / 3) <= RUMBLE_HALF)) return RUMBLE_RELIEF;
+    return 0;
+  }
+  if (a <= hw) return 0;
   if (a <= hw + kw) return KERB_RISE * Math.min(1, kw / KERB_WIDTH) * (a - hw) / (kw || 1);
   const t = (a - hw - kw) / (sw || 1), top = SAUSAGE_RISE * Math.min(1, sw / SAUSAGE_WIDTH);
   return t <= 0.5 ? KERB_RISE + (top - KERB_RISE) * 2 * t : top * 2 * (1 - t);
