@@ -1,5 +1,6 @@
 {
-  "_about": "Optional settings for online play, read when someone hosts or joins. Edit this file on the web space, no rebuild needed. Keys starting with _ are ignored. Anything you leave out uses the built in default. Address bar options (?broker=, ?ice=, ?relay=1) win over this file. See the README, Multiplayer section.",
+  "_about": "Optional settings for online play, read when someone hosts or joins. Edit this file on the web space, no rebuild needed. Keys starting with _ are ignored. Anything you leave out uses the built in default. Address bar options (?broker=, ?ice=, ?relay=1, ?relay=wss://host/, ?transport=) win over this file. \"relay\" is the wss:// address of the relay server (README, Relay server): set it for players who cannot connect peer to peer. See the README, Multiplayer section.",
   "broker": { "host": "0.peerjs.com", "port": 443, "path": "/", "secure": true, "key": "peerjs" },
-  "relayOnly": false
+  "relayOnly": false,
+  "relay": "wss://lakeside-relay.harry-eb8.workers.dev"
 }

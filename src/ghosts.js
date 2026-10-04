@@ -11,7 +11,8 @@ import * as THREE from 'three';
 import { CarView } from './car.js';
 import { GT } from './cars.js';
 
-export const DELAY = 0.1;         // seconds behind real time that remote cars are drawn
+export const DELAY = 0.1;         // seconds behind real time that remote cars are drawn (the relay adds RELAY_EXTRA_DELAY, see below)
+export const RELAY_EXTRA_DELAY = 0.05;   // over the relay a state takes an extra hop, so remote cars are drawn 150 ms behind
 export const MAX_EXTRAP = 0.25;   // seconds a car may be extrapolated when packets are late, then it holds still
 export const TIMEOUT = 3;         // seconds without a packet before a remote car is removed
 export const FADE = 1;            // the last second before removal is a fade out
@@ -53,6 +54,36 @@ export function encodeState(o) {
 // a lap time in seconds for the wire: 0 for none or nonsense, else milliseconds precision
 const lapTime = v => (typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 3600 ? round(v, 3) : 0);
 
+// The same state as one binary frame, for the relay (src/relay.js): [1, t as float64, the other 16 fields as float32,
+// best lap and last lap as float32, name length, name as UTF-8]. About 80 bytes. packState takes the array that encodeState
+// returns and unpackState returns such an array again (or null), so decodeState still validates everything.
+export const BIN_STATE = 1;
+export function packState(a) {
+  const nm = new TextEncoder().encode(String(a[FIELDS.length + 1] || '')).subarray(0, 48);
+  const buf = new ArrayBuffer(1 + 8 + 4 * (FIELDS.length - 1) + 8 + 1 + nm.length), dv = new DataView(buf);
+  dv.setUint8(0, BIN_STATE);
+  dv.setFloat64(1, +a[1] || 0);
+  let o = 9;
+  for (let i = 1; i < FIELDS.length; i++, o += 4) dv.setFloat32(o, +a[i + 1] || 0);
+  dv.setFloat32(o, +a[FIELDS.length + 2] || 0); dv.setFloat32(o + 4, +a[FIELDS.length + 3] || 0); o += 8;
+  dv.setUint8(o++, nm.length);
+  new Uint8Array(buf).set(nm, o);
+  return new Uint8Array(buf);
+}
+
+export function unpackState(u8) {
+  if (!(u8 instanceof Uint8Array) || u8.length < 1 + 8 + 4 * (FIELDS.length - 1) + 8 + 1 || u8[0] !== BIN_STATE) return null;
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  const a = ['s', dv.getFloat64(1)];
+  let o = 9;
+  for (let i = 1; i < FIELDS.length; i++, o += 4) a.push(round(dv.getFloat32(o), DIGITS[FIELDS[i]]));
+  const bl = round(dv.getFloat32(o), 3), ll = round(dv.getFloat32(o + 4), 3); o += 8;
+  const n = dv.getUint8(o++);
+  if (o + n !== u8.length) return null;
+  a.push(new TextDecoder().decode(u8.subarray(o, o + n)), bl, ll);
+  return a;
+}
+
 // Returns a clean state or null. Anything from the network is untrusted: wrong types, NaN and absurd
 // values are rejected, and the name is stripped to plain text.
 export function decodeState(a) {
@@ -90,7 +121,7 @@ const WINDOW = 100;     // packets (5 s at 20 Hz) over which the fastest deliver
 
 // Holds the recent states of one remote car and answers "where is it at this moment".
 export class StateBuffer {
-  constructor() { this.buf = []; this.offs = []; this.off = null; this.lastRecv = -Infinity; this.born = -Infinity; }
+  constructor(delay = DELAY) { this.delay = delay; this.buf = []; this.offs = []; this.off = null; this.lastRecv = -Infinity; this.born = -Infinity; }
 
   // st.t is the sender's clock (ms), recvMs is ours. The offset between the clocks follows the fastest packets,
   // slowly, so a late packet does not shift the car and the car never jumps when the delay settles.
@@ -119,7 +150,7 @@ export class StateBuffer {
   sample(nowMs, out = {}) {
     const b = this.buf, n = b.length;
     if (!n) return null;
-    const t = nowMs - DELAY * 1000 - this.off;       // the sender's clock at the moment we want to show
+    const t = nowMs - this.delay * 1000 - this.off;       // the sender's clock at the moment we want to show
     const last = b[n - 1];
     if (n === 1 || t <= b[0].t) return Object.assign(out, n === 1 ? last : b[0]);
     if (t >= last.t) {
@@ -156,6 +187,7 @@ export class Ghosts {
     this.map = new Map();    // id -> { id, buf, ent, name, col, info, opacity }
     this._pose = {};
     this._solids = [];
+    this.delay = DELAY;      // seconds behind real time that remote cars are drawn; the relay transport raises it to DELAY + RELAY_EXTRA_DELAY
   }
 
   get size() { return this.map.size; }
@@ -168,7 +200,7 @@ export class Ghosts {
       const used = new Set([...this.map.values()].map(x => x.col));
       let col = st.col || 1;
       for (let k = 0; k < PALETTE.length && (used.has(col) || col === 0); k++) col = col % (PALETTE.length - 1) + 1;
-      g = { id, buf: new StateBuffer(), col, name: st.name, info: null, opacity: 1, ent: this.factory ? this.factory.create({ id, col, name: st.name }) : null };
+      g = { id, buf: new StateBuffer(this.delay), col, name: st.name, info: null, opacity: 1, ent: this.factory ? this.factory.create({ id, col, name: st.name }) : null };
       this.map.set(id, g);
     }
     if (!g.buf.push(st, nowMs)) return false;

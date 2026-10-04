@@ -11,8 +11,17 @@
 // each of them: a full mesh, so nobody relays anything and the room carries on if the host leaves.
 // Between each pair there are two data channels: 'ctl' (reliable: hello, name, goodbye) and 'st' (unordered: car state).
 // What is sent: car state, name and colour. Nothing else.
+//
+// Two transports, one Multiplayer class. This file's own code is the peer to peer transport. The other is a relay server
+// (src/relay.js, worker/): when multiplayer.json or ?relay=wss://host/ names a relay, host() and join() use that first, and
+// if it does not answer within 6 s they fall back to peer to peer (unless ?transport=relay) and say so. Whichever is active,
+// this class keeps the same public face (phase, code, peers, players, status callbacks, sendState, setName, leave), and the
+// lobby and the game never learn which one it is, except for the label in the status (`transport`) and the ping time (`rtt`).
+// A transport is anything with host(name), join(code, name), setName, sendState(arr), leave()/teardown(), and the callbacks
+// onStatus, onPlayers, onRtt; RelayRoom in relay.js is one, the methods below (hostPeer, joinPeer, ...) are the other.
 
-import { decodeState, cleanName, MAX_PLAYERS } from './ghosts.js';
+import { decodeState, cleanName, MAX_PLAYERS, DELAY } from './ghosts.js';
+import { RelayRoom, cleanRelayUrl } from './relay.js';
 
 // ICE servers: the helpers WebRTC uses to find a route between two browsers. We list them explicitly instead of relying on
 // PeerJS defaults. STUN servers only tell a browser its outside address (fine for most home networks). TURN servers relay the
@@ -37,7 +46,9 @@ export const BROKER = {
   secure: true,
   key: 'peerjs',
   iceServers: DEFAULT_ICE_SERVERS,   // an array replaces the list, [] = none (local network only)
-  relayOnly: false,     // true: iceTransportPolicy 'relay', every connection must go through a TURN server
+  relayOnly: false,     // true: iceTransportPolicy 'relay', every connection must go through a TURN server (this is TURN, not the relay server below)
+  relayUrl: '',         // wss:// address of the relay server (worker/). Set by "relay" in multiplayer.json or ?relay=wss://host/
+  transport: 'auto',    // 'auto' = relay first when relayUrl is set, then peer to peer; 'relay' = relay only; 'peer' = peer to peer only
   debug: 0,             // PeerJS log level, 0 silent to 3 everything
 };
 
@@ -64,7 +75,12 @@ export function brokerFromSearch(search, base = BROKER) {
   const cfg = q.has('broker') ? parseBroker(q.get('broker'), base) : { ...base };
   if (q.has('brokerkey')) cfg.key = q.get('brokerkey');
   if (q.has('ice')) cfg.iceServers = q.get('ice') === 'none' ? [] : q.get('ice').split(',').map(urls => ({ urls }));   // ?ice=none for a local network, or ?ice=stun:host:3478
-  if (q.has('relay')) cfg.relayOnly = q.get('relay') !== '0' && q.get('relay') !== 'false';
+  if (q.has('relay')) {
+    const url = cleanRelayUrl(q.get('relay'));
+    if (url) cfg.relayUrl = url;                                       // ?relay=wss://host/ is the relay server
+    else cfg.relayOnly = q.get('relay') !== '0' && q.get('relay') !== 'false';     // ?relay=1 is TURN only
+  }
+  if (q.has('transport') && ['auto', 'peer', 'relay'].includes(q.get('transport'))) cfg.transport = q.get('transport');
   return cfg;
 }
 
@@ -99,6 +115,8 @@ export function applyConfigFile(base, file) {
   const ice = cleanIceServers(file.iceServers);
   if (ice && (ice.length || file.iceServers.length === 0)) cfg.iceServers = ice;
   if (typeof file.relayOnly === 'boolean') cfg.relayOnly = file.relayOnly;
+  if (typeof file.relay === 'string') cfg.relayUrl = cleanRelayUrl(file.relay);
+  if (['auto', 'peer', 'relay'].includes(file.transport)) cfg.transport = file.transport;
   return cfg;
 }
 // Fetch and parse multiplayer.json. Never throws: any failure (missing file, bad JSON, slow server) gives null.
@@ -162,7 +180,7 @@ const TRYING_MS = 30000;          // how long the host shows "a player is connec
 export class Multiplayer {
   // opts: ghosts (a Ghosts), config (a BROKER-shaped object), loadConfig() resolving to one (read at host or join time),
   // onStatus(status), onDiag(text), onPlayers(), now() ms clock, loadPeer() resolving to the PeerJS Peer class, random(),
-  // joinTimeout ms, setTimeout/clearTimeout (for tests).
+  // joinTimeout ms, setTimeout/clearTimeout (for tests); for the relay: onRtt(ms), WebSocket (class), relayTimers (see relay.js).
   constructor(opts = {}) {
     this.ghosts = opts.ghosts;
     this.config = opts.config || BROKER;
@@ -177,6 +195,13 @@ export class Multiplayer {
     this.now = opts.now || (() => performance.now());
     this.random = opts.random || Math.random;
     this.loadPeer = opts.loadPeer || (async () => (await import('peerjs')).Peer);
+    this.onRtt = opts.onRtt || (() => {});
+    this.WebSocket = opts.WebSocket;
+    this.relayTimers = opts.relayTimers;
+    this.relayRoom = null;     // the RelayRoom while the relay transport is in use
+    this.transport = 'peer';   // 'relay' or 'peer': which one the current room uses
+    this.fallbackNote = '';    // set when the relay could not be reached and the room fell back to peer to peer
+    this.preloaded = null;
     this.reset();
     this.col = 1 + Math.floor(this.random() * 7);       // the colour we ask the others to use; they avoid clashes
     this.name = 'Driver';
@@ -191,7 +216,8 @@ export class Multiplayer {
     this.gen = (this.gen || 0) + 1;     // callbacks from an old session check this and stop
     this.trying = new Set();   // host side: guests whose connection arrived but is not open yet
     this.attempt = 0;
-    this.relay = false;        // this attempt is relay only
+    this.relay = false;        // this attempt is relay only (TURN only, not the relay server)
+    this.rtt = null;           // ms, round trip to the relay (relay transport only)
     if (this.clearT) this.clearT(this.timer);
   }
 
@@ -200,7 +226,8 @@ export class Multiplayer {
 
   status(phase, text) {
     this.phase = phase;
-    this.onStatus({ phase, text, code: this.code, players: this.players, host: this.isHost, details: diagText(this.diag) });
+    if (this.fallbackNote && phase !== 'idle') text = `${this.fallbackNote} ${text}`;
+    this.onStatus({ phase, text, code: this.code, players: this.players, host: this.isHost, details: diagText(this.diag), transport: this.transport, rtt: this.rtt });
   }
 
   // update the diagnostics: fn changes this.diag, then the lobby is told
@@ -212,11 +239,95 @@ export class Multiplayer {
     this.status('error', text);
   }
 
+  // --- choosing the transport ---
+
+  // The settings for this room: multiplayer.json and the address bar (loadConfig), or the config given to the constructor.
+  async resolveConfig() {
+    let cfg = null;
+    if (this.loadConfig) { try { cfg = await this.loadConfig(); } catch (e) { cfg = null; } }     // a missing or broken multiplayer.json is fine
+    return cfg || this.config;
+  }
+
+  // Host a room. With a relay configured the relay is tried first; otherwise (or after a retry) peer to peer.
   async host(name, tries = 0) {
+    if (this.active) return;
+    if (tries) return this.hostPeer(name, tries);
+    this.name = cleanName(name) || 'Driver';
+    const cfg = await this.start(name);
+    if (!cfg) return;
+    if (this.useRelay(cfg)) this.viaRelay(cfg, true, '');
+    else this.hostPeer(name, 0);
+  }
+
+  async join(code, name) {
+    if (this.active) return;
+    code = cleanCode(code);
+    if (code.length !== 5) { this.status('error', 'Type the 5 letters of the room code.'); return; }
+    this.name = cleanName(name) || 'Driver';
+    const cfg = await this.start(name);
+    if (!cfg) return;
+    if (this.useRelay(cfg)) this.viaRelay(cfg, false, code);
+    else this.joinPeer(code, name);
+  }
+
+  // Common start of host() and join(): shows 'connecting' at once (so a second click does nothing), reads the config, and
+  // returns it, or null if the player cancelled meanwhile or the settings make a room impossible.
+  async start(name) {
+    this.fallbackNote = '';
+    if (this.relayRoom) { this.relayRoom.teardown(); this.relayRoom = null; }
+    this.reset();
+    this.transport = 'peer';
+    this.status('connecting', 'Connecting...');
+    const gen = this.gen;
+    const cfg = await this.resolveConfig();
+    if (gen !== this.gen) return null;
+    this.phase = 'idle';       // hostPeer and joinPeer start their own session
+    if (cfg.transport === 'relay' && !cfg.relayUrl) { this.status('error', 'This game is set to use the relay only, but no relay address is set. Add "relay": "wss://..." to multiplayer.json, or use ?relay=wss://host/ in the address. Playing single player.'); return null; }
+    this.preloaded = cfg;
+    return cfg;
+  }
+
+  useRelay(cfg) { return cfg.transport !== 'peer' && !!cfg.relayUrl; }
+
+  // The relay transport: a RelayRoom does the room work, this class mirrors its state so everything outside stays the same.
+  viaRelay(cfg, asHost, code) {
+    this.preloaded = null;
+    this.reset();
+    this.transport = 'relay';
+    const room = this.relayRoom = new RelayRoom({
+      ghosts: this.ghosts, url: cfg.relayUrl, now: this.now, random: this.random, makeCode: () => makeCode(this.random),
+      WebSocket: this.WebSocket, timers: this.relayTimers,
+      onStatus: s => { if (this.relayRoom === room) this.relayStatus(s, cfg, asHost, code); },
+      onPlayers: () => { if (this.relayRoom === room) this.onPlayers(); },
+      onRtt: ms => { if (this.relayRoom === room) { this.rtt = ms; this.onRtt(ms); } },
+    });
+    this.peers = room.peers;
+    if (asHost) room.host(this.name); else room.join(code, this.name);
+  }
+
+  relayStatus(s, cfg, asHost, code) {
+    if (s.phase === 'error' && s.reason === 'unreachable' && cfg.transport !== 'relay') {
+      // the relay did not answer: peer to peer instead, and say so
+      this.relayRoom = null;
+      this.reset();
+      this.transport = 'peer';
+      this.fallbackNote = 'The relay server did not answer, so this room uses peer to peer.';
+      this.preloaded = cfg;
+      if (asHost) this.hostPeer(this.name, 0); else this.joinPeer(code, this.name);
+      return;
+    }
+    this.phase = s.phase; this.code = s.code; this.isHost = s.host; this.rtt = s.rtt;
+    this.onStatus({ ...s, details: '', transport: 'relay' });
+  }
+
+  // --- peer to peer: host and join ---
+
+  async hostPeer(name, tries = 0) {
     if (this.active) return;
     this.name = cleanName(name) || 'Driver';
     this.reset();
-    this.cfg = null;
+    this.cfg = this.preloaded; this.preloaded = null;
+    if (this.ghosts) this.ghosts.delay = DELAY;
     if (tries === 0) this.diag = newDiag();
     this.isHost = true;
     this.code = makeCode(this.random);
@@ -225,12 +336,11 @@ export class Multiplayer {
     }, tries);
   }
 
-  async join(code, name) {
+  async joinPeer(code, name) {
     if (this.active) return;
-    code = cleanCode(code);
-    if (code.length !== 5) { this.status('error', 'Type the 5 letters of the room code.'); return; }
     this.name = cleanName(name) || 'Driver';
-    this.cfg = null;
+    this.cfg = this.preloaded; this.preloaded = null;
+    if (this.ghosts) this.ghosts.delay = DELAY;
     this.diag = newDiag();
     await this.attemptJoin(code, 0, false);
   }
@@ -461,11 +571,13 @@ export class Multiplayer {
   // Our name changed: tell everyone.
   setName(name) {
     this.name = cleanName(name) || 'Driver';
+    if (this.relayRoom) { this.relayRoom.setName(this.name); return; }
     for (const p of this.peers.values()) this.sendTo(p.ctl, { t: 'name', n: this.name });
   }
 
   // Broadcast our car (an encoded state array). Called about 20 times a second; never waits.
   sendState(arr) {
+    if (this.relayRoom) { this.relayRoom.sendState(arr); return; }
     for (const p of this.peers.values()) {
       if (!p.hello) continue;
       const ch = p.st && p.st.open ? p.st : p.ctl;       // if the state channel never opened, state rides the reliable one
@@ -477,6 +589,7 @@ export class Multiplayer {
   }
 
   teardown() {
+    if (this.relayRoom) { this.relayRoom.teardown(); this.relayRoom = null; }
     this.clearT(this.timer);
     const peer = this.peer;
     this.peer = null;

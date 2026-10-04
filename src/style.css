@@ -79,6 +79,7 @@ html, body {
 .mp-big { font-size: 56px; font-weight: 700; font-style: italic; letter-spacing: .18em; text-align: center; line-height: 1.1; color: var(--yel); user-select: text; -webkit-user-select: text; }
 .mp-status { margin: 0; font-size: 14px; line-height: 1.4; opacity: .85; }
 .mp-status:empty { display: none; }
+.mp-via { font-size: 12px; opacity: .6; text-align: center; }
 .mp-details { font-size: 12px; opacity: .8; }
 .mp-details summary { cursor: pointer; }
 .mp-details .mp-status { font-size: 12px; white-space: pre-line; user-select: text; -webkit-user-select: text; }

@@ -25,7 +25,7 @@ export function createLobby(ctx) {
 
   const ghosts = new Ghosts(threeFactory(ctx.scene, tagRoot));
   const el = { name: $('mp-name'), code: $('mp-code'), host: $('mp-host'), join: $('mp-join'), leave: $('mp-leave'), copy: $('mp-copy'), big: $('mp-big'),
-    start: $('mp-start'), joinrow: $('mp-joinrow'), room: $('mp-room'), status: $('mp-status'), who: $('mp-who'), hint: $('mp-hint'), diag: $('mp-diag'), details: $('mp-details'), stand: $('h-stand') };
+    start: $('mp-start'), joinrow: $('mp-joinrow'), room: $('mp-room'), status: $('mp-status'), who: $('mp-who'), hint: $('mp-hint'), via: $('mp-via'), diag: $('mp-diag'), details: $('mp-details'), stand: $('h-stand') };
   const search = ctx.search || '';
   const q = new URLSearchParams(search);
 
@@ -37,6 +37,7 @@ export function createLobby(ctx) {
     onStatus: s => render(s),
     onDiag: t => { el.diag.textContent = t; el.details.hidden = !t; },
     onPlayers: () => { renderWho(); lastStand = ''; },
+    onRtt: () => renderVia(),
   });
 
   el.name.value = store.get(NAME_KEY) || 'Driver' + (100 + Math.floor(Math.random() * 900));
@@ -65,6 +66,7 @@ export function createLobby(ctx) {
     el.big.textContent = s.code;
     el.leave.textContent = s.phase === 'connecting' ? 'Cancel' : 'Leave';
     el.status.textContent = s.text;
+    renderVia(s);
     el.hint.hidden = !(s.phase === 'hosting' && s.host);
     el.diag.textContent = s.details || '';
     el.details.hidden = !s.details || !(inRoom || s.phase === 'error');
@@ -72,6 +74,11 @@ export function createLobby(ctx) {
     if (s.phase === 'hosting' || s.phase === 'joined') ctx.car.contactGrace = 1.5;   // nobody is launched by a car that was already there
     renderWho();
     lastStand = '';
+  }
+  // which transport the room uses, and over the relay the round trip time to it in ms (measured by the 15 s ping), printed small
+  function renderVia(s) {
+    const inRoom = mp.phase === 'hosting' || mp.phase === 'joined';
+    el.via.textContent = !inRoom ? '' : mp.transport === 'relay' ? `Via relay${mp.rtt != null ? ` \u00b7 ${mp.rtt} ms` : ''}${s && s.reconnecting ? ' \u00b7 reconnecting' : ''}` : 'Peer to peer';
   }
   function renderWho() {
     const names = [...mp.peers.values()].filter(p => p.hello).map(p => p.name);
