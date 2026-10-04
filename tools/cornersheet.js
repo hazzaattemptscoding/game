@@ -1,15 +1,18 @@
 // Corner sheet: measures every corner with the real car, then decides its
 // kerbs, run-off, barriers and distance boards. Run with `npm run cornersheet`.
 //
-// 1. Drives a flying lap (quick driver, assists on) and records speed, brake
-//    and position at every metre.
+// 1. Drives three flying laps with the average keyboard driver
+//    (tools/drivers.js, assists on) and records speed, brake and position at
+//    every metre. Keyboard is the baseline most players drive with.
 // 2. For each corner in layout.js: entry, minimum and exit speed, the braking
 //    zone, and where the car comes within 1 m of each track edge.
 // 3. Departure tests with the real physics and surface drag
 //    (reference/LAKESIDE_SAFETY_LAYOUT.md 3.1):
 //      straight on: from the braking point, brakes locked, wheel straight
 //      tangent: from the apex and the exit, heading along the track and
-//               10 degrees either side, 0.5 s to react, then brakes locked
+//               10 degrees either side, reaction time + 0.3 s, then brakes locked
+//    Each test runs for the average and the new keyboard driver, at their
+//    own speeds; the deeper one sizes the run-off.
 //    The barrier goes at the deepest stopping point plus 30%.
 // 4. Writes src/corners.js (read by the game) and docs/corner-sheet.md.
 //
@@ -22,8 +25,7 @@ import { LAYOUT } from '../src/layout.js';
 import { CORNERS as PREVIOUS } from '../src/corners.js';
 import { Car, STEP } from '../src/physics.js';
 import { GT } from '../src/cars.js';
-import { LapTimer } from '../src/timing.js';
-import { Autopilot, computeRacingLine } from '../src/autopilot.js';
+import { PROFILES, runLaps } from './drivers.js';
 
 const MARGIN = 1.3;   // barrier distance = deepest stopping point x this
 const KMH = 3.6;
@@ -43,29 +45,29 @@ const SEBRING = ['Scramble', 'Windsock Hairpin', 'Boundary Loop'];   // old runw
 
 const base = buildTrack();
 const hw = base.halfWidth;
-const tel = lapTelemetry(base);
+// Keyboard is the baseline: speeds, braking, kerb contacts and the apex and
+// exit come from the average keyboard driver; the run-off is sized for the
+// worse of the average and the new keyboard driver.
+const LAPS = 3;
+const tel = lapTelemetry(base, 'average');
+const telNew = lapTelemetry(base, 'new');
 
-function lapTelemetry(T) {
-  const car = new Car(GT, T);
-  car.assists = true;
-  car.placeAt(-20, 0);
-  const ap = new Autopilot(T, GT, { skill: 0.9, line: computeRacingLine(T) });
-  const timer = new LapTimer(T);
-  const speed = new Float64Array(T.N), brake = new Float64Array(T.N), d = new Float64Array(T.N), seen = new Uint8Array(T.N);
-  let t = 0;
-  while (timer.lap < 2 && t < 400) {
-    const inp = ap.drive(car);
-    car.step(inp);
-    t += STEP;
-    timer.update(car.loc.s, t);
-    if (timer.lap === 1) {
-      const i = car.loc.i;
-      if (!seen[i]) { seen[i] = 1; speed[i] = car.fwdSpeed; brake[i] = inp.brake; d[i] = car.loc.d; }
-    }
-  }
+// Speed and brake averaged over LAPS flying laps, and every lap's line kept
+// so a kerb goes wherever any lap touched the edge.
+function lapTelemetry(T, profile) {
+  const speed = new Float64Array(T.N), brake = new Float64Array(T.N), count = new Float64Array(T.N);
+  const lines = [];
+  let cur = null, lap = -1;
+  const r = runLaps(T, GT, profile, { assists: true, laps: LAPS, onStep: (car, inp, timer) => {
+    if (timer.lap !== lap) { lap = timer.lap; if (lap > LAPS) return; cur = new Float64Array(T.N).fill(NaN); lines.push(cur); }
+    const i = car.loc.i;
+    speed[i] += car.fwdSpeed; brake[i] += inp.brake; count[i]++;
+    if (Number.isNaN(cur[i])) cur[i] = car.loc.d;
+  } });
+  for (let i = 0; i < T.N; i++) if (count[i]) { speed[i] /= count[i]; brake[i] /= count[i]; }
   // fill any samples the car skipped over
-  for (let i = 0; i < T.N; i++) if (!seen[i]) { const j = wrap(i - 1, T.N); speed[i] = speed[j]; brake[i] = brake[j]; d[i] = d[j]; }
-  return { speed, brake, d, lap: timer.last };
+  for (let i = 0; i < T.N; i++) if (!count[i]) { const j = wrap(i - 1, T.N); speed[i] = speed[j]; brake[i] = brake[j]; }
+  return { speed, brake, lines, lap: r.times.reduce((a, b) => a + b, 0) / r.times.length, profile: PROFILES[profile] };
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +78,7 @@ const between = (s, a, b) => { const L = base.length; const x = ((s - a) % L + L
 const streetZones = (LAYOUT.walls || []).map(([a, b]) => [base.sAtPointRaw(a), base.sAtPointRaw(b)]);
 
 const measured = [];
-let lastBrakeEnd = null;
+let lastBrakeEnd = null, prevS1 = null;
 for (const [p0, p1, name] of LAYOUT.corners) {
   if (/Straight|Bridge/.test(name)) continue;
   const s0 = base.sAtPointRaw(p0), s1 = base.sAtPointRaw(p1);
@@ -86,23 +88,24 @@ for (const [p0, p1, name] of LAYOUT.corners) {
   const inside = turn > 0 ? 'R' : 'L', outside = turn > 0 ? 'L' : 'R';
   const street = streetZones.some(([a, b]) => between(s0 + len / 2, a, b));
 
-  // braking zone: the last run of braking that ends between 80 m before the corner and its end
-  let brakeStart = null, brakeEnd = null;
-  for (let k = Math.round(len); k >= -450; k--) {
-    const i = at(s0 + k);
-    if (tel.brake[i] > 0.05) {
-      if (brakeEnd === null) { if (k < -80) break; brakeEnd = s0 + k; }
-      brakeStart = s0 + k;
-    } else if (brakeEnd !== null) {
-      // allow short gaps in the braking
-      let gap = 0;
-      while (gap < 10 && !(tel.brake[at(s0 + k - gap)] > 0.05)) gap++;
-      if (gap >= 10) break;
+  // braking zone: the longest run of braking (gaps under 25 m bridged, as
+  // keyboard drivers brake in taps) that ends between 80 m before the corner
+  // and its end
+  let brakeStart = null, brakeEnd = null, run = null;
+  const brakeRuns = [];
+  for (let k = -450; k <= Math.round(len); k++) {
+    if (tel.brake[at(s0 + k)] > 0.2) {
+      if (run && k - run[1] < 25) run[1] = k; else brakeRuns.push(run = [k, k]);
     }
   }
+  // a run that started before the previous corner ended belongs to that corner (the S-bend shares one)
+  const prevEnd = prevS1 === null ? -Infinity : -(((s0 - prevS1) % base.length + base.length) % base.length);
+  const mine = brakeRuns.filter(([a, b]) => b >= -80 && a > prevEnd).sort((x, y) => (y[1] - y[0]) - (x[1] - x[0]))[0];
+  if (mine && mine[1] - mine[0] >= 5) { brakeStart = s0 + mine[0]; brakeEnd = s0 + mine[1]; }
   // a braking zone belongs to the first corner that uses it (the S-bend shares one)
   if (brakeEnd !== null && lastBrakeEnd !== null && Math.abs(norm(brakeEnd) - norm(lastBrakeEnd)) < 1) { brakeStart = null; brakeEnd = null; }
   if (brakeEnd !== null) lastBrakeEnd = brakeEnd;
+  prevS1 = s1;
   const from = brakeStart ?? s0;
   let minV = Infinity, apexS = s0;
   for (let k = 0; k <= ((s1 + 30 - from) % base.length + base.length) % base.length; k++) {
@@ -114,13 +117,13 @@ for (const [p0, p1, name] of LAYOUT.corners) {
   const exitV = tel.speed[at(exitS)];
   const brakeDistance = brakeStart === null ? 0 : ((brakeEnd - brakeStart) % base.length + base.length) % base.length;
 
-  // where the car's body comes within 1 m of each edge (its half width is 1 m)
+  // where the car's body comes within 1 m of each edge (its half width is 1 m) on any lap
   const contacts = { L: [], R: [] };
   for (const side of ['L', 'R']) {
     let run = null;
     for (let k = -60; k <= len + 80; k++) {
-      const s = s0 + k, d = tel.d[at(s)];
-      const touch = side === 'L' ? d < -(hw - 2) : d > hw - 2;
+      const s = s0 + k;
+      const touch = tel.lines.some(line => { const d = line[at(s)]; return side === 'L' ? d < -(hw - 2) : d > hw - 2; });
       if (touch && !run) run = [s, s];
       else if (touch) run[1] = s;
       else if (run) { contacts[side].push(run); run = null; }
@@ -246,15 +249,27 @@ function depart(T, c, s, d, v, angle, reaction) {
   return { depth: round(depth), s: round(deepS), angle: round(deepAngle) };
 }
 
+// The departure tests, run for the average and the new keyboard driver at
+// their own speeds. Straight on starts where this driver would brake if they
+// left it as late as they ever do; the tangent tests give them their
+// reaction time plus 0.3 s to realise they are off before braking.
 function departures(T, c) {
   const res = [];
   const start = c.brakeStart ?? norm(c._s0 - 20);
-  res.push({ test: 'straight on', ...depart(T, c, start, tel.d[at(start)], c._entryV, 0, 0) });
-  for (const [label, s, v] of [['apex', c._apexS, c._minV], ['exit', c._exitS, c._exitV]]) {
-    for (const angle of [-10, 0, 10]) res.push({ test: `${label} ${angle > 0 ? '+' : ''}${angle}°`, ...depart(T, c, s, tel.d[at(s)], v, angle, 0.5) });
+  for (const t of [tel, telNew]) {
+    const p = t.profile, who = p.label.replace('Keyboard, ', '');
+    const late = Math.max(0, 2 * p.brakeSpread - p.brakeEarly);
+    const v0 = t.speed[at(start)];
+    res.push({ test: `${who}: straight on`, ...depart(T, c, start, line0(start), v0, 0, late / Math.max(v0, 1)) });
+    for (const [label, s] of [['apex', c._apexS], ['exit', c._exitS]]) {
+      for (const angle of [-10, 0, 10]) res.push({ test: `${who}: ${label} ${angle > 0 ? '+' : ''}${angle}°`, ...depart(T, c, s, line0(s), t.speed[at(s)], angle, p.reaction + 0.3) });
+    }
   }
   return res;
 }
+
+// where the average driver's first flying lap was across the track
+function line0(s) { const d = tel.lines[0][at(s)]; return Number.isNaN(d) ? 0 : d; }
 
 // Street corners have walls at the edge: just record where a car would hit them.
 function streetDepartures(T, c) {
@@ -343,7 +358,8 @@ function round(v) { return Math.round(v * 10) / 10; }
 
 function writeCorners(list) {
   const header = `// Per-corner decisions for Lakeside. GENERATED by \`npm run cornersheet\`
-// (tools/cornersheet.js) from a flying lap with the real car. Read by
+// (tools/cornersheet.js) from three flying laps with the average keyboard driver
+// (tools/drivers.js) and the real car. Read by
 // src/track.js to build kerbs, run-off, gravel, barriers and distance boards.
 //
 // To tune a corner by hand: change its numbers here and add \`locked: true\`.
@@ -384,7 +400,7 @@ function writeDoc(list) {
   const cons = list.filter(c => c.constrained).map(c => `- **${c.name}**: ${c.reason}.`);
   const md = `# Lakeside corner sheet
 
-Generated by \`npm run cornersheet\` from a flying lap with the quick driver, assists on (${tel.lap.toFixed(3)} s). Do not edit by hand: change \`src/corners.js\` and lock the corner instead.
+Generated by \`npm run cornersheet\` from three flying laps with the average keyboard driver, assists on (average lap ${tel.lap.toFixed(3)} s). Run-off is sized for the worse of the average and the new keyboard driver. Do not edit by hand: change \`src/corners.js\` and lock the corner instead.
 
 Speeds in km/h, distances in metres. Apron, gravel and barrier are measured from the track edge on the outside of the corner.
 
@@ -396,7 +412,7 @@ ${rows.join('\n')}
 
 ## Departure tests
 
-How far beyond the outside edge the car got before stopping. Straight on: from the braking point, brakes locked. Apex and exit: heading along the track and 10 degrees either side, 0.5 s to react, then brakes locked.
+How far beyond the outside edge the car got before stopping. Each test is run for the average and the new keyboard driver at their own speeds. Straight on: from the braking point, braking as late as that driver ever does, then brakes locked. Apex and exit: heading along the track and 10 degrees either side, the driver's reaction time plus 0.3 s, then brakes locked.
 
 ${deps.join('\n\n')}
 

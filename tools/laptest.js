@@ -1,14 +1,26 @@
 // Headless handling test. Run with `npm run laptest`. No browser needed.
 //
-// 1. Lap times: an autopilot drives Lakeside with the real physics at a few
-//    skill levels, with assists on and off.
+// 1. Physics regression: the analog autopilot (smooth steering, like a wheel)
+//    drives Lakeside at a few skill levels, with assists on and off. These
+//    times only guard the physics; they say nothing about keyboard players.
 //      top     top speed
 //      maxLat  peak cornering force in g
 //      slide   share of the lap the rear tyres were well past their grip peak
 //      off     share of the lap with a wheel on grass or gravel
 //      hits    barrier contacts
 //
-// 2. Stability: on a flat open area the car is held at the cornering limit
+// 2. Driver profiles (tools/drivers.js): the same lap for a wheel or pad
+//    driver and three keyboard drivers who tap keys, react late and miss
+//    braking points. Keyboard is the baseline everything is sized for.
+//      off     share of the lap with any wheel on grass or gravel
+//      wheel   times a wheel went onto grass or gravel
+//      exc     excursions, leaving the track: both wheels on one side on grass or gravel
+//      hits    separate barrier contacts
+//      resets  times the car was stopped for 3 s and put back (the R key)
+//
+// 3. Tap response: one tap of a steering key on an open flat area.
+//
+// 4. Stability: on a flat open area the car is held at the cornering limit
 //    with full lock, then the driver lifts, brakes or floors it without
 //    touching the wheel. Prints the biggest body slip angle (how sideways
 //    the car got). Under ~15 degrees means the car sorts itself out; a spin
@@ -19,19 +31,22 @@ import { Car, STEP } from '../src/physics.js';
 import { GT } from '../src/cars.js';
 import { LapTimer } from '../src/timing.js';
 import { Autopilot, computeRacingLine } from '../src/autopilot.js';
+import { keyboardStep } from '../src/inputModel.js';
+import { PROFILES, runLaps } from './drivers.js';
 
 const fmt = t => t == null ? '--' : `${Math.floor(t / 60)}:${(t % 60).toFixed(3).padStart(6, '0')}`;
 const track = buildTrack();
 const line = computeRacingLine(track);
 
 console.log(`Lakeside: ${(track.length / 1000).toFixed(2)} km\n`);
-console.log('LAP TIMES (lap 2, flying)');
+console.log('PHYSICS REGRESSION, analog autopilot (lap 2, flying; targets 1:31.0, 1:33.9, 1:35.5 within 0.3 s)');
 
 const runs = [
-  { name: 'quick driver, assists on ', skill: 0.9, assists: true },
-  { name: 'steady driver, assists on', skill: 0.8, assists: true },
-  { name: 'quick driver, assists off', skill: 0.86, assists: false },
+  { name: 'quick driver, assists on ', skill: 0.9, assists: true, target: 91.0 },
+  { name: 'steady driver, assists on', skill: 0.8, assists: true, target: 93.9 },
+  { name: 'quick driver, assists off', skill: 0.86, assists: false, target: 95.5 },
 ];
+const fails = [], notes = [];
 
 for (const run of runs) {
   const car = new Car(GT, track);
@@ -56,6 +71,47 @@ for (const run of runs) {
   const pct = v => (100 * v / Math.max(1, n)).toFixed(1) + '%';
   console.log(`  ${run.name}  ${fmt(timer.last)}  (S1 ${s[0]?.toFixed(2)}  S2 ${s[1]?.toFixed(2)}  S3 ${s[2]?.toFixed(2)})`);
   console.log(`      top ${(top * 2.23694).toFixed(0)} mph   maxLat ${maxLat.toFixed(2)} g   slide ${pct(slide)}   off ${pct(off)}   hits ${hits}`);
+  if (timer.last == null || Math.abs(timer.last - run.target) > 0.3) {
+    const msg = `${run.name.trim()}: ${fmt(timer.last)} is more than 0.3 s from ${fmt(run.target)}`;
+    // the assists-off autopilot lap is chaotic (about 5 s either way between runs), so it is reported, not failed
+    if (run.assists) fails.push(msg); else notes.push(msg);
+  }
+}
+
+console.log('\nDRIVER PROFILES (lap 2, flying)');
+console.log('  driver               assists   lap        off  wheel  exc  hits  slide  resets');
+const analogLap = {};
+for (const assists of [true, false]) {
+  for (const [key, prof] of Object.entries(PROFILES)) {
+    const r = runLaps(track, GT, key, { assists, laps: 1, line: key === 'analog' ? line : undefined });
+    if (key === 'analog') analogLap[assists] = r.lap;
+    const gap = key === 'analog' || r.lap == null ? '' : `  (+${(r.lap - analogLap[assists]).toFixed(1)} s)`;
+    console.log(`  ${prof.label.padEnd(20)} ${assists ? 'on ' : 'off'}       ${fmt(r.lap).padEnd(9)}  ${(100 * r.offShare).toFixed(1).padStart(4)}%  ${String(r.wheelOff).padStart(4)}  ${String(r.excursions).padStart(3)}  ${String(r.hits).padStart(4)}  ${(100 * r.slideShare).toFixed(1).padStart(4)}%  ${String(r.resets).padStart(4)}${gap}`);
+    if (!assists) continue;
+    if (key === 'good' && !(r.lap - analogLap[true] <= 3)) fails.push(`Keyboard good is ${(r.lap - analogLap[true]).toFixed(1)} s off the analog lap (target 3 s)`);
+    if (key === 'average' && !(r.lap - analogLap[true] <= 6)) fails.push(`Keyboard average is ${(r.lap - analogLap[true]).toFixed(1)} s off the analog lap (target 6 s)`);
+  }
+}
+{
+  const r = runLaps(track, GT, 'new', { assists: true, laps: 3 });
+  console.log(`  Keyboard, new, three laps with assists on: ${r.times.map(fmt).join('  ')}, left the track ${r.excursions} times (a wheel off ${r.wheelOff} times), ${r.hits} hits (targets: finishes, 10 excursions or fewer)`);
+  if (r.times.length < 3) fails.push(`Keyboard new did not finish three laps`);
+  if (r.excursions > 10) fails.push(`Keyboard new left the track ${r.excursions} times in three laps (target 10 or fewer)`);
+}
+
+// One tap of the right arrow key at a steady speed, then let go. Peak yaw
+// rate, heading change and sideways movement one second after the tap starts.
+// Hold: how long holding the key takes to turn the front wheels to 90% of the grip-limited lock.
+console.log('\nTAP RESPONSE (assists on, keyboard model in src/inputModel.js)');
+console.log('  speed      tap     peak yaw   heading   sideways after 1 s');
+for (const kmh of [60, 120, 180]) {
+  for (const ms of [50, 100, 200]) {
+    const r = tap(kmh / 3.6, ms / 1000);
+    console.log(`  ${String(kmh).padStart(3)} km/h  ${String(ms).padStart(3)} ms  ${r.yaw.toFixed(1).padStart(5)} deg/s  ${r.heading.toFixed(1).padStart(4)} deg   ${r.side.toFixed(2)} m`);
+    if (kmh === 120 && ms === 100 && r.side >= 1) fails.push(`a 100 ms tap at 120 km/h moves the car ${r.side.toFixed(2)} m sideways (target under 1 m)`);
+  }
+  const h = holdToLock(kmh / 3.6);
+  console.log(`  ${String(kmh).padStart(3)} km/h  hold    ${h.toFixed(2)} s to the grip-limited turn`);
 }
 
 console.log('\nSTABILITY (biggest body slip after the input, degrees)');
@@ -84,7 +140,6 @@ for (const [name, surf] of [['tarmac run-off', SURF.RUNOFF], ['grass', SURF.GRAS
 // Safety checks (reference/LAKESIDE_SAFETY_LAYOUT.md). Any failure makes the
 // test exit with an error.
 console.log('\nSAFETY CHECKS');
-const fails = [];
 const hw = track.halfWidth;
 // how far a point is from the nearest track edge (any part of the track at a similar height), kerbs included
 const edgeGap = (x, z, y) => {
@@ -132,8 +187,35 @@ for (let a = 0; a < furn.length; a++) for (let b = a + 1; b < furn.length; b++) 
 console.log(`  corners checked ${track.corners.filter(c => c.class !== 'street').length}, constrained ${track.corners.filter(c => c.constrained).length}`);
 console.log(`  closest barrier to the track edge ${closest.toFixed(1)} m, closest pit wall ${pitClosest.toFixed(1)} m (both must be 4 m or more)`);
 console.log(`  pit road overlap ${overlap} samples, boards ${furn.length} and signs ${track.furniture.length - furn.length}, boards too close together ${pairs}`);
+for (const n of notes) console.log('  note: ' + n);
 if (fails.length) { console.log('  FAILED:'); for (const f of fails.slice(0, 30)) console.log('   - ' + f); process.exitCode = 1; }
 else console.log('  all passed');
+
+function tap(speed, length) {
+  const car = makePadCar(SURF.TARMAC);
+  car.vx = speed;
+  const keys = { steer: 0, throttle: 0, brake: 0 };
+  let yaw = 0;
+  for (let t = 0; t < 1; t += STEP) {
+    keyboardStep(keys, { right: t < length }, STEP, car.speed);
+    car.step({ steer: keys.steer, throttle: Math.max(0, Math.min(1, 0.3 + (speed - car.fwdSpeed) * 0.5)), brake: 0, drs: false });
+    yaw = Math.max(yaw, Math.abs(car.yawRate));
+  }
+  return { yaw: yaw * 180 / Math.PI, heading: car.heading * 180 / Math.PI, side: car.z };
+}
+
+function holdToLock(speed) {
+  const car = makePadCar(SURF.TARMAC);
+  car.vx = speed;
+  const keys = { steer: 0, throttle: 0, brake: 0 }, angle = [];
+  for (let t = 0; t < 2; t += STEP) {
+    keyboardStep(keys, { right: true }, STEP, car.speed);
+    car.step({ steer: keys.steer, throttle: Math.max(0, Math.min(1, 0.3 + (speed - car.fwdSpeed) * 0.5)), brake: 0, drs: false });
+    angle.push(car.steer);
+  }
+  const lock = angle[angle.length - 1];
+  return (angle.findIndex(a => a >= 0.9 * lock) + 1) * STEP;
+}
 
 // Constant-radius test on an endless flat car park.
 function stability(speed, mode, assists) {

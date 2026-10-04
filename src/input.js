@@ -2,13 +2,9 @@
 //   { steer: -1..1 (right positive), throttle: 0..1, brake: 0..1, drs: bool }
 // plus one-shot actions (reset, camera, settings).
 
-// Keyboard pedals and steering are digital, so they are eased in and out to
-// feel closer to a real wheel and pedals.
-const KEY_STEER_IN = 3.2;     // how fast steering winds on, per second
-const KEY_STEER_OUT = 6;      // how fast it centres when you let go
-const KEY_THROTTLE_IN = 5;
-const KEY_BRAKE_IN = 7;
-const KEY_PEDAL_OUT = 10;
+// Keyboard steering and pedals are eased in and out by inputModel.js, the
+// same model the test drivers in tools/drivers.js use.
+import { keyboardStep, toward, KEY_THROTTLE_IN, KEY_BRAKE_IN, KEY_PEDAL_OUT } from './inputModel.js';
 
 const TOUCH_STEER_PX = 70;    // how far your thumb moves for full lock, in screen pixels
 const TOUCH_STEER_RATE = 8;   // smoothing on touch steering, per second
@@ -41,19 +37,14 @@ export function createInput() {
   const touch = createTouch(actions);
   addEventListener('blur', () => keys.clear());
 
-  const toward = (v, target, rate, dt) => v + Math.max(-rate * dt, Math.min(rate * dt, target - v));
-
-  function read(dt) {
+  function read(dt, speed = 0) {
     // keyboard
     const left = keys.has('ArrowLeft') || keys.has('KeyA');
     const right = keys.has('ArrowRight') || keys.has('KeyD');
     const up = keys.has('ArrowUp') || keys.has('KeyW');
     const down = keys.has('ArrowDown') || keys.has('KeyS');
-    const target = (right ? 1 : 0) - (left ? 1 : 0);
-    const rate = target === 0 || Math.sign(target) !== Math.sign(state.steer) ? KEY_STEER_OUT : KEY_STEER_IN;
-    let steer = toward(state.steer, target, rate, dt);
-    let throttle = toward(state.throttle, up ? 1 : 0, up ? KEY_THROTTLE_IN : KEY_PEDAL_OUT, dt);
-    let brake = toward(state.brake, down ? 1 : 0, down ? KEY_BRAKE_IN : KEY_PEDAL_OUT, dt);
+    const prev = { steer: state.steer, throttle: state.throttle, brake: state.brake };
+    let { steer, throttle, brake } = keyboardStep({ ...prev }, { left, right, up, down }, dt, speed);
     let drs = keys.has('Space') || keys.has('ShiftLeft') || keys.has('ShiftRight');
 
     // gamepad (standard mapping): left stick steers, right trigger throttle, left trigger brake
@@ -77,9 +68,9 @@ export function createInput() {
     }
 
     if (touch.active) {
-      steer = toward(state.steer, touch.steer, TOUCH_STEER_RATE, dt);
-      throttle = toward(state.throttle, touch.throttle, touch.throttle ? KEY_THROTTLE_IN : KEY_PEDAL_OUT, dt);
-      brake = toward(state.brake, touch.brake, touch.brake ? KEY_BRAKE_IN : KEY_PEDAL_OUT, dt);
+      steer = toward(prev.steer, touch.steer, TOUCH_STEER_RATE, dt);
+      throttle = toward(prev.throttle, touch.throttle, touch.throttle ? KEY_THROTTLE_IN : KEY_PEDAL_OUT, dt);
+      brake = toward(prev.brake, touch.brake, touch.brake ? KEY_BRAKE_IN : KEY_PEDAL_OUT, dt);
       drs = drs || touch.drs;
     }
 

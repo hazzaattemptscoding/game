@@ -72,6 +72,7 @@ export class Autopilot {
     this.input = { steer: 0, throttle: 0, brake: 0, drs: true };
     this.brakeCap = 1;
     this.throttleCap = 1;
+    this.brakeEarly = 0;   // metres: positive brakes before the ideal point, negative after (set by tools/drivers.js)
   }
 
   drive(car) {
@@ -101,7 +102,8 @@ export class Autopilot {
 
     // speed: follow the target speed a little ahead of the car
     const k = wrap(i + Math.round((2 + v * 0.15) / T.ds), T.N);
-    const err = this.vmax[k] - v;
+    const kb = wrap(i + Math.max(1, Math.round((2 + v * 0.15 + this.brakeEarly) / T.ds)), T.N);
+    const err = (this.brakeEarly > 0 ? Math.min(this.vmax[k], this.vmax[kb]) : this.vmax[kb]) - v;
     if (err > 0) { this.input.throttle = Math.min(1, 0.55 + err * 0.4); this.input.brake = 0; }
     else if (err > -1.5) { this.input.throttle = Math.max(0, 0.45 + err * 0.3); this.input.brake = 0; }
     else { this.input.throttle = 0; this.input.brake = Math.min(1, -err * 0.25); }

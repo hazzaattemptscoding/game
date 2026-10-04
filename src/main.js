@@ -125,7 +125,7 @@ function frame(now) {
   }
 
   const paused = !panel.hidden;
-  const playerInput = input.read(dt);
+  const playerInput = input.read(dt, car.speed);
   if (!paused) {
     acc += dt;
     while (acc >= STEP) {

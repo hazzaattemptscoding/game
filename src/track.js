@@ -187,6 +187,7 @@ function surfaceAt(T, i, d) {
   edge += T.runoff[side][i];
   if (a <= edge) return T.concrete[side][i] ? SURF.CONCRETE : SURF.RUNOFF;
   if (T.gravelOut[side][i] > 0 && a >= T.gravelIn[side][i] && a <= T.gravelOut[side][i]) return SURF.GRAVEL;
+  if (T.street[side][i] && a <= T.wall[side][i]) return SURF.RUNOFF;   // the paved gap between a street kerb and its wall
   return SURF.GRASS;
 }
 

@@ -68,7 +68,7 @@ If a run-off cannot fit because another part of the track is close, report it an
 
 - A protected section is **20 to 40 m long**, centred on a predicted impact point (where the straight-on and tangent departures meet the barrier line).
 - Sections are **staggered and overlapped by about 5 m**, with a flared terminal at each end.
-- Impact zones get a **conveyor-faced tyre wall in front of double armco**. Between impact zones, along a straight, use single armco further back, or nothing if nothing needs protecting.
+- Impact zones get a **conveyor-faced tyre wall in front of double armco**. Between impact zones, a continuous single-armco containment barrier runs the whole lap on both sides. A barrier is never optional: a car that leaves the track must always meet one. Run-off is made bigger by pushing this barrier back, never by removing it.
 - Barrier faces are **angled to the likely impact**, not drawn parallel to the track.
 - **No barrier closer than 4 m to the track edge**, apart from the street section and the pit wall.
 - **Catch fence** only behind impact zones and in front of spectators. 4 m high, 6 m at grandstands. Every run starts and ends at posts.
@@ -92,13 +92,14 @@ Place each set on the outside of its own braking zone. A board is skipped if it 
 
 ### 3.7 Pit lane
 
-The pit road is a **deceleration lane** that splits from the track, not an eased offset.
+The pit road is a **deceleration lane** that splits from the track.
 
-- **Entry:** it leaves the track edge at about 6 degrees. The track-side edge of the pit road starts at the track edge and moves away, so the road starts narrow and grows to 12 m wide over about 60 m. A painted chevron island sits between the two roads for the first 25 m.
+- **Mouth:** at entry and exit the pit road is already full width (12 m) and joins the racing surface as one continuous tarmac area for the first 15 m, with no kerb and no edge line. A car can drive straight from the track onto the pit road without crossing grass. The road never starts at zero width.
+- **Split:** after the mouth, a painted chevron island (the gore) separates the two roads. The pit road's track-side edge moves away at about 6 degrees. The island is paint and a low kerb, not a wall.
 - **Pit wall:** it starts only where the pit road's track-side edge is 6 m or more from the racing surface, with a sloped or attenuator terminal. It is never within 4 m of the track edge, kerbs included.
 - **Full separation:** wall face at least 6 m from the track edge. That puts the lane centre around 19 to 20 m off the centreline for a 12 m lane.
-- **Exit:** mirrors the entry, merging at about 5 degrees with a long blended lane and a white line. The wall ends at least 20 m before the merge.
-- **Surface:** its own lighter grey asphalt (`#6A6D72`), white fast-lane line, white box outlines in each bay, concrete forecourt. No centre dashes and no road markings from the circuit texture. Draw it so it cannot z-fight the road: the two never overlap.
+- **Exit:** mirrors the entry. The wall ends at least 20 m before the full-width mouth, and the exit mouth joins the track as one continuous surface for 15 m.
+- **Surface:** its own lighter grey asphalt (`#6A6D72`), white fast-lane line, white box outlines in each bay, concrete forecourt. No centre dashes and no road markings from the circuit texture. The pit surface and the road never overlap except in the mouth, where they are one surface.
 
 ### 3.8 Sebring-style run-off
 
