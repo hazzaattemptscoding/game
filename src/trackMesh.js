@@ -144,7 +144,6 @@ export function buildTrackScene(T, ground) {
   // --- barriers, from the placed sections in track.js ------------------
   const posts = [], fencePosts = [];
   for (const b of T.barriers) {
-    if (b.hidden) continue;                       // the containment rail is physics only
     const pts = b.pts, nrm = inwardNormals(T, b);
     const at = (k, back, y) => [pts[k][0] - nrm[k][0] * back, pts[k][1] + y, pts[k][2] - nrm[k][1] * back];
     const idx = pts.map((_, k) => k), len = cumulative(pts);
@@ -164,8 +163,9 @@ export function buildTrackScene(T, ground) {
         fencePosts.push([...pointAt(pts, nrm, len, len[len.length - 1], 3.3), FENCE_HEIGHT]);   // a post at both ends
       }
     } else if (b.type === BARRIER.ARMCO) {
-      wall('armcoSingle', 0, 0.44, 0.75);
-      for (let m = 0; m <= len[len.length - 1]; m += 2) posts.push([...pointAt(pts, nrm, len, m, 0.15), 0.75]);
+      // the containment wall: a plain sponsored tyre wall, 1.2 m high, rounded top, no armco and no posts
+      wall('tyre', 0, 0.05, 1.1); strips('tyre').strip(idx, k => at(k, 0, 1.1), k => at(k, 0.1, 1.2), k => len[k] / 4, 0.93, 1); cap('tyre', 0.1, 0.8, 1.2);
+      sponsorPoly(strips('sponsor'), pts, nrm, len, 0.02, 0.25, 0.95, b.side, 1);
     } else if (b.type === BARRIER.CONCRETE) {
       if (b.impact) {
         // tyres stacked in front of the street wall where cars arrive

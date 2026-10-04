@@ -37,7 +37,7 @@ export function buildGroundRibbon(T, strips, P, G) {
       const e = [c], m = [];
       const push = (w, mat) => { c += Math.max(0, w); e.push(c); m.push(mat); };
       const wall = T.wall[sd][i];
-      if (T.isBridge[i]) for (let k = 0; k < BANDS; k++) push(0, 'grass');
+      if (T.isBridge[i]) { for (let k = 0; k < 3; k++) push(0, 'kerb'); push(T.runoff[sd][i], 'road'); for (let k = 4; k < BANDS; k++) push(0, 'grass'); }   // the deck margin is tarmac
       else {
         push(T.kerb[sd][i], 'kerb');
         push(T.sausage[sd][i] / 2, 'sausage'); push(T.sausage[sd][i] / 2, 'sausage');

@@ -421,6 +421,15 @@ function buildSides(T, corners) {
       if (T.gravelOut[sd][i] > T.wall[sd][i] - 1) T.gravelOut[sd][i] = Math.max(0, T.wall[sd][i] - 1);
       if (T.gravelOut[sd][i] <= T.gravelIn[sd][i] + 0.5) T.gravelOut[sd][i] = 0;
     }
+    // beside the pit road mouths the run-off eases away over 60 m instead of ending against the pit road
+    if (sd === 0 && T.pitRange) for (let i = 0; i < N; i++) {
+      const s = T.s[i], toIn = ((T.pitRange[0] - s) % T.length + T.length) % T.length, fromOut = ((s - T.pitRange[1]) % T.length + T.length) % T.length;
+      const d = Math.min(toIn, fromOut);
+      if (d < 60 && !T.pitOut[i]) {
+        const f = d / 60, w = f * f * (3 - 2 * f);
+        T.runoff[0][i] *= w; if (T.gravelOut[0][i] > 0) { T.gravelOut[0][i] = T.gravelIn[0][i] + (T.gravelOut[0][i] - T.gravelIn[0][i]) * w; if (T.gravelOut[0][i] - T.gravelIn[0][i] < 0.5) T.gravelOut[0][i] = 0; }
+      }
+    }
     for (let pass = 0; pass < 3; pass++) {
       for (let i = 1; i < N; i++) T.wall[sd][i] = Math.min(T.wall[sd][i], T.wall[sd][i - 1] + 0.25);
       for (let i = N - 2; i >= 0; i--) T.wall[sd][i] = Math.min(T.wall[sd][i], T.wall[sd][i + 1] + 0.25);
@@ -542,7 +551,9 @@ function buildPit(T) {
     T.pitOut[i] = inner + P.width;
     if (u < PIT_MOUTH_CLEAR || len - u < PIT_MOUTH_CLEAR) T.pitMouth[i] = 1;
     if (u >= PIT_MOUTH_CLEAR && u <= len - 20 && inner - PIT_WALL >= hw + PIT_WALL_CLEAR) T.pitWall[i] = 1;
+    // the painted gore between the two roads, after the mouth at both the entry and the exit
     if (u >= PIT_MOUTH_CLEAR && u < PIT_MOUTH_CLEAR + PIT_ISLAND && inner > hw + 0.3) T.pitIsland[i] = 1;
+    if (len - u >= PIT_MOUTH_CLEAR && len - u < PIT_MOUTH_CLEAR + PIT_ISLAND && inner > hw + 0.3) T.pitIsland[i] = 1;
     if (T.pitWall[i]) T.pitLimiter[i] = 1;
     if (T.pitLimiter[i]) T.pitGarage[i] = 1;
   }
@@ -625,10 +636,10 @@ function buildBarriers(T, corners) {
       follow(BARRIER.PARAPET, sd, run, i => g * T.wall[sd][i], 1, { why: 'bridge parapet over the main straight and its approach' });
       for (const ends of [run.slice(0, 5), run.slice(-5)]) follow(BARRIER.TYRES, sd, ends, i => g * (T.wall[sd][i] + 0.3), 1, { impact: true, why: 'tyre stack at the end of the bridge parapet', spec: { length: 4, offset: T.wall[sd][ends[0]], angle: 0 } });
     }
-    // 4. the containment rail: keeps a car on the flat ground. Not drawn (hidden: true); the visible barriers are the
-    // impact sections above, which are the only place a car is expected to arrive.
+    // 4. the containment wall: keeps a car on the flat ground. Drawn as a plain 1.2 m tyre wall (plain: true); the
+    // 1.9 m impact sections above are where cars are expected to arrive.
     const needs = i => !T.street[sd][i] && !T.isBridge[i] && !nearBridge[i] && !(sd === 0 && T.pitOut[i]);
-    for (const run of runsOf(N, needs)) if (run.length > 1) follow(BARRIER.ARMCO, sd, run, i => g * Math.max(T.wall[sd][i], hw + MIN_BARRIER), 3, { hidden: true, why: 'containment: stops a car leaving the flat ground (hidden, physics only)' });
+    for (const run of runsOf(N, needs)) if (run.length > 1) follow(BARRIER.ARMCO, sd, run, i => g * Math.max(T.wall[sd][i], hw + MIN_BARRIER), 3, { plain: true, why: 'containment: a low sponsored tyre wall all round the flat ground, so a car never meets an unseen wall' });
   }
 
   // 5. pit wall (two faces) and the low wall on the far side of the pit lane
