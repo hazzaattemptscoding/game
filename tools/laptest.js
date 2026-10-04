@@ -112,6 +112,7 @@ for (const kmh of [60, 120, 180]) {
   }
   const h = holdToLock(kmh / 3.6);
   console.log(`  ${String(kmh).padStart(3)} km/h  hold    ${h.toFixed(2)} s to the grip-limited turn`);
+  if (h < 0.3 || h > 0.4) fails.push(`holding a steering key takes ${h.toFixed(2)} s to reach full input (target 0.3-0.4 s)`);
 }
 
 console.log('\nSTABILITY (biggest body slip after the input, degrees)');
@@ -157,10 +158,36 @@ const edgeGap = (x, z, y) => {
 // 1. every corner's barrier is beyond the departure stopping points, or the corner says why not
 for (const c of track.corners) {
   if (c.class === 'street' || !c.departures) continue;
-  const deepest = Math.max(...c.departures.map(d => d.depth));
-  if (c.barrier < deepest && !c.constrained) fails.push(`${c.name}: barrier ${c.barrier} m is inside the ${deepest} m stopping distance`);
+  const barrierAt = s => profileBarrier(c, s, track.length);
+  for (const departure of c.departures) {
+    const barrier = barrierAt(departure.s);
+    if (barrier < departure.depth && !c.constrained) fails.push(`${c.name}: barrier ${barrier.toFixed(1)} m is inside the ${departure.depth} m stopping distance at s=${departure.s}`);
+  }
   if (c.constrained && !c.reason) fails.push(`${c.name}: constrained with no reason given`);
-  for (const sec of c.sections) if (sec.offset < deepest && !c.constrained) fails.push(`${c.name}: section at s=${sec.s} is ${sec.offset} m out, cars stop ${deepest} m out`);
+  for (const sec of c.sections) {
+    const nearby = c.departures.filter(d => Math.min(Math.abs(d.s - sec.s), track.length - Math.abs(d.s - sec.s)) <= sec.length / 2 + 3);
+    const deepest = Math.max(0, ...nearby.map(d => d.depth));
+    if (sec.offset < deepest && !c.constrained) fails.push(`${c.name}: section at s=${sec.s} is ${sec.offset} m out, nearby cars stop ${deepest} m out`);
+  }
+}
+
+function profileBarrier(corner, s, length) {
+  const profile = corner.widthProfile;
+  if (!profile || profile.length < 2) return corner.barrier;
+  let offset = 0, previous = profile[0][0];
+  const points = profile.map(point => {
+    if (point[0] < previous) offset += length;
+    previous = point[0];
+    return [point[0] + offset, point[3]];
+  });
+  let target = ((s % length) + length) % length;
+  while (target < points[0][0]) target += length;
+  while (target > points.at(-1)[0] && target - length >= points[0][0]) target -= length;
+  for (let i = 1; i < points.length; i++) if (target <= points[i][0]) {
+    const [a, widthA] = points[i - 1], [b, widthB] = points[i];
+    return widthA + (widthB - widthA) * (target - a) / (b - a || 1);
+  }
+  return points.at(-1)[1];
 }
 // 2. no barrier within 4 m of the track edge, except the street section, the pit wall and the bridge
 let closest = Infinity, pitClosest = Infinity;
@@ -207,14 +234,13 @@ function tap(speed, length) {
 function holdToLock(speed) {
   const car = makePadCar(SURF.TARMAC);
   car.vx = speed;
-  const keys = { steer: 0, throttle: 0, brake: 0 }, angle = [];
+  const keys = { steer: 0, throttle: 0, brake: 0 };
   for (let t = 0; t < 2; t += STEP) {
     keyboardStep(keys, { right: true }, STEP, car.speed);
     car.step({ steer: keys.steer, throttle: Math.max(0, Math.min(1, 0.3 + (speed - car.fwdSpeed) * 0.5)), brake: 0, drs: false });
-    angle.push(car.steer);
+    if (keys.steer === 1) return (Math.round(t / STEP) + 1) * STEP;
   }
-  const lock = angle[angle.length - 1];
-  return (angle.findIndex(a => a >= 0.9 * lock) + 1) * STEP;
+  return Infinity;
 }
 
 // Constant-radius test on an endless flat car park.

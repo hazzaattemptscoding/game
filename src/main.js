@@ -17,6 +17,7 @@ import { CameraRig } from './cameras.js';
 import { createInput } from './input.js';
 import { Hud } from './hud.js';
 import { loadSettings, saveSettings } from './settings.js';
+import { ReportTool } from './report.js';
 
 const params = new URLSearchParams(location.search);
 const settings = loadSettings();
@@ -31,7 +32,7 @@ let autopilot = params.has('autopilot') ? new Autopilot(track, GT, { skill: 0.9 
 
 // --- rendering ---
 const canvas = document.getElementById('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -53,9 +54,9 @@ sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
 const SUN_DIR = new THREE.Vector3(-0.5, 0.75, 0.42).normalize();
 
-const ground = createGround(track);
+const ground = createGround(track), terrain = ground.mesh();
 const world = new THREE.Group();
-world.add(ground.mesh(), buildTrackScene(track, ground), buildScenery(track, ground));
+world.add(terrain, buildTrackScene(track, ground), buildScenery(track, ground));
 scene.add(world);
 const markers = debugMarkers(track);
 markers.visible = false;
@@ -75,6 +76,12 @@ if (params.has('viewat')) {
 }
 const input = createInput();
 const hud = new Hud(document.getElementById('hud'), settings);
+const history = { inputs: [], telemetry: [] };
+let restoreTopDown = false;
+const reportTool = new ReportTool({
+  canvas, renderer, camera: rig.camera, scene, world, terrain, car, track, input, settings, history,
+  onClose: () => { topDown = restoreTopDown; applyLook(); },
+});
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -122,9 +129,16 @@ function frame(now) {
     if (a === 'camera') rig.next();
     if (a === 'settings') togglePanel();
     if (a === 'debug') { settings.debug = !settings.debug; saveSettings(settings); syncPanel(); }
+    if (a === 'report' && !reportTool.opened) {
+      restoreTopDown = topDown;
+      renderer.render(scene, rig.camera);
+      const shot = canvas.toDataURL('image/png');
+      const pose = { position: rig.camera.position.toArray(), quaternion: rig.camera.quaternion.toArray(), fov: rig.camera.fov };
+      topDown = true; applyLook(); reportTool.open(shot, pose);
+    }
   }
 
-  const paused = !panel.hidden;
+  const paused = !panel.hidden || reportTool.opened;
   const playerInput = input.read(dt, car.speed);
   if (!paused) {
     acc += dt;
@@ -132,12 +146,17 @@ function frame(now) {
       car.step(autopilot ? autopilot.drive(car) : playerInput);
       simTime += STEP;
       timer.update(car.loc.s, simTime);
+      history.inputs.push({ t: simTime, device: input.device, keys: input.pressedKeys(), steer: playerInput.steer, throttle: playerInput.throttle, brake: playerInput.brake, drs: playerInput.drs });
+      history.telemetry.push({ t: simTime, x: car.x, y: car.y, z: car.z, s: car.loc.s, d: car.loc.d, speed: car.speed });
+      while (history.inputs.length && history.inputs[0].t < simTime - 10) history.inputs.shift();
+      while (history.telemetry.length && history.telemetry[0].t < simTime - 10) history.telemetry.shift();
       acc -= STEP;
     }
   }
 
   view.update(car, acc / STEP);
-  if (topDown) {
+  if (reportTool.opened) reportTool.update();
+  else if (topDown) {
     // top-down debug view: high above the car, track direction up the screen
     const p = view.root.position, hd = -view.root.rotation.y;
     rig.camera.position.set(p.x, p.y + 260, p.z);
@@ -158,7 +177,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // for quick checks from the browser console
-window.lakeside = { car, track, timer, settings };
+window.lakeside = { car, track, timer, settings, reportTool };
 
 function skyTexture(top, bottom) {
   const c = document.createElement('canvas');

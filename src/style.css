@@ -86,3 +86,31 @@ body.touch .hud-dash { right: auto; left: 50%; transform: translateX(-50%); bott
 body.touch .hud-speed b, body.touch .hud-gear { font-size: 40px; }
 body.touch .hud-help, body.touch .hud-debug { display: none !important; }
 body.touch .hud-lap { font-size: 30px; }
+
+#report-layer { position: fixed; inset: 0; z-index: 8; pointer-events: none; color: #f2efe6; font-variant-numeric: tabular-nums; }
+#report-layer[hidden] { display: none; }
+.report-head, .report-tools, .report-details { position: absolute; pointer-events: auto; background: rgba(20,24,29,.94); border: 1px solid rgba(242,239,230,.2); }
+.report-head { top: calc(12px + env(safe-area-inset-top, 0px)); left: 12px; right: 12px; min-height: 46px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; }
+.report-head strong { font-size: 18px; }
+.report-head div, .report-tools { display: flex; align-items: center; gap: 6px; }
+.report-tools { top: calc(68px + env(safe-area-inset-top, 0px)); left: 12px; padding: 6px; }
+.report-tools output { margin: 0 6px; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; }
+.report-details { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: min(330px, calc(100vw - 24px)); padding: 10px; display: grid; gap: 6px; }
+.report-details label { font-size: 12px; opacity: .8; }
+#report-selection { max-height: 130px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+#report-category, #report-note { width: 100%; border: 1px solid #697078; background: #252b31; color: #f2efe6; font: inherit; padding: 7px; }
+#report-note { resize: vertical; user-select: text; -webkit-user-select: text; touch-action: auto; }
+#report-layer button { border: 0; padding: 7px 10px; background: #3a3f46; color: #f2efe6; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+#report-layer button.selected, #report-layer #report-save { background: #ffd21f; color: #14181d; }
+#report-layer button:disabled { opacity: .55; }
+#report-status, #report-pending { font-size: 11px; opacity: .8; }
+#report-rect { position: fixed; z-index: 7; border: 1px dashed #ffd21f; background: rgba(255,210,31,.12); pointer-events: none; }
+body.report-mode #touch { display: none !important; }
+@media (max-width: 600px) {
+  .report-head { top: calc(8px + env(safe-area-inset-top, 0px)); left: 8px; right: 8px; }
+  .report-head div { gap: 3px; }
+  #report-layer button { padding: 7px; font-size: 12px; }
+  .report-tools { top: calc(62px + env(safe-area-inset-top, 0px)); left: 8px; right: 8px; flex-wrap: wrap; }
+  .report-tools output { width: 100%; }
+  .report-details { left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); width: auto; }
+}

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "audit": "node tools/audit.js",
     "laptest": "node tools/laptest.js",
+    "reports": "node tools/reports.js",
     "trackmap": "node tools/trackmap.js",
     "cornersheet": "node tools/cornersheet.js"
   },

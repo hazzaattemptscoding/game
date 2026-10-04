@@ -26,9 +26,10 @@ export function createInput() {
       if (e.code === 'KeyC') actions.push('camera');
       if (e.code === 'Escape' || e.code === 'KeyP') actions.push('settings');
       if (e.code === 'F3' || e.code === 'KeyI') actions.push('debug');
+      if (e.code === 'F2') actions.push('report');
     }
     keys.add(e.code);
-    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F3'].includes(e.code)) e.preventDefault();
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F2', 'F3'].includes(e.code)) e.preventDefault();
     usingPad = false;
   });
   addEventListener('keyup', e => keys.delete(e.code));
@@ -82,6 +83,8 @@ export function createInput() {
     read,
     takeActions: () => actions.splice(0),
     get usingPad() { return usingPad; },
+    get device() { return usingPad ? 'gamepad' : touch.active ? 'touch' : 'keyboard'; },
+    pressedKeys: () => [...keys],
   };
 }
 
