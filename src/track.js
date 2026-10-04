@@ -141,7 +141,7 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   // belongs to that sample exactly, so a band built from sample i never takes its height from a
   // neighbour (which made the road bumpy on bends). Outside the paved width the ground is the same
   // whatever the hint.
-  track.groundAt = (px, pz, hint) => {
+  const groundBase = (px, pz, hint) => {
     let near = 0, best = Infinity;
     if (Number.isInteger(hint) && !track.isBridge[wrap(hint, N)]) {
       const n0 = wrap(hint, N), dx = px - x[n0], dz = pz - z[n0];
@@ -207,6 +207,24 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
     const slope = bridgeHint ? 1 / 3 : 0.12;
     const rise = Math.min(Math.abs(land - roadHeight), (lateral - paved) * slope);
     return roadHeight + Math.sign(land - roadHeight) * rise;
+  };
+  // Ground under the bridge deck (and 1.5 m beyond its edges) lies below the deck underside. Without this, the
+  // nearest non-bridge sample to a point under the deck is the deck end, and the land takes its height (or its
+  // "paved" test) from there, which is above the deck's own middle. The outer 3 m of the deck are left alone,
+  // so the road just past the ends keeps its height.
+  const deckSamples = [];
+  for (let i = 0; i < N; i += 2) if (track.isBridge[wrap(i - 3, N)] && track.isBridge[wrap(i + 3, N)] && track.isBridge[i]) deckSamples.push(i);
+  track.groundAt = (px, pz, hint) => {
+    const y = groundBase(px, pz, hint);
+    if (Number.isInteger(hint) && track.isBridge[wrap(hint, N)]) return y;
+    let cap = Infinity;
+    for (const i of deckSamples) {
+      const dx = px - x[i], dz = pz - z[i];
+      if (Math.abs(dx * tx[i] + dz * tz[i]) > 1.5) continue;
+      const lat = dx * nx[i] + dz * nz[i];
+      if (Math.abs(lat) <= track.wall[lat < 0 ? 0 : 1][i] + 1.5) cap = Math.min(cap, h[i] - 1.6);
+    }
+    return Math.min(y, cap);
   };
   buildBarriers(track, corners);
   buildFurniture(track, corners);

@@ -49,6 +49,35 @@ export function createGround(T) {
     return best;
   }
 
+  // Under and just beside the bridge deck the terrain is held below the deck underside, so the embankment
+  // that rises to meet the road at the deck ends can never poke up through it (nor its sink be lost, because
+  // `sample` skips the bridge). Margin covers the cell size, so no terrain triangle crossing the deck is above it.
+  const deckIdx = [];
+  for (let i = 0; i < T.N; i += 2) if (T.isBridge[i]) deckIdx.push(i);
+  const DECK_MARGIN = 20, DECK_CLEAR = 1.6;
+  function deckCap(x, z) {
+    let cap = Infinity;
+    for (const i of deckIdx) {
+      const dx = x - T.x[i], dz = z - T.z[i];
+      if (Math.abs(dx * T.tx[i] + dz * T.tz[i]) > DECK_MARGIN) continue;
+      const lat = dx * T.nx[i] + dz * T.nz[i], w = T.wall[lat < 0 ? 0 : 1][i];
+      if (Math.abs(lat) > w + DECK_MARGIN) continue;
+      cap = Math.min(cap, T.h[i] - DECK_CLEAR);
+    }
+    return cap;
+  }
+
+  // the height of the terrain mesh as drawn at a point (under the circuit it is sunk below the ground height)
+  function drawn(x, z, info) {
+    const { dist, near } = sample(x, z);
+    if (info) info.dist = dist;
+    const signed = (x - T.x[near]) * T.nx[near] + (z - T.z[near]) * T.nz[near];
+    const side = signed < 0 ? 0 : 1;
+    const out = Math.min(1, Math.max(0, (dist - Math.min(T.wall[side][near], T.reach[side][near])) / 24));
+    const sink = TERRAIN_SINK * (1 - out * out * (3 - 2 * out));
+    return Math.min(height(x, z) - sink, deckCap(x, z));
+  }
+
   function mesh() {
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (let i = 0; i < T.N; i++) {
@@ -57,6 +86,7 @@ export function createGround(T) {
     }
     const pad = 700, cell = 12;
     let lowest = Infinity;
+    const info = { dist: 0 };
     x0 -= pad; x1 += pad; z0 -= pad; z1 += pad;
     const nx = Math.ceil((x1 - x0) / cell) + 1, nz = Math.ceil((z1 - z0) / cell) + 1;
     const pos = new Float32Array(nx * nz * 3), uv = new Float32Array(nx * nz * 2), col = new Float32Array(nx * nz * 3), ind = [];
@@ -66,12 +96,8 @@ export function createGround(T) {
       // The terrain is never cut. Under the circuit it sits TERRAIN_SINK below the surface
       // strips, easing back up to the real ground over 24 m, so a gap between two strips shows
       // grass, never sky, and the terrain can never poke through the tarmac.
-      const { dist, near } = sample(x, z);
-      const signed = (x - T.x[near]) * T.nx[near] + (z - T.z[near]) * T.nz[near];
-      const side = signed < 0 ? 0 : 1;
-      const out = Math.min(1, Math.max(0, (dist - Math.min(T.wall[side][near], T.reach[side][near])) / 24));
-      const sink = TERRAIN_SINK * (1 - out * out * (3 - 2 * out));
-      pos[n * 3] = x; pos[n * 3 + 1] = height(x, z) - sink; pos[n * 3 + 2] = z;
+      pos[n * 3] = x; pos[n * 3 + 1] = drawn(x, z, info); pos[n * 3 + 2] = z;
+      const dist = info.dist;
       uv[n * 2] = x / 24; uv[n * 2 + 1] = z / 24;
       lowest = Math.min(lowest, pos[n * 3 + 1]);
       // mown near the circuit, rougher meadow further out
@@ -98,7 +124,26 @@ export function createGround(T) {
     return m;
   }
 
-  return { height, clearance, mesh };
+  return { height, drawn, clearance, mesh };
+}
+
+// A foundation under a building: a block from the building's base down to the lowest terrain drawn under
+// its footprint (rect = [x0, x1, z0, z1] in the group's own frame, group already placed and turned), so
+// the terrain, which is sunk under the circuit corridor, never leaves a gap beneath it.
+function footing(ground, g, rect, mat, extra = 0.3) {
+  const [x0, x1, z0, z1] = rect, c = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
+  let low = Infinity;
+  const nx = Math.max(1, Math.ceil((x1 - x0) / 2)), nz = Math.max(1, Math.ceil((z1 - z0) / 2));
+  for (let a = 0; a <= nx; a++) for (let b = 0; b <= nz; b++) {
+    const lx = x0 + (x1 - x0) * a / nx, lz = z0 + (z1 - z0) * b / nz;
+    low = Math.min(low, ground.drawn(g.position.x + lx * c + lz * sn, g.position.z - lx * sn + lz * c));
+  }
+  const depth = Math.max(0.3, g.position.y - low + extra);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, depth, z1 - z0), mat);
+  m.position.set((x0 + x1) / 2, -depth / 2 + 0.01, (z0 + z1) / 2);
+  m.castShadow = m.receiveShadow = true;
+  g.add(m);
+  return m;
 }
 
 export function buildScenery(T, ground) {
@@ -201,22 +246,27 @@ export function buildScenery(T, ground) {
   if (pitRun.length) {
     const mid = T.s[pitRun[Math.floor(pitRun.length * 0.5)]];
     const wo = at(mid - 85, -(T.wall[0][pitRun[0]] + 12));
-    g.add(watchOffice(M, wo));
+    g.add(watchOffice(M, wo, ground));
     // six Nissen huts in a row, ends facing the paddock road
     for (let k = 0; k < 6; k++) {
       const p = at(mid + 90 + k * 11, -(T.wall[0][pitRun[0]] + 10));
-      g.add(nissenHut(M, p));
+      g.add(nissenHut(M, p, ground));
     }
   }
 
   // --- right side of Runway Straight: the timekeepers' box and the old painted pit wall
   {
     const tk = at(18, T.wall[1][18] + 4);
-    g.add(timekeepersBox(M, tk));
+    g.add(timekeepersBox(M, tk, ground));
     const s0 = T.length - 170, s1 = T.length - 50;
     for (let s = s0; s < s1; s += 3) {
       const p = at(s, T.wall[1][wrap(Math.round(s), T.N)] + 8);
-      const block = add(new THREE.BoxGeometry(3.05, 1.0, 0.3), M.oldWall, p.x, p.y + 0.5, p.z, p.yaw);
+      // each block runs down to the lowest terrain drawn under it
+      const cs = Math.cos(p.yaw), sn = Math.sin(p.yaw);
+      let low = p.y;
+      for (const lx of [-1.525, 0, 1.525]) for (const lz of [-0.15, 0.15]) low = Math.min(low, ground.drawn(p.x + lx * cs + lz * sn, p.z - lx * sn + lz * cs));
+      const hgt = 1.0 + (p.y - low) + 0.3;
+      const block = add(new THREE.BoxGeometry(3.05, hgt, 0.3), M.oldWall, p.x, p.y + 1.0 - hgt / 2, p.z, p.yaw);
       // flaking: every few blocks a little darker
       if ((s / 3) % 5 < 1) block.material = M.roofSlab;
     }
@@ -226,16 +276,16 @@ export function buildScenery(T, ground) {
   {
     const h = T.fromSketch(600, 382);
     const yaw = -Math.atan2(T.tz[0], T.tx[0]);
-    g.add(bellmanHangar(M, { x: h.x, z: h.z, y: ground.height(h.x, h.z), yaw }));
+    g.add(bellmanHangar(M, { x: h.x, z: h.z, y: ground.height(h.x, h.z), yaw }, ground));
     const w = T.fromSketch(470, 332);
-    g.add(waterTower(M, { x: w.x, z: w.z, y: ground.height(w.x, w.z) }));
+    g.add(waterTower(M, { x: w.x, z: w.z, y: ground.height(w.x, w.z) }, ground));
   }
 
   return g;
 }
 
 // Watch Office: 12 x 9 m brick block, 7 m high, balcony, glazed control room on the roof.
-function watchOffice(M, p) {
+function watchOffice(M, p, ground) {
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(12, 7, 9), M.brick);
   body.position.y = 3.5;
@@ -268,11 +318,12 @@ function watchOffice(M, p) {
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   g.position.set(p.x, p.y, p.z);
   g.rotation.y = p.yaw - Math.PI / 2;   // front faces the pit lane
+  footing(ground, g, [-6, 6, -4.5, 4.5], M.brick);
   return g;
 }
 
 // Nissen hut: 4.9 m wide, 11 m long half-cylinder of corrugated steel, brick ends.
-function nissenHut(M, p) {
+function nissenHut(M, p, ground) {
   const g = new THREE.Group(), r = 2.45, L = 11;
   const shell = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 16, 1, true, -Math.PI / 2, Math.PI), M.hut);
   shell.rotation.z = Math.PI / 2;
@@ -290,11 +341,12 @@ function nissenHut(M, p) {
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   g.position.set(p.x, p.y, p.z);
   g.rotation.y = p.yaw;
+  footing(ground, g, [-r, r, -L / 2, L / 2], M.roofSlab);   // concrete base slab under the hut
   return g;
 }
 
 // Timekeepers' box: 3.6 x 2.4 m white timber hut on 2.5 m stilts, glazed front, ladder.
-function timekeepersBox(M, p) {
+function timekeepersBox(M, p, ground) {
   const g = new THREE.Group();
   for (const [x, z] of [[-1.6, -1.0], [1.6, -1.0], [-1.6, 1.0], [1.6, 1.0]]) {
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.5, 0.15), M.darkFrame);
@@ -314,11 +366,12 @@ function timekeepersBox(M, p) {
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   g.position.set(p.x, p.y, p.z);
   g.rotation.y = p.yaw + Math.PI / 2;   // glazing faces the track
+  for (const [x, z] of [[-1.6, -1.0], [1.6, -1.0], [-1.6, 1.0], [1.6, 1.0]]) footing(ground, g, [x - 0.4, x + 0.4, z - 0.4, z + 0.4], M.roofSlab);   // a pad under each leg
   return g;
 }
 
 // Bellman hangar: 26 m wide, 54 m long, low arched roof to 8 m, doors at one end.
-function bellmanHangar(M, p) {
+function bellmanHangar(M, p, ground) {
   const g = new THREE.Group(), W = 26, L = 54;
   const prof = new THREE.Shape();
   prof.moveTo(-W / 2, 0); prof.lineTo(-W / 2, 5.5);
@@ -338,11 +391,12 @@ function bellmanHangar(M, p) {
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   g.position.set(p.x, p.y, p.z);
   g.rotation.y = p.yaw;
+  footing(ground, g, [-W / 2, W / 2, -L / 2, L / 2], M.roofSlab);
   return g;
 }
 
 // Water tower: 6 x 6 x 3 m steel tank on four brick legs, 12 m to the top.
-function waterTower(M, p) {
+function waterTower(M, p, ground) {
   const g = new THREE.Group();
   for (const [x, z] of [[-2.3, -2.3], [2.3, -2.3], [-2.3, 2.3], [2.3, 2.3]]) {
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.9, 9, 0.9), M.brick);
@@ -354,5 +408,6 @@ function waterTower(M, p) {
   g.add(tank);
   g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   g.position.set(p.x, p.y, p.z);
+  for (const [x, z] of [[-2.3, -2.3], [2.3, -2.3], [-2.3, 2.3], [2.3, 2.3]]) footing(ground, g, [x - 0.7, x + 0.7, z - 0.7, z + 0.7], M.roofSlab);
   return g;
 }

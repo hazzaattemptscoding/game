@@ -16,8 +16,9 @@ const idx = surfaceIndex(root);
 const found = globalThis.__found = { holes: [], terrainTop: [], onRoad: [], zfight: [] };
 const pairs = new Map();
 
+// the whole lap is scanned, the bridge deck and its approaches included: on the deck the road is the top surface
+// and the terrain must stay below it (the terrain-above-road check below covers the full road width)
 for (let i = 0; i < T.N; i += Math.round(STEP_S / T.ds)) {
-  if (T.isBridge[i]) continue;
   for (const sd of [0, 1]) {
     const g = sd ? 1 : -1, reach = Math.min(T.wall[sd][i], T.reach[sd][i]) - 0.5;     // bands stop where the offset would fold
     const pitSide = sd === 0 && T.pitOut[i] > 0;
@@ -28,6 +29,11 @@ for (let i = 0; i < T.N; i += Math.round(STEP_S / T.ds)) {
       if (!all.length) { found.holes.push(where); continue; }
       if (!hits.length) continue;                              // only ground well above the road here: a bank
       const top = hits[0];
+      // within the road width, terrain must never be above the road surface (checked on the deck and its approaches too)
+      if (d < T.halfWidth + 0.5) {
+        const road = hits.find(q => q.cat === 'road'), terr = hits.find(q => q.cat === 'terrain');
+        if (terr && terr.y > (road ? road.y : T.h[i]) + 0.005) found.terrainTop.push(`${where} terrain ${(terr.y - (road ? road.y : T.h[i])).toFixed(2)} m above road`);
+      }
       if (top.cat === 'terrain') {
         // terrain on top is fine over a grass strip (a bank), and fine when it is far from the road height;
         // it is a fault when it hides tarmac, kerb or gravel, or when nothing is drawn where it sits at road level
