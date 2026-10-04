@@ -9,6 +9,19 @@
 <body>
 <canvas id="view"></canvas>
 <div id="hud"></div>
+<div id="touch">
+  <div class="t-steer"><div class="t-hint">Drag to steer</div><div class="t-knob"></div></div>
+  <div class="t-pedals">
+    <button data-pedal="drs" class="t-drs">DRS</button>
+    <button data-pedal="brake" class="t-brake">Brake</button>
+    <button data-pedal="throttle" class="t-gas">Throttle</button>
+  </div>
+</div>
+<div class="t-top">
+  <button data-action="reset" aria-label="Back on track">Reset</button>
+  <button data-action="camera" aria-label="Switch camera">Camera</button>
+  <button data-action="settings" aria-label="Settings">Settings</button>
+</div>
 <div id="settings" hidden>
   <div class="box">
     <h2>Settings</h2>

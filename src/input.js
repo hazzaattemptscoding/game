@@ -10,6 +10,9 @@ const KEY_THROTTLE_IN = 5;
 const KEY_BRAKE_IN = 7;
 const KEY_PEDAL_OUT = 10;
 
+const TOUCH_STEER_PX = 70;    // how far your thumb moves for full lock, in screen pixels
+const TOUCH_STEER_RATE = 8;   // smoothing on touch steering, per second
+
 const PAD_DEADZONE = 0.08;
 const PAD_CURVE = 1.4;        // above 1 = finer control near the centre of the stick
 
@@ -33,6 +36,9 @@ export function createInput() {
     usingPad = false;
   });
   addEventListener('keyup', e => keys.delete(e.code));
+
+  // Touch: drag anywhere on the left half to steer, pedals on the right.
+  const touch = createTouch(actions);
   addEventListener('blur', () => keys.clear());
 
   const toward = (v, target, rate, dt) => v + Math.max(-rate * dt, Math.min(rate * dt, target - v));
@@ -70,6 +76,13 @@ export function createInput() {
       padButtonsPrev = pad.buttons.map(b => b.pressed);
     }
 
+    if (touch.active) {
+      steer = toward(state.steer, touch.steer, TOUCH_STEER_RATE, dt);
+      throttle = toward(state.throttle, touch.throttle, touch.throttle ? KEY_THROTTLE_IN : KEY_PEDAL_OUT, dt);
+      brake = toward(state.brake, touch.brake, touch.brake ? KEY_BRAKE_IN : KEY_PEDAL_OUT, dt);
+      drs = drs || touch.drs;
+    }
+
     state.steer = steer; state.throttle = throttle; state.brake = brake; state.drs = drs;
     return state;
   }
@@ -79,4 +92,49 @@ export function createInput() {
     takeActions: () => actions.splice(0),
     get usingPad() { return usingPad; },
   };
+}
+
+// On-screen controls. Shown once the screen is touched.
+function createTouch(actions) {
+  const t = { active: false, steer: 0, throttle: 0, brake: 0, drs: false };
+  const root = document.getElementById('touch');
+  if (!root) return t;
+  let steerId = null, steerX = 0;
+  const knob = root.querySelector('.t-knob'), zone = root.querySelector('.t-steer');
+
+  addEventListener('touchstart', () => {
+    if (!t.active) { t.active = true; document.body.classList.add('touch'); }
+  }, { passive: true });
+
+  zone.addEventListener('pointerdown', e => {
+    steerId = e.pointerId; steerX = e.clientX;
+    zone.setPointerCapture(e.pointerId);
+    knob.style.left = e.clientX + 'px'; knob.style.top = e.clientY + 'px';
+    knob.classList.add('on');
+  });
+  zone.addEventListener('pointermove', e => {
+    if (e.pointerId !== steerId) return;
+    t.steer = Math.max(-1, Math.min(1, (e.clientX - steerX) / TOUCH_STEER_PX));
+    knob.style.transform = `translate(calc(-50% + ${t.steer * TOUCH_STEER_PX}px), -50%)`;
+  });
+  const endSteer = e => {
+    if (e.pointerId !== steerId) return;
+    steerId = null; t.steer = 0;
+    knob.classList.remove('on'); knob.style.transform = '';
+  };
+  zone.addEventListener('pointerup', endSteer);
+  zone.addEventListener('pointercancel', endSteer);
+
+  for (const btn of root.querySelectorAll('[data-pedal]')) {
+    const key = btn.dataset.pedal;
+    const set = v => e => { e.preventDefault(); t[key] = v; btn.classList.toggle('on', !!v); };
+    btn.addEventListener('pointerdown', set(key === 'drs' ? true : 1));
+    btn.addEventListener('pointerup', set(key === 'drs' ? false : 0));
+    btn.addEventListener('pointercancel', set(key === 'drs' ? false : 0));
+    btn.addEventListener('pointerleave', set(key === 'drs' ? false : 0));
+  }
+  for (const btn of document.querySelectorAll('[data-action]')) {
+    btn.addEventListener('click', () => actions.push(btn.dataset.action));
+  }
+  return t;
 }

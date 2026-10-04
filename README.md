@@ -27,6 +27,8 @@ Cloudflare Pages: build command `npm run build`, output directory `dist`.
 | Settings | Esc | Start |
 | Handling readout | I or F3 | |
 
+Touch: drag anywhere on the left half of the screen to steer, pedals and DRS bottom right, Reset, Camera and Settings top right.
+
 URL options: `?autopilot` watches the autopilot drive, `?at=1500` starts 1500 m into the lap.
 
 ## Where to tune things
