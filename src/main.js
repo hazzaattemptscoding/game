@@ -54,9 +54,10 @@ scene.add(sun, sun.target);
 const SUN_DIR = new THREE.Vector3(-0.5, 0.75, 0.42).normalize();
 
 const ground = createGround(track);
-scene.add(ground.mesh());
-scene.add(buildTrackScene(track, ground));
-scene.add(buildScenery(track, ground));
+const world = new THREE.Group();
+world.add(ground.mesh(), buildTrackScene(track, ground), buildScenery(track, ground));
+scene.add(world);
+setBlockout(world, settings.blockout);
 const view = new CarView(GT, 0xffd21f);
 scene.add(view.root);
 
@@ -85,6 +86,7 @@ function syncPanel() {
   panel.querySelectorAll('[data-units]').forEach(b => b.classList.toggle('sel', b.dataset.units === settings.units));
   panel.querySelectorAll('[data-assists]').forEach(b => b.classList.toggle('sel', String(settings.assists) === b.dataset.assists));
   panel.querySelectorAll('[data-debug]').forEach(b => b.classList.toggle('sel', String(settings.debug) === b.dataset.debug));
+  panel.querySelectorAll('[data-blockout]').forEach(b => b.classList.toggle('sel', String(!!settings.blockout) === b.dataset.blockout));
   panel.querySelectorAll('[data-auto]').forEach(b => b.classList.toggle('sel', String(!!autopilot) === b.dataset.auto));
 }
 panel.addEventListener('click', e => {
@@ -93,6 +95,7 @@ panel.addEventListener('click', e => {
   if (b.dataset.units) settings.units = b.dataset.units;
   if (b.dataset.assists) { settings.assists = b.dataset.assists === 'true'; car.assists = settings.assists; }
   if (b.dataset.debug) settings.debug = b.dataset.debug === 'true';
+  if (b.dataset.blockout) { settings.blockout = b.dataset.blockout === 'true'; setBlockout(world, settings.blockout); }
   if (b.dataset.auto) autopilot = b.dataset.auto === 'true' ? new Autopilot(track, GT, { skill: 0.9 }) : null;
   if (b.id === 'close') togglePanel(false);
   saveSettings(settings);
@@ -156,4 +159,36 @@ function skyTexture(top, bottom) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+// Blockout view: every textured material swapped for a flat colour (the
+// average of its texture), sponsor graphics and fence mesh included. Shows
+// the shapes and layout without the dressing.
+function setBlockout(root, on) {
+  const cache = new Map();
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    o.userData.fullMaterial ||= o.material;
+    if (!on) { o.material = o.userData.fullMaterial; return; }
+    const m = o.userData.fullMaterial;
+    if (!cache.has(m)) {
+      const sponsor = m.map && m.map.image && m.map.image.height === 1024;   // the sponsor sheet
+      const col = sponsor ? new THREE.Color(0x9a9a96) : m.map ? averageColour(m.map) : m.color.clone();
+      if (m.vertexColors) col.set(0x5a7f42);
+      cache.set(m, new THREE.MeshLambertMaterial({
+        color: m.map && m.color ? col.multiply(m.color) : col,
+        side: m.side, transparent: m.transparent, opacity: m.transparent ? 0.35 : 1, depthWrite: !m.transparent,
+      }));
+    }
+    o.material = cache.get(m);
+  });
+}
+
+function averageColour(texture) {
+  const img = texture.image, c = document.createElement('canvas');
+  c.width = c.height = 1;
+  const x = c.getContext('2d');
+  try { x.drawImage(img, 0, 0, 1, 1); } catch (e) { return new THREE.Color(0x888888); }
+  const [r, g, b] = x.getImageData(0, 0, 1, 1).data;
+  return new THREE.Color().setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
 }
