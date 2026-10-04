@@ -416,6 +416,20 @@ export function pitLaneTexture() {
   return finish(c);
 }
 
+// Conveyor-belt tyre barrier face: black rubber, a seam every 1.2 m, rows of bolt heads. One tile is 4 m by 1.8 m.
+export function tyreWallTexture() {
+  const [c, x] = canvas(512, 256), r = rng(67);
+  x.fillStyle = '#1d1e20'; x.fillRect(0, 0, 512, 256);
+  speckle(x, 512, 256, r, 5000, ['#151617', '#27282b', '#303134'], 1.6);
+  for (let i = 0; i < 512; i += 154) { x.fillStyle = '#0c0c0d'; x.fillRect(i, 0, 3, 256); }      // belt seams
+  for (const y of [34, 222]) for (let i = 8; i < 512; i += 32) {                                   // bolt heads
+    x.fillStyle = '#0a0a0b'; x.beginPath(); x.arc(i + 1, y + 1.5, 6, 0, 7); x.fill();
+    x.fillStyle = '#5a5d62'; x.beginPath(); x.arc(i, y, 5, 0, 7); x.fill();
+    x.fillStyle = '#8a8d92'; x.beginPath(); x.arc(i - 1.5, y - 1.5, 1.8, 0, 7); x.fill();
+  }
+  return finish(c);
+}
+
 // A rumble band across a concrete apron: flat, with fine grooves across the direction of travel.
 // One tile is 2 m of track long and 0.55 m wide.
 export function rumbleTexture() {

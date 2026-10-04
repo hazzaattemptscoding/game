@@ -63,7 +63,7 @@ export function buildTrackScene(T, ground) {
     wallConcrete: new THREE.MeshStandardMaterial({ map: tex.concreteTexture(), roughness: 0.9, side: THREE.DoubleSide }),
     street: new THREE.MeshStandardMaterial({ map: tex.streetWallTexture(), roughness: 0.85, side: THREE.DoubleSide }),
     sponsor: new THREE.MeshStandardMaterial({ map: sponsorTex, roughness: 0.55, side: THREE.DoubleSide }),
-    tyre: new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: 0.85, side: THREE.DoubleSide }),
+    tyre: new THREE.MeshStandardMaterial({ map: tex.tyreWallTexture(), roughness: 0.85, side: THREE.DoubleSide }),
     white: new THREE.MeshStandardMaterial({ color: 0xe8e6de, roughness: 0.7, side: THREE.DoubleSide }),
     fence: new THREE.MeshStandardMaterial({ map: tex.fenceTexture(), transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.4, depthWrite: false }),
     dark: new THREE.MeshStandardMaterial({ color: 0x1e2124, roughness: 0.6 }),
@@ -144,6 +144,7 @@ export function buildTrackScene(T, ground) {
   // --- barriers, from the placed sections in track.js ------------------
   const posts = [], fencePosts = [];
   for (const b of T.barriers) {
+    if (b.hidden) continue;                       // the containment rail is physics only
     const pts = b.pts, nrm = inwardNormals(T, b);
     const at = (k, back, y) => [pts[k][0] - nrm[k][0] * back, pts[k][1] + y, pts[k][2] - nrm[k][1] * back];
     const idx = pts.map((_, k) => k), len = cumulative(pts);
@@ -152,11 +153,11 @@ export function buildTrackScene(T, ground) {
 
     if (b.type === BARRIER.TYRES) {
       // impact zone: conveyor-faced tyre wall, double armco 1.2 m behind, catch fence 2 m behind that
-      wall('tyre', 0, 0.1, 1.9); cap('tyre', 0, 1.2, 1.9);
+      // sponsored tyre wall: conveyor-belt face with bolt heads, a sponsor wrap, a rounded top edge. The armco that
+      // used to stand behind it is gone from view (the wall itself is what a car meets).
+      wall('tyre', 0, 0.1, 1.78); strips('tyre').strip(idx, k => at(k, 0, 1.78), k => at(k, 0.12, 1.9), k => len[k] / 4, 0.93, 1); cap('tyre', 0.12, 1.2, 1.9);
       sponsorPoly(strips('sponsor'), pts, nrm, len, 0.03, 0.45, 1.45, b.side);
-      wall('white', 0.03, 1.6, 1.9);
-      for (const [y0, y1] of [[0.44, 0.75], [0.75, 1.06]]) wall('armco', 1.3, y0, y1);
-      for (let m = 0; m <= len[len.length - 1]; m += 2) posts.push([...pointAt(pts, nrm, len, m, 1.45), 1.06]);
+      wall('white', 0.03, 1.6, 1.78);
       if (b.fence) {
         strips('fence').strip(idx, k => at(k, 3.3, 0.2), k => at(k, 3.3, FENCE_HEIGHT), k => len[k] / 2, 0.1, FENCE_HEIGHT / 2);
         for (let m = 0; m <= len[len.length - 1]; m += 5) fencePosts.push([...pointAt(pts, nrm, len, m, 3.3), FENCE_HEIGHT]);

@@ -265,9 +265,18 @@ export class ReportTool {
       const json = JSON.stringify(report, null, 2), file = new File([json], filename, { type: 'application/json' });
       const share = navigator.share && navigator.canShare?.({ files: [file] }) ? navigator.share({ files: [file], title: 'Lakeside track report' }) : null;
       const localId = await this.store(report);
-      const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-      const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
       let delivered = false;
+      // In the live artifact the page may not start a download itself: the viewer's downloads capability does it,
+      // with a confirmation. Anywhere else a plain download link works.
+      let handed = false;
+      try {
+        const downloads = await window.claude?.use?.('downloads');
+        if (downloads) { await downloads.save({ filename, data: new Blob([json], { type: 'application/json' }) }); handed = true; delivered = true; }
+      } catch (error) { if (error?.code === 'declined') this.status.textContent = 'Download declined, report kept in this browser'; }
+      if (!handed && !window.claude) {
+        const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
+      }
       if (import.meta.env.DEV) {
         const response = await fetch('/__lakeside-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json });
         delivered = response.ok;
@@ -277,7 +286,7 @@ export class ReportTool {
         catch (error) { if (error.name !== 'AbortError') throw error; }
       }
       if (delivered) await this.remove(localId);
-      this.status.textContent = delivered ? 'Report sent' : 'Saved in this browser';
+      if (!this.status.textContent.startsWith('Download declined')) this.status.textContent = delivered ? (handed ? 'Report downloaded' : 'Report sent') : 'Saved in this browser';
       await this.refreshCount();
     } catch (error) {
       this.status.textContent = `Could not save report: ${error.message}`;

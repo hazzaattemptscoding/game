@@ -596,7 +596,11 @@ function buildBarriers(T, corners) {
         [cx + dx * half, T.groundAt(cx + dx * half, cz + dz * half, i), cz + dz * half, i],
         [b[0], T.groundAt(b[0], b[1], i), b[1], i]];
       if (pts.some(([x, y, z]) => tooCloseToRoad(x, z, y))) continue;
-      add(c.class === 'street' ? BARRIER.CONCRETE : BARRIER.TYRES, sd, pts, { corner: c.name, fence: c.class !== 'street', impact: true });
+      // why this section is here: the departure test whose stopping point it covers
+      const dep = (c.departures || []).filter(d => d.depth > 0).sort((p, q) => Math.abs(p.s - sec.s) - Math.abs(q.s - sec.s))[0];
+      if (c.class !== 'street' && !(dep && Math.abs(dep.s - sec.s) <= sec.length / 2 + 20)) continue;   // no departure arrives here: no barrier
+      const why = dep ? `${c.name}: "${dep.test}" leaves at s=${dep.s}, ${dep.depth} m beyond the edge, at ${dep.angle}°` : `${c.name}: placed from corners.js with no departure listed`;
+      add(c.class === 'street' ? BARRIER.CONCRETE : BARRIER.TYRES, sd, pts, { corner: c.name, fence: c.class !== 'street', impact: true, why, spec: { length: sec.length, offset: sec.offset, angle: sec.angle || 0 } });
       for (let k = -Math.ceil(half + flare); k <= half + flare; k++) covered[sd][wrap(i + k, N)] = 1;
     }
   }
@@ -604,20 +608,21 @@ function buildBarriers(T, corners) {
   for (let sd = 0; sd < 2; sd++) {
     const g = sd ? 1 : -1;
     // 2. street section walls, right at the edge
-    for (const run of runsOf(N, i => T.street[sd][i] && !T.isBridge[i])) follow(BARRIER.CONCRETE, sd, run, i => g * T.wall[sd][i], 3, { fence: true });
+    for (const run of runsOf(N, i => T.street[sd][i] && !T.isBridge[i])) follow(BARRIER.CONCRETE, sd, run, i => g * T.wall[sd][i], 3, { fence: true, why: 'street section: a wall at the track edge (the walls zones in layout.js)' });
     // 3. bridge parapets
-    for (const run of runsOf(N, i => T.isBridge[i])) follow(BARRIER.PARAPET, sd, run, i => g * T.wall[sd][i]);
-    // 4. single armco, set back, only where another part of the track is close
+    for (const run of runsOf(N, i => T.isBridge[i])) follow(BARRIER.PARAPET, sd, run, i => g * T.wall[sd][i], 1, { why: 'bridge parapet over the main straight' });
+    // 4. the containment rail: keeps a car on the flat ground. Not drawn (hidden: true); the visible barriers are the
+    // impact sections above, which are the only place a car is expected to arrive.
     const needs = i => !T.street[sd][i] && !T.isBridge[i] && !(sd === 0 && T.pitOut[i]);
-    for (const run of runsOf(N, needs)) if (run.length > 1) follow(BARRIER.ARMCO, sd, run, i => g * Math.max(T.wall[sd][i], hw + MIN_BARRIER), 3);
+    for (const run of runsOf(N, needs)) if (run.length > 1) follow(BARRIER.ARMCO, sd, run, i => g * Math.max(T.wall[sd][i], hw + MIN_BARRIER), 3, { hidden: true, why: 'containment: stops a car leaving the flat ground (hidden, physics only)' });
   }
 
   // 5. pit wall (two faces) and the low wall on the far side of the pit lane
   for (const run of runsOf(N, i => T.pitWall[i])) {
-    follow(BARRIER.PITWALL, 0, run, i => -(T.pitIn[i] - PIT_WALL), 3);
+    follow(BARRIER.PITWALL, 0, run, i => -(T.pitIn[i] - PIT_WALL), 3, { why: 'pit wall between the track and the pit lane' });
   }
   for (const run of runsOf(N, i => T.pitOut[i] && T.pitOut[i] > hw + PIT_WALL_CLEAR && !T.pitMouth[i])) {
-    follow(BARRIER.PITOUTER, 0, run, i => -(T.pitOut[i] + (T.pitGarage[i] ? PIT_APRON : 0.5)), 3);
+    follow(BARRIER.PITOUTER, 0, run, i => -(T.pitOut[i] + (T.pitGarage[i] ? PIT_APRON : 0.5)), 3, { why: 'low wall on the garage side of the pit lane' });
   }
 
   // collision segments, each with a face normal pointing back towards the track

@@ -63,6 +63,19 @@ for (let i = 0; i < T.N; i++) {
   }
 }
 
+// Every barrier section needs a reason (docs/barrier-log.md), and the same section must not be repeated
+// more than twice: a (type, length, offset, angle) combination, rounded to 5%, that turns up three times
+// is a template being stamped, not a design.
+const bucket = v => Math.round(Math.log(Math.max(v, 0.5)) / Math.log(1.05));
+const templates = new Map();
+for (const b of T.barriers) {
+  if (!b.why) errors.push(`barrier section at s=${T.s[b.pts[0][3]].toFixed(0)} has no reason in the barrier log`);
+  if (!b.spec) continue;
+  const key = [b.type, bucket(b.spec.length), bucket(b.spec.offset), bucket(Math.abs(b.spec.angle) + 1)].join('/');
+  templates.set(key, (templates.get(key) || 0) + 1);
+}
+for (const [key, n] of templates) if (n > 2) errors.push(`the same barrier section (type/length/offset/angle ${key}) is used ${n} times`);
+
 let maxGroundError = 0;
 for (let n = 0; n < 2000; n++) {
   const i = Math.floor(random() * T.N);

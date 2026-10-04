@@ -14,7 +14,8 @@
     "cornersheet": "node tools/cornersheet.js",
     "bumps": "node tools/bumps.js",
     "surfaces": "node tools/surfaces.js",
-    "check": "node tools/check.js"
+    "check": "node tools/check.js",
+    "barrierlog": "node tools/barrierlog.mjs"
   },
   "dependencies": {
     "peerjs": "^1.5.5",
