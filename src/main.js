@@ -11,6 +11,7 @@ import { GT } from './cars.js';
 import { LapTimer } from './timing.js';
 import { Autopilot } from './autopilot.js';
 import { buildTrackScene } from './trackMesh.js';
+import { createGround, buildScenery } from './scenery.js';
 import { CarView } from './car.js';
 import { CameraRig } from './cameras.js';
 import { createInput } from './input.js';
@@ -52,11 +53,21 @@ sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
 const SUN_DIR = new THREE.Vector3(-0.5, 0.75, 0.42).normalize();
 
-scene.add(buildTrackScene(track));
+const ground = createGround(track);
+scene.add(ground.mesh());
+scene.add(buildTrackScene(track, ground));
+scene.add(buildScenery(track, ground));
 const view = new CarView(GT, 0xffd21f);
 scene.add(view.root);
 
 const rig = new CameraRig(innerWidth / innerHeight);
+// ?view=x,y,z,tx,ty,tz pins the camera (for screenshots); ?viewat=s,d,height,lookahead places it by track position
+let fixedView = params.has('view') ? params.get('view').split(',').map(Number) : null;
+if (params.has('viewat')) {
+  const [s, d, hgt, ahead] = params.get('viewat').split(',').map(Number);
+  const i = Math.round(((s % track.length) + track.length) % track.length) % track.N, j = (i + Math.round(ahead)) % track.N;
+  fixedView = [track.x[i] + track.nx[i] * d, track.h[i] + hgt, track.z[i] + track.nz[i] * d, track.x[j], track.h[j], track.z[j]];
+}
 const input = createInput();
 const hud = new Hud(document.getElementById('hud'), settings);
 
@@ -117,7 +128,8 @@ function frame(now) {
   }
 
   view.update(car, acc / STEP);
-  rig.update(view, car, dt);
+  if (fixedView) { rig.camera.position.set(fixedView[0], fixedView[1], fixedView[2]); rig.camera.lookAt(fixedView[3], fixedView[4], fixedView[5]); }
+  else rig.update(view, car, dt);
 
   // keep the shadow map centred on the car
   const p = view.root.position;

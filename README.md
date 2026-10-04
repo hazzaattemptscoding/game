@@ -10,6 +10,7 @@ npm install
 npm run dev        # play at http://localhost:5173
 npm run build      # static site in dist/
 npm run laptest    # headless handling test, no browser
+npm run trackmap   # draws the circuit zones from game data to trackmap.svg
 ```
 
 Cloudflare Pages: build command `npm run build`, output directory `dist`.
@@ -34,7 +35,7 @@ URL options: `?autopilot` watches the autopilot drive, `?at=1500` starts 1500 m 
 ## Where to tune things
 
 - `src/cars.js`: every number that changes how the car drives (grip, power, brakes, steering, assists). Each one has a plain English note.
-- `src/layout.js`: the circuit. Control points from the original sketch, plus scale, width, sectors, DRS zones and the bridge.
+- `src/layout.js`: the circuit. Control points from the original sketch, plus scale, width, sectors, DRS zones, the bridge, the pit lane, corner names, and the zones from the colour map: gravel, walls, run-off and sausage kerbs. Change a zone there and run `npm run trackmap` to check it against `reference/lakeside-track-colour-map.png`.
 - `src/physics.js`: how the car model works, and the grip of each surface.
 - `src/autopilot.js`: the racing line and the autopilot driver (the base for AI later).
 
@@ -52,11 +53,14 @@ src/
   cars.js       car tuning (edit this)
   timing.js     laps and sectors
   autopilot.js  racing line and autopilot
-  trackMesh.js  test track visuals
+  trackMesh.js  the circuit: surfaces, kerbs, barriers, fences, pit lane, bridge, gantry, boards
+  scenery.js    terrain and the RAF Stanmere remnants
+  textures.js   all textures and sponsor boards, drawn in code
   car.js        car model
   cameras.js    chase and bonnet cameras
   input.js      keyboard and gamepad
   hud.js        HUD
-tools/laptest.js  headless lap and stability test
-reference/        original prototype and build brief
+tools/laptest.js   headless lap, stability and run-off test
+tools/trackmap.js  zone map from game data
+reference/         original prototype, build brief, colour map, zone notes and the venue reference pack
 ```

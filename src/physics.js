@@ -23,7 +23,8 @@ export const SURFACE = {
   [SURF.SAUSAGE]: { grip: 0.6, drag: 0.03, bump: 1 },
   [SURF.RUNOFF]: { grip: 0.97, drag: 0, bump: 0 },
   [SURF.GRASS]: { grip: 0.55, drag: 0.06, bump: 0.2 },
-  [SURF.GRAVEL]: { grip: 0.4, drag: 0.45, bump: 0.6 },
+  [SURF.GRAVEL]: { grip: 0.35, drag: 0.7, bump: 0.6 },
+  [SURF.PIT]: { grip: 1.0, drag: 0, bump: 0 },
 };
 
 const WALL_BOUNCE = 0.25;   // how much speed comes back off a barrier (0 = dead stop, 1 = rubber ball)
@@ -68,7 +69,7 @@ export class Car {
     this.ax = 0; this.ay = 0; this.speed = 0; this.fwdSpeed = 0;
     this.throttle = 0; this.brake = 0; this.drs = false;
     this.slipF = 0; this.slipR = 0; this.spin = false; this.lock = false;
-    this.tc = false; this.abs = false; this.esc = false;
+    this.tc = false; this.abs = false; this.esc = false; this.pitLimiter = false;
     this.reverseTimer = 0; this.wheelSpinAngle = 0; this.bump = 0;
     this.steerRange = this.cfg.maxLock;
     this.loc = { i, h: this.y };
@@ -163,6 +164,11 @@ export class Car {
     this.updateGear(vx, throttleIn, brakeIn, dt);
     let throttle = throttleIn, brake = brakeIn;
     if (this.gear < 0) { throttle = brakeIn; brake = throttleIn; } // reversing: brake pedal drives backwards
+    // pit lane speed limiter: no drive above the limit, and gentle braking down to it
+    this.pitLimiter = T.inPitLimiter(loc.i, loc.d);
+    if (this.pitLimiter && speed > T.pitSpeed - 0.5) throttle = 0;
+    if (this.pitLimiter && speed > T.pitSpeed + 1) brake = Math.max(brake, Math.min(0.5, (speed - T.pitSpeed) * 0.08));
+
     let drive = 0;
     if (this.gear > 0) {
       const ratio = c.gears[this.gear - 1] * c.finalDrive;
@@ -298,20 +304,30 @@ export class Car {
   }
 
   // Barriers: check the four corners of the car, push back out and bounce.
+  // Two kinds: the outer barrier each side, and the pit wall between the
+  // main straight and the pit lane, which can be hit from either face.
   collideWalls() {
     const c = this.cfg, T = this.track, loc = this.loc;
     const ch = Math.cos(this.heading), sh = Math.sin(this.heading);
-    let deepest = 0, cx = 0, cz = 0, side = 0;
+    const pitIn = T.pitWallIn[loc.i], pitOut = pitIn + 0.6;
+    let deepest = 0, cx = 0, cz = 0, push = 0;   // push: +1 = towards the right of the track, -1 = left
     for (const lx of [c.length / 2, -c.length / 2]) for (const ly of [-c.width / 2, c.width / 2]) {
       const ox = lx * ch - ly * sh, oz = lx * sh + ly * ch;
       const d = loc.d + ox * loc.nx + oz * loc.nz;
-      const sd = d < 0 ? 0 : 1, pen = Math.abs(d) - T.wall[sd][loc.i];
-      if (pen > deepest) { deepest = pen; cx = ox; cz = oz; side = sd; }
+      const sd = d < 0 ? 0 : 1;
+      let pen = Math.abs(d) - T.wall[sd][loc.i], dir = sd ? -1 : 1;
+      if (pitIn && d < -pitIn && d > -pitOut) {
+        // inside the pit wall: push back to whichever side the car is on
+        const onTrack = loc.d > -pitIn;
+        const p2 = onTrack ? -pitIn - d : d + pitOut;
+        if (p2 > pen) { pen = p2; dir = onTrack ? 1 : -1; }
+      }
+      if (pen > deepest) { deepest = pen; cx = ox; cz = oz; push = dir; }
     }
     if (deepest <= 0) return;
 
-    // push out, back towards the track
-    const nnx = side ? -loc.nx : loc.nx, nnz = side ? -loc.nz : loc.nz;
+    // push out
+    const nnx = loc.nx * push, nnz = loc.nz * push;
     this.x += nnx * deepest; this.z += nnz * deepest;
 
     // impulse at the contact corner, with friction along the wall

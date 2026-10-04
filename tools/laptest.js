@@ -67,16 +67,23 @@ for (const assists of [true, false]) {
   }
 }
 
+// Run-off cost: the car runs wide at 70 mph and stays flat out across 60 m
+// of each surface. Gravel should cost far more than the green tarmac run-off.
+console.log('\nRUNNING WIDE (60 m flat out from 70 mph)');
+for (const [name, surf] of [['tarmac run-off', SURF.RUNOFF], ['grass', SURF.GRASS], ['gravel', SURF.GRAVEL]]) {
+  const car = makePadCar(surf);
+  car.vx = 31.3; car.speed = 31.3;
+  let dist = 0, t = 0;
+  while (dist < 60 && t < 20) {
+    car.step({ steer: 0, throttle: 1, brake: 0, drs: false });
+    dist += car.speed * STEP; t += STEP;
+  }
+  console.log(`  ${name.padEnd(15)} ${t.toFixed(2)} s, out at ${(car.speed * 2.23694).toFixed(0)} mph`);
+}
+
 // Constant-radius test on an endless flat car park.
 function stability(speed, mode, assists) {
-  const N = 10, flat = new Float64Array(N);
-  const pad = {
-    N, ds: 1, length: N, halfWidth: 1e6, x: flat, z: flat, h: flat, tx: new Float64Array(N).fill(1), tz: flat,
-    nx: flat, nz: new Float64Array(N).fill(1), wall: [new Float64Array(N).fill(1e9), new Float64Array(N).fill(1e9)],
-    locate: (x, z, h, o) => Object.assign(o, { i: 0, s: 0, d: 0, h: 0, grade: 0, vcurv: 0, tx: 1, tz: 0, nx: 0, nz: 1 }),
-    surfaceAt: () => SURF.TARMAC, inDRS: () => false,
-  };
-  const car = new Car(GT, pad);
+  const car = makePadCar(SURF.TARMAC);
   car.assists = assists;
   car.vx = speed;
   let worst = 0;
@@ -95,4 +102,17 @@ function stability(speed, mode, assists) {
     }
   }
   return worst;
+}
+
+// A car on an endless flat area of one surface, with no barriers.
+function makePadCar(surface) {
+  const N = 10, flat = new Float64Array(N);
+  const pad = {
+    N, ds: 1, length: N, halfWidth: 1e6, x: flat, z: flat, h: flat, tx: new Float64Array(N).fill(1), tz: flat,
+    nx: flat, nz: new Float64Array(N).fill(1), wall: [new Float64Array(N).fill(1e9), new Float64Array(N).fill(1e9)],
+    locate: (x, z, h, o) => Object.assign(o, { i: 0, s: 0, d: 0, h: 0, grade: 0, vcurv: 0, tx: 1, tz: 0, nx: 0, nz: 1 }),
+    surfaceAt: () => surface, inDRS: () => false,
+    pitWallIn: flat, inPitLimiter: () => false, pitSpeed: 99,
+  };
+  return new Car(GT, pad);
 }

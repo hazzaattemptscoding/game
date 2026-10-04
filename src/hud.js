@@ -34,13 +34,13 @@ export class Hud {
           <div class="hud-gear" id="h-gear">1</div>
         </div>
         <div class="hud-lights">
-          <span id="h-drs">DRS</span><span id="h-tc">TC</span><span id="h-abs">ABS</span><span id="h-esc">ESC</span>
+          <span id="h-pit">PIT</span><span id="h-drs">DRS</span><span id="h-tc">TC</span><span id="h-abs">ABS</span><span id="h-esc">ESC</span>
         </div>
       </div>
       <pre class="hud-debug" id="h-debug"></pre>
       <div class="hud-help" id="h-help">Arrows or WASD to drive · Space for DRS · R reset · C camera · Esc settings</div>`;
     const $ = id => root.querySelector('#' + id);
-    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help') };
+    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help') };
     this.flashUntil = 0;
     this.sectorCells = [];
     setTimeout(() => this.el.help.classList.add('fade'), 9000);
@@ -63,6 +63,7 @@ export class Hud {
     e.rev.className = car.rpm > car.cfg.upshiftRpm - 300 ? 'hot' : '';
 
     e.drs.className = car.drs ? 'on' : track.inDRS(car.loc.s) ? 'zone' : '';
+    e.pit.className = car.pitLimiter ? 'on' : '';
     e.tc.className = car.assists ? (car.tc ? 'act' : 'arm') : '';
     e.abs.className = car.assists ? (car.abs ? 'act' : 'arm') : '';
     e.esc.className = car.assists ? (car.esc ? 'act' : 'arm') : '';
