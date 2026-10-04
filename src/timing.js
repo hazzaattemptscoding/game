@@ -18,6 +18,7 @@ export class LapTimer {
     this.lastSectors = null;
     this.best = null;
     this.bestSectors = [null, null, null];
+    this.history = [];       // every finished lap: { lap, time, sectors: [s1, s2, s3], warnings, valid }, oldest first (the out lap is not a lap)
     this.prevS = null;
     this.distance = 0;       // total distance driven along the lap, for race positions
     this.events = [];        // {type: 'sector'|'lap', ...} since last read
@@ -65,6 +66,8 @@ export class LapTimer {
       this.lastSectors = this.current.slice();
       if (isBest) this.best = lapTime;
       this.lap++;
+      const warnings = this.limits.countFor(this.lap);
+      this.history.push({ lap: this.lap, time: lapTime, sectors: this.lastSectors, warnings, valid: warnings === 0 });
       this.events.push({ type: 'lap', time: lapTime, best: isBest, sectors: this.lastSectors });
     }
     this.lapStart = time;

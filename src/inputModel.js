@@ -29,3 +29,17 @@ export function keyboardStep(state, keys, dt, speed = 0) {
   state.brake = toward(state.brake, keys.down ? 1 : 0, keys.down ? KEY_BRAKE_IN : KEY_PEDAL_OUT, dt);
   return state;
 }
+
+// Cursor steering: the mouse's sideways position in the window is the steering. A small dead zone in the middle
+// and a curve (above 1) keep the centre fine; the edges are full lock. `sens` scales it (1 = the edge is full lock,
+// 2 = full lock halfway out). Returns -1..1, right positive.
+export const CURSOR_DEADZONE = 0.04;   // share of half the window width
+export const CURSOR_CURVE = 1.6;
+export const CURSOR_RATE = 14;         // how fast the smoothed value follows the mouse, per second (0 to full lock in about 0.07 s)
+
+export function cursorSteer(x, width, sens = 1) {
+  if (!(width > 0) || !Number.isFinite(x)) return 0;
+  const n = Math.max(-1, Math.min(1, (x - width / 2) / (width / 2)));
+  const m = Math.abs(n) < CURSOR_DEADZONE ? 0 : (Math.abs(n) - CURSOR_DEADZONE) / (1 - CURSOR_DEADZONE);
+  return Math.max(-1, Math.min(1, Math.sign(n) * m ** CURSOR_CURVE * sens));
+}

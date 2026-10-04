@@ -106,13 +106,15 @@ export function createLobby(ctx) {
   // --- per frame ---
   // the car goes out 20 times a second on a timer, not on the frame, so a slow frame rate does not make us look silent
   setInterval(() => {
-    if (mp.players > 1) mp.sendState(encodeState(stateFromCar(ctx.car, ctx.timer.currentLap(), mp.col, name(), performance.now())));
+    if (mp.players > 1) mp.sendState(encodeState(stateFromCar(ctx.car, ctx.timer.currentLap(), mp.col, name(), performance.now(), ctx.timer.best, ctx.timer.last)));
   }, SEND_MS);
   let size = { w: innerWidth, h: innerHeight }, project = null;
   return {
     get active() { return mp.active; },
     get joined() { return ghosts.size > 0; },
     ghosts,       // for tests and the console
+    name,         // our name in the room
+    board(own) { return ghosts.board(own); },     // the lap time board rows, for the Tab board
     // the other cars for Car.collideCars at local time nowMs (performance.now() clock)
     solids(nowMs) { return ghosts.size ? ghosts.solids(nowMs) : NO_CARS; },
     update(nowMs) {

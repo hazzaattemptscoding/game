@@ -79,9 +79,10 @@ export class Hud {
 
     e.drs.className = car.drs ? 'on' : track.inDRS(car.loc.s) ? 'zone' : '';
     e.pit.className = car.pitLimiter ? 'on' : '';
-    e.tc.className = car.assists ? (car.tc ? 'act' : 'arm') : '';
-    e.abs.className = car.assists ? (car.abs ? 'act' : 'arm') : '';
-    e.esc.className = car.assists ? (car.esc ? 'act' : 'arm') : '';
+    // each assist chip: struck through and dim when that assist is switched off, lit when it is working, grey when it is ready
+    e.tc.className = car.assistTc ? (car.tc ? 'act' : 'arm') : 'off';
+    e.abs.className = car.assistAbs ? (car.abs ? 'act' : 'arm') : 'off';
+    e.esc.className = car.assistEsc ? (car.esc ? 'act' : 'arm') : 'off';
 
     e.lap.textContent = fmtTime(timer.running(simTime));
     e.last.textContent = fmtTime(timer.last);

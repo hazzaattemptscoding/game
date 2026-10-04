@@ -68,7 +68,7 @@ export const GT = {
   steerLimit: 1.05,
   steerSlack: 0.02,    // extra angle on top (rad), so there is always a bit more to give
 
-  // --- Assists (only when assists are switched on) ----------------------
+  // --- Assists (each one only when it is switched on) ----------------------
   tcFloor: 0.25,       // traction control never cuts drive below this share of grip
   escThreshold: 0.06,  // stability control steps in when the car rotates this much faster than its path (rad/s)
   escSlipGain: 2,      // how much the angle of a slide (not just its growth) counts

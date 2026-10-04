@@ -196,7 +196,7 @@ export class Driver {
 // would press R. `onStep(car, input, timer)` sees every step of the flying laps.
 export function runLaps(track, cfg, profile, { assists = true, laps = 1, seed = 7, line, onStep } = {}) {
   const car = new Car(cfg, track);
-  car.assists = assists;
+  car.setAssists(assists);
   car.placeAt(-20, 0);
   const driver = new Driver(track, cfg, profile, { line, seed });
   const timer = new LapTimer(track);

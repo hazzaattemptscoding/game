@@ -53,7 +53,7 @@ export class Car {
     this.track = track;
     this.a = cfg.wheelbase * (1 - cfg.frontWeight); // centre of gravity to front axle
     this.b = cfg.wheelbase * cfg.frontWeight;       // centre of gravity to rear axle
-    this.assists = true;
+    this.assistTc = true; this.assistAbs = true; this.assistEsc = true;   // each assist is switched on its own, see setAssists
     this.wetGrip = 1;         // set by weather, 1 = dry
     this.loc = { i: 0 };
     this.prev = {};
@@ -61,6 +61,16 @@ export class Car {
     this.events = { shift: 0, hit: 0 };
     this.placeAt(0, 0);
   }
+
+  // true, false, or { tc, abs, esc } (a missing key leaves that assist as it is)
+  setAssists(v) {
+    if (typeof v === 'boolean') { this.assistTc = this.assistAbs = this.assistEsc = v; return; }
+    if (v.tc !== undefined) this.assistTc = !!v.tc;
+    if (v.abs !== undefined) this.assistAbs = !!v.abs;
+    if (v.esc !== undefined) this.assistEsc = !!v.esc;
+  }
+  get assists() { return { tc: this.assistTc, abs: this.assistAbs, esc: this.assistEsc }; }
+  set assists(v) { this.setAssists(v); }   // old code that sets car.assists = true|false keeps working
 
   // Put the car on the track at distance s, offset d to the side, stationary.
   placeAt(s, d) {
@@ -212,8 +222,9 @@ export class Car {
 
     // --- combine with cornering: a tyre has one budget of grip to share ---
     const front = this.axle(reqF, FmaxF, curveF, false);
-    const rear = this.axle(reqR, FmaxR, curveR, drive * dir > 0 && brake === 0);
-    this.tc = rear.assisted && drive * dir > 0;
+    const rearDrives = drive * dir > 0 && brake === 0;   // the rear tyres are pulling: traction control, otherwise ABS
+    const rear = this.axle(reqR, FmaxR, curveR, rearDrives);
+    this.tc = rear.assisted && rearDrives;
     this.abs = (front.assisted || rear.assisted) && brake > 0;
     this.spin = rear.slipping && drive * dir > 0;
     this.lock = (front.slipping || rear.slipping) && brake > 0;
@@ -227,7 +238,7 @@ export class Car {
     // --- stability control: stops the car rotating faster than its path, and
     // pulls it back when the tail is already well out ---
     this.esc = false;
-    if (this.assists && vx > 5) {
+    if (this.assistEsc && vx > 5) {
       const beta = Math.atan2(vy, vx);   // body slip: angle between the nose and the direction of travel
       const signal = r - (Fy / m) / vx - c.escSlipGain * beta;
       if (Math.sign(signal) === Math.sign(r) && Math.abs(signal) > c.escThreshold) {
@@ -291,8 +302,8 @@ export class Car {
   // One axle: share the grip between forward force and cornering.
   axle(req, Fmax, curve, isDrive) {
     const c = this.cfg, out = { fx: req, fy: 0, slipping: false, assisted: false };
-    if (this.assists) {
-      // traction control and ABS: keep the tyre inside its grip budget
+    if (isDrive ? this.assistTc : this.assistAbs) {
+      // traction control (drive) or ABS (braking): keep the tyre inside its grip budget
       const room = Math.max(isDrive ? c.tcFloor : 0.3, Math.sqrt(Math.max(0, 1 - curve * curve))) * Fmax * 0.98;
       if (Math.abs(req) > room) { out.fx = Math.sign(req) * room; out.assisted = true; }
     }

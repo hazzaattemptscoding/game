@@ -19,6 +19,7 @@ import { Hud } from './hud.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { ReportTool } from './report.js';
 import { createLobby } from './lobby.js';
+import { createBoard } from './board.js';
 import { CarAudio } from './audio.js';
 
 const params = new URLSearchParams(location.search);
@@ -27,7 +28,7 @@ const settings = loadSettings();
 // --- world ---
 const track = buildTrack();
 const car = new Car(GT, track);
-car.assists = settings.assists;
+car.setAssists({ tc: settings.assistTc, abs: settings.assistAbs, esc: settings.assistEsc });
 car.placeAt(params.has('at') ? +params.get('at') : -20, 0);  // ?at=1500 starts the car 1500 m into the lap
 const timer = new LapTimer(track);
 let autopilot = params.has('autopilot') ? new Autopilot(track, GT, { skill: 0.9 }) : null;
@@ -76,11 +77,13 @@ if (params.has('viewat')) {
   const i = Math.round(((s % track.length) + track.length) % track.length) % track.N, j = (i + Math.round(ahead)) % track.N;
   fixedView = [track.x[i] + track.nx[i] * d, track.h[i] + hgt, track.z[i] + track.nz[i] * d, track.x[j], track.h[j], track.z[j]];
 }
-const input = createInput();
+const input = createInput(settings, { boardAllowed: () => panel.hidden && !reportTool.opened });   // Tab is the times board, except while a panel needs it for moving between buttons
 const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthesised sound, starts at the first key press or touch
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
 const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search });   // multiplayer: idle until a room is opened
+const board = createBoard(document.getElementById('board'), { timer, lobby });
+const steerBar = document.getElementById('steer-bar'), steerMark = steerBar.firstElementChild;
 const IDLE = { steer: 0, throttle: 0, brake: 0.3, drs: false };
 const history = { inputs: [], telemetry: [] };
 let restoreTopDown = false;
@@ -101,7 +104,10 @@ resize();
 const panel = document.getElementById('settings');
 function syncPanel() {
   panel.querySelectorAll('[data-units]').forEach(b => b.classList.toggle('sel', b.dataset.units === settings.units));
-  panel.querySelectorAll('[data-assists]').forEach(b => b.classList.toggle('sel', String(settings.assists) === b.dataset.assists));
+  const assistKey = { tc: 'assistTc', abs: 'assistAbs', esc: 'assistEsc' };
+  panel.querySelectorAll('[data-assist]').forEach(b => b.classList.toggle('sel', String(settings[assistKey[b.dataset.assist]]) === b.dataset.on));
+  panel.querySelectorAll('[data-steering]').forEach(b => b.classList.toggle('sel', settings.steering === b.dataset.steering));
+  const sens = panel.querySelector('#steersens'); if (sens) { sens.value = Math.round(settings.steerSens * 100); sens.disabled = settings.steering !== 'cursor'; }
   panel.querySelectorAll('[data-debug]').forEach(b => b.classList.toggle('sel', String(settings.debug) === b.dataset.debug));
   panel.querySelectorAll('[data-topdown]').forEach(b => b.classList.toggle('sel', String(topDown) === b.dataset.topdown));
   panel.querySelectorAll('[data-blockout]').forEach(b => b.classList.toggle('sel', String(!!settings.blockout) === b.dataset.blockout));
@@ -113,7 +119,11 @@ panel.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.units) settings.units = b.dataset.units;
-  if (b.dataset.assists) { settings.assists = b.dataset.assists === 'true'; car.assists = settings.assists; }
+  if (b.dataset.assist) {
+    settings[{ tc: 'assistTc', abs: 'assistAbs', esc: 'assistEsc' }[b.dataset.assist]] = b.dataset.on === 'true';
+    car.setAssists({ tc: settings.assistTc, abs: settings.assistAbs, esc: settings.assistEsc });
+  }
+  if (b.dataset.steering) settings.steering = b.dataset.steering;
   if (b.dataset.debug) settings.debug = b.dataset.debug === 'true';
   if (b.dataset.blockout) { settings.blockout = b.dataset.blockout === 'true'; applyLook(); }
   if (b.dataset.topdown) { topDown = b.dataset.topdown === 'true'; applyLook(); }
@@ -124,11 +134,12 @@ panel.addEventListener('click', e => {
   syncPanel();
 });
 panel.addEventListener('input', e => {
+  if (e.target.id === 'steersens') { settings.steerSens = Math.max(0.5, Math.min(2, +e.target.value / 100)); saveSettings(settings); return; }
   if (e.target.id !== 'volume') return;
   settings.volume = Math.max(0, Math.min(1, +e.target.value / 100));
   saveSettings(settings);
 });
-function togglePanel(open = panel.hidden) { panel.hidden = !open; syncPanel(); }
+function togglePanel(open = panel.hidden) { panel.hidden = !open; if (open) board.hide(); syncPanel(); }
 syncPanel();
 
 // --- loop ---
@@ -143,6 +154,9 @@ function frame(now) {
     if (a === 'reset') { car.resetToTrack(); car.contactGrace = 1.5; }
     if (a === 'camera') rig.next();
     if (a === 'settings') togglePanel();
+    if (a === 'board-on' && panel.hidden) board.show();     // hold Tab
+    if (a === 'board-off') board.hide();
+    if (a === 'board' && panel.hidden) board.toggle();      // the Times button on a touch screen
     if (a === 'debug') { settings.debug = !settings.debug; saveSettings(settings); syncPanel(); }
     if (a === 'report' && !reportTool.opened) {
       restoreTopDown = topDown;
@@ -197,13 +211,17 @@ function frame(now) {
   audio.update(car, dt, paused);
   lobby.update(now);
   hud.update(car, timer, track, simTime);
+  board.update(simTime, now);
+  const cursorOn = settings.steering === 'cursor';
+  steerBar.hidden = !cursorOn;
+  if (cursorOn) steerMark.style.left = `${(50 + playerInput.steer * 44).toFixed(1)}%`;
   renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
 // for quick checks from the browser console
-window.lakeside = { car, track, timer, settings, reportTool, lobby };
+window.lakeside = { car, track, timer, settings, reportTool, lobby, board, input };
 
 function skyTexture(top, bottom) {
   const c = document.createElement('canvas');

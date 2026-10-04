@@ -30,7 +30,7 @@ function cutLine(zone, offset) {
 // drive from 150 m before the zone to 60 m after it; returns the warnings on that corner
 function drive(zone, line) {
   const car = new Car(GT, track);
-  car.assists = true;
+  car.setAssists(true);
   const timer = new LapTimer(track);
   car.placeAt(zone.from - 150, 0);
   const ap = new Autopilot(track, GT, { skill: 0.8, line });

@@ -35,7 +35,9 @@ const TAU = Math.PI * 2;
 const wrapAngle = a => Math.atan2(Math.sin(a), Math.cos(a));
 const DIGITS = { t: 0, x: 2, y: 2, z: 2, h: 3, vx: 2, vz: 2, yr: 3, st: 3, w: 2, thr: 2, brk: 2, pz: 3, rx: 3, col: 0, lap: 0, s: 1 };
 
-// One state on the wire: a flat array ['s', ...numbers, name]. Around 120 bytes as JSON.
+// One state on the wire: a flat array ['s', ...numbers, name, best, last]. Around 120 bytes as JSON.
+// best and last are the sender's best and last lap times in seconds (0 = none yet). They come after the name so
+// that anything reading only up to the name still works, and a packet without them decodes with 0.
 export function encodeState(o) {
   const a = ['s'];
   for (const f of FIELDS) {
@@ -44,8 +46,12 @@ export function encodeState(o) {
     a.push(round(v, DIGITS[f]));
   }
   a.push(cleanName(o.name));
+  a.push(lapTime(o.bl), lapTime(o.ll));
   return a;
 }
+
+// a lap time in seconds for the wire: 0 for none or nonsense, else milliseconds precision
+const lapTime = v => (typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 3600 ? round(v, 3) : 0);
 
 // Returns a clean state or null. Anything from the network is untrusted: wrong types, NaN and absurd
 // values are rejected, and the name is stripped to plain text.
@@ -64,16 +70,18 @@ export function decodeState(a) {
   o.lap = Math.max(0, Math.min(9999, Math.round(o.lap)));
   o.s = Math.max(0, Math.min(1e5, o.s));
   o.name = cleanName(a[FIELDS.length + 1]);
+  o.bl = lapTime(a[FIELDS.length + 2]);      // best lap, 0 if missing or bad
+  o.ll = lapTime(a[FIELDS.length + 3]);      // last lap
   return o;
 }
 
-// Reads the sending player's own car into a state (t is added by the caller).
-export function stateFromCar(car, lap, col, name, t) {
+// Reads the sending player's own car into a state (t is added by the caller). best and last are the lap times in seconds, or null.
+export function stateFromCar(car, lap, col, name, t, best = null, last = null) {
   const along = Math.cos(car.heading) * (car.loc.tx || 0) + Math.sin(car.heading) * (car.loc.tz || 0);
   return {
     t, x: car.x, y: car.y, z: car.z, h: wrapAngle(car.heading), vx: car.vx, vz: car.vz, yr: car.yawRate, st: car.steer, w: car.wheelSpinAngle,
     thr: car.throttle, brk: car.brake, pz: Math.atan((car.loc.grade || 0) * along) + (car.groundPitch || 0), rx: car.groundRoll || 0,
-    col, lap, s: car.loc.s || 0, name,
+    col, lap, s: car.loc.s || 0, name, bl: best || 0, ll: last || 0,
   };
 }
 
@@ -226,6 +234,21 @@ export class Ghosts {
       const d = lead - r.dist;
       r.gap = i === 0 ? '' : d >= length ? `+${Math.floor(d / length)} lap${d >= 2 * length ? 's' : ''}` : `+${(d / Math.max(r.speed, 20)).toFixed(1)}s`;
     });
+    return rows;
+  }
+
+  // The lap time board: every player (you included) ordered by best lap, fastest first, players with no lap last.
+  // own = { name, laps, best, last } with times in seconds or null. Laps are completed laps. gap is to the fastest best lap.
+  board(own) {
+    const rows = [{ id: 'me', name: own.name || 'You', col: 0, laps: own.laps || 0, best: own.best || 0, last: own.last || 0, me: true }];
+    for (const g of this.map.values()) {
+      if (!g.info) continue;
+      rows.push({ id: g.id, name: g.name || 'Player', col: g.col, laps: Math.max(0, g.info.lap - 1), best: g.info.bl || 0, last: g.info.ll || 0, me: false });
+    }
+    const key = r => r.best || 1e9;      // no lap yet sorts last
+    rows.sort((a, b) => key(a) - key(b) || b.laps - a.laps || (a.me ? -1 : b.me ? 1 : 0));
+    const lead = rows[0].best;
+    for (const r of rows) r.gap = r.best && lead && r.best > lead ? r.best - lead : 0;
     return rows;
   }
 }

@@ -241,7 +241,7 @@ function publicFields(c) {
 // reached beyond the outside edge.
 function depart(T, c, s, d, v, angle, reaction) {
   const car = new Car(GT, T);
-  car.assists = false;
+  car.setAssists(false);
   car.placeAt(s, d);
   const g = c.outside === 'L' ? -1 : 1;
   car.heading += g * angle * Math.PI / 180;

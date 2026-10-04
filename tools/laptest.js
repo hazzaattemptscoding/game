@@ -55,7 +55,7 @@ const fails = [], notes = [];
 
 for (const run of runs) {
   const car = new Car(GT, track);
-  car.assists = run.assists;
+  car.setAssists(run.assists);
   car.placeAt(-20, 0);
   const ap = new Autopilot(track, GT, { skill: run.skill, line });
   const timer = new LapTimer(track);
@@ -252,7 +252,7 @@ function holdToLock(speed) {
 // Constant-radius test on an endless flat car park.
 function stability(speed, mode, assists) {
   const car = makePadCar(SURF.TARMAC);
-  car.assists = assists;
+  car.setAssists(assists);
   car.vx = speed;
   let worst = 0;
   for (let k = 0; k < 7 / STEP; k++) {

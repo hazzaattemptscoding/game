@@ -50,6 +50,7 @@ html, body {
 .hud-lights span.on { background: var(--yel); color: var(--ink); }
 .hud-lights span.arm { color: #9aa; }
 .hud-lights span.act { background: var(--paper); color: var(--ink); }
+.hud-lights span.off { opacity: .35; text-decoration: line-through; }
 
 .hud-debug { position: absolute; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); margin: 0; padding: 8px 10px;
   font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; background: rgba(20,24,29,.75); display: none; }
@@ -93,6 +94,47 @@ html, body {
 .stand-row em { font-style: normal; opacity: .75; }
 .stand-row b { min-width: 52px; text-align: right; font-weight: 400; }
 body.touch .hud-stand { width: 170px; font-size: 12px; }
+
+/* cursor steering indicator: a thin bar at the bottom centre, the marker follows the steering */
+#steer-bar { position: fixed; left: 50%; bottom: calc(6px + env(safe-area-inset-bottom, 0px)); width: min(320px, 40vw); height: 4px; transform: translateX(-50%); background: rgba(20,24,29,.55); pointer-events: none; }
+#steer-bar[hidden] { display: none; }
+#steer-bar::before { content: ""; position: absolute; left: 50%; top: -2px; width: 1px; height: 8px; background: rgba(242,239,230,.5); }
+#steer-bar i { position: absolute; left: 50%; top: -2px; width: 12%; height: 8px; margin-left: -6%; background: var(--paper); }
+
+/* the times board: hold Tab, or the Times button on a touch screen */
+#board { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; overflow-y: auto; pointer-events: none; font-variant-numeric: tabular-nums; }
+#board[hidden] { display: none; }
+#board h2 { margin: 0; font-size: 34px; font-style: italic; }
+#board h3 { margin: 0 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--amber); }
+#board > * { width: min(760px, 100%); }
+#board section, #board h2 { background: rgba(20,24,29,.9); padding: 8px 14px; }
+#board section { margin: 0; }
+#board .bd-big { display: flex; flex-wrap: wrap; gap: 4px 28px; }
+#board .bd-big span { display: block; font-size: 13px; opacity: .7; }
+#board .bd-big b { font-size: 26px; font-style: italic; }
+#board .bd-sectors { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+#board .bd-sectors span { font-size: 13px; opacity: .7; margin-right: 6px; }
+#board .bd-sectors i { font-style: normal; font-size: 15px; padding: 2px 8px; background: #2b3138; }
+#board table { width: 100%; border-collapse: collapse; font-size: 16px; }
+#board th { text-align: left; font-size: 12px; font-weight: 400; opacity: .65; padding: 2px 6px; }
+#board td { padding: 3px 6px; border-top: 1px solid rgba(242,239,230,.1); white-space: nowrap; }
+#board td.name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+#board em { font-style: normal; font-size: 12px; color: var(--yel); margin-left: 4px; }
+#board tr.me td { color: var(--yel); }
+#board tr.pb td:nth-child(2) { font-weight: 700; }
+#board .purple { color: #d3a6ff; }
+#board i.purple, #board i.green, #board i.yellow { color: var(--ink); }
+#board i.purple { background: var(--purple); }
+#board i.green, #board b.green, #board td.green { color: var(--green); }
+#board i.green { background: var(--green); color: var(--ink); }
+#board i.yellow { background: var(--yel); }
+#board .yellow { color: var(--yel); }
+#board .amber, #board b.amber { color: var(--amber); font-weight: 400; }
+#board .bd-none { margin: 0; font-size: 14px; opacity: .7; }
+.t-top .t-times { display: none; }
+body.touch .t-top .t-times { display: block; }
+body.touch #board h2 { font-size: 26px; }
+@media (max-height: 560px) { #board { justify-content: flex-start; } }
 
 /* top buttons, always available */
 .t-top { position: fixed; right: 12px; top: calc(12px + env(safe-area-inset-top, 0px)); display: flex; gap: 6px; }

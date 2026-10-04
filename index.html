@@ -9,6 +9,8 @@
 <body>
 <canvas id="view"></canvas>
 <div id="hud"></div>
+<div id="board" hidden></div>
+<div id="steer-bar" hidden><i></i></div>
 <div id="touch">
   <div class="t-steer"><div class="t-hint">Drag to steer</div><div class="t-knob"></div></div>
   <div class="t-pedals">
@@ -20,6 +22,7 @@
 <div class="t-top">
   <button data-action="reset" aria-label="Back on track">Reset</button>
   <button data-action="camera" aria-label="Switch camera">Camera</button>
+  <button data-action="board" class="t-times" aria-label="Lap times">Times</button>
   <button data-action="report" aria-label="Report a problem">Report</button>
   <button data-action="settings" aria-label="Settings">Settings</button>
 </div>
@@ -53,8 +56,16 @@
     <h2>Settings</h2>
     <label>Speed</label>
     <div class="row"><button data-units="mph">mph</button><button data-units="kmh">km/h</button></div>
-    <label>Assists (traction, ABS, stability)</label>
-    <div class="row"><button data-assists="true">On</button><button data-assists="false">Off</button></div>
+    <label>Traction control</label>
+    <div class="row"><button data-assist="tc" data-on="true">On</button><button data-assist="tc" data-on="false">Off</button></div>
+    <label>ABS</label>
+    <div class="row"><button data-assist="abs" data-on="true">On</button><button data-assist="abs" data-on="false">Off</button></div>
+    <label>Stability control</label>
+    <div class="row"><button data-assist="esc" data-on="true">On</button><button data-assist="esc" data-on="false">Off</button></div>
+    <label>Steering</label>
+    <div class="row"><button data-steering="keyboard">Keyboard</button><button data-steering="cursor">Cursor</button></div>
+    <label for="steersens">Cursor sensitivity</label>
+    <input id="steersens" type="range" min="50" max="200" step="5" value="100">
     <label>View</label>
     <div class="row"><button data-topdown="false">Driving</button><button data-topdown="true">Top-down debug</button></div>
         <label>Detail</label>

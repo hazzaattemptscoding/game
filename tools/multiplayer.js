@@ -7,7 +7,7 @@ import { buildTrack } from '../src/track.js';
 import { Car, STEP } from '../src/physics.js';
 import { GT } from '../src/cars.js';
 import { carContact } from '../src/carContact.js';
-import { encodeState, decodeState, stateFromCar, StateBuffer, Ghosts, cleanName, DELAY, MAX_EXTRAP, TIMEOUT, PALETTE } from '../src/ghosts.js';
+import { encodeState, decodeState, stateFromCar, StateBuffer, Ghosts, cleanName, FIELDS, DELAY, MAX_EXTRAP, TIMEOUT, PALETTE } from '../src/ghosts.js';
 import { Multiplayer, makeCode, cleanCode, parseBroker, brokerFromSearch, BROKER } from '../src/multiplayer.js';
 
 const fails = [];
@@ -18,12 +18,13 @@ const rnd = (() => { let s = 12345; return () => (s = (s * 1664525 + 1013904223)
 // ---------------------------------------------------------------- 1. wire format
 console.log('WIRE FORMAT');
 {
-  const s = { t: 123456.7, x: 1234.5678, y: 12.345, z: -987.654, h: 2.12345, vx: 41.236, vz: -3.141, yr: 0.4567, st: -0.21, w: 7.5, thr: 0.8, brk: 0, pz: 0.05, rx: -0.02, col: 3, lap: 4, s: 2345.67, name: 'Ada' };
+  const s = { t: 123456.7, x: 1234.5678, y: 12.345, z: -987.654, h: 2.12345, vx: 41.236, vz: -3.141, yr: 0.4567, st: -0.21, w: 7.5, thr: 0.8, brk: 0, pz: 0.05, rx: -0.02, col: 3, lap: 4, s: 2345.67, name: 'Ada', bl: 91.2344, ll: 92.5 };
   const wire = JSON.parse(JSON.stringify(encodeState(s)));      // through JSON, as the data channel does
   const d = decodeState(wire);
   check(d && d.name === 'Ada' && d.col === 3 && d.lap === 4, 'round trip: name, colour, lap');
   for (const k of ['x', 'y', 'z']) check(d && near(d[k], s[k], 0.006), `round trip ${k}`);
   for (const k of ['vx', 'vz', 'yr', 'st', 'thr', 'brk', 'pz', 'rx']) check(d && near(d[k], s[k], 0.006), `round trip ${k}`);
+  check(d && near(d.bl, 91.234, 0.0006) && d.ll === 92.5, 'round trip best and last lap times');
   check(d && near(d.h, s.h, 0.001) && near(d.s, s.s, 0.06) && near(d.t, Math.round(s.t), 0.51), 'round trip heading, s, t');
   check(d && near(d.w, s.w % (Math.PI * 2), 0.006), 'wheel angle wrapped to one turn');
   const bytes = JSON.stringify(encodeState(s)).length;
@@ -39,11 +40,27 @@ console.log('WIRE FORMAT');
   const wild = decodeState(wire.map((v, i) => i === 15 ? 99 : i === 16 ? -5 : v));
   check(wild && wild.col <= 7 && wild.lap === 0, 'colour and lap clamped');
 
+  // lap times ride after the name, so the format stays safe both ways
+  const oldPacket = wire.slice(0, wire.length - 2);          // what a player without lap times sends: ends at the name
+  const od = decodeState(oldPacket);
+  check(od && od.name === 'Ada' && od.lap === 4 && od.bl === 0 && od.ll === 0, 'a packet without lap times decodes with 0 for both');
+  const newer = decodeState([...wire, 7, 'unknown', { x: 1 }]);
+  check(newer && newer.name === 'Ada' && newer.bl === d.bl && newer.ll === d.ll, 'unknown trailing fields are ignored');
+  for (const [label, v] of [['string', '91.2'], ['NaN', NaN], ['Infinity', Infinity], ['negative', -3], ['zero', 0], ['an hour', 3600], ['null', null], ['object', {}]]) {
+    const w2 = decodeState(wire.map((x, i) => i === wire.length - 2 ? v : x));
+    check(w2 && w2.bl === 0 && w2.ll === d.ll && w2.name === 'Ada', `a bad best lap (${label}) becomes 0 and the packet still decodes`);
+  }
+  const noTimes = encodeState({ ...s, bl: undefined, ll: null });
+  check(noTimes[noTimes.length - 2] === 0 && noTimes[noTimes.length - 1] === 0 && noTimes.length === FIELDS.length + 4, 'no lap times are sent as 0');
+  check(JSON.stringify(encodeState({ ...s, bl: 91.23456 })).includes('91.235'), 'lap times go out to the millisecond');
+
   // from a real car
   const track = buildTrack(), car = new Car(GT, track);
   car.placeAt(500, 3);
   const st = decodeState(JSON.parse(JSON.stringify(encodeState(stateFromCar(car, 2, 4, 'Zed', 1000)))));
-  check(st && near(st.x, car.x, 0.01) && near(st.s, car.loc.s, 0.1) && st.lap === 2, 'state from a Car');
+  check(st && near(st.x, car.x, 0.01) && near(st.s, car.loc.s, 0.1) && st.lap === 2 && st.bl === 0 && st.ll === 0, 'state from a Car');
+  const st2 = decodeState(JSON.parse(JSON.stringify(encodeState(stateFromCar(car, 3, 4, 'Zed', 1000, 88.8, 89.9)))));
+  check(st2 && st2.bl === 88.8 && st2.ll === 89.9, 'state from a Car carries best and last lap');
 }
 
 // ---------------------------------------------------------------- 2. interpolation, extrapolation, silence

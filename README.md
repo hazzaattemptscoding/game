@@ -67,8 +67,11 @@ then open the game with `?broker=your-machine:9000` (for a quick test on one net
 | Camera | C | X / square |
 | Settings | Esc | Start |
 | Handling readout | I or F3 | |
+| Lap times, sectors, leaderboard (hold) | Tab | |
 
-Touch: drag anywhere on the left half of the screen to steer, pedals and DRS bottom right, Reset, Camera and Settings top right.
+Touch: drag anywhere on the left half of the screen to steer, pedals and DRS bottom right, Reset, Camera, Times (the Tab board) and Settings top right.
+
+Settings has traction control, ABS and stability control as three separate switches, and Steering: Keyboard or Cursor. In Cursor mode the mouse's sideways position in the window steers (a small dead zone in the middle, full lock at the edges, sensitivity slider); the pedals stay on the keyboard and the steering keys add to the cursor.
 
 URL options: `?autopilot` watches the autopilot drive, `?at=1500` starts 1500 m into the lap, `?topdown` opens the top-down debug view.
 
@@ -103,6 +106,7 @@ src/
   cameras.js    chase and bonnet cameras
   input.js      keyboard and gamepad
   hud.js        HUD
+  board.js      the Tab times board: lap history, sector colours, local top 10
   multiplayer.js  rooms, connections and broker settings (PeerJS, peer to peer)
   ghosts.js     other players' cars: wire format, interpolation, name tags, standings data
   lobby.js      the Multiplayer part of the settings panel, and the standings list
