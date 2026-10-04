@@ -57,6 +57,7 @@ const MIN_BARRIER = 5;     // working clearance margin beyond the 4 m minimum (s
 // Corners that get bollards on the inside kerb at the apex: esses and chicanes, where a car could cut straight across.
 // The start of a track limits system (they are only markers for now; nothing is penalised yet).
 const BOLLARD_CORNERS = ['Aileron', 'Rudder', 'Guardroom Chicane', 'Boundary Loop'];
+const TALL_RAMP = 6;        // the tall stretch of the containment wall tapers in height over this many metres at each end
 const SEPARATION = 70;     // single armco goes in only where another part of the track is closer than this
 
 // Pit lane design (reference/LAKESIDE_SAFETY_LAYOUT.md 3.7)
@@ -614,64 +615,32 @@ function buildBarriers(T, corners) {
     const pts = [];
     for (let k = 0; k < run.length; k += step) pts.push(P(run[k], dFn(run[k])));
     if ((run.length - 1) % step) pts.push(P(run[run.length - 1], dFn(run[run.length - 1])));
-    // a part of the containment wall directly behind an impact wall is kept for physics but not drawn
-    if (extra && extra.hideWhere) {
-      const { hideWhere, ...rest } = extra;
-      let from = 0;
-      for (let k = 1; k <= pts.length; k++) {
-        if (k < pts.length && !!hideWhere(pts[k][3]) === !!hideWhere(pts[from][3])) continue;
-        const hid = !!hideWhere(pts[from][3]);
-        add(type, side, pts.slice(from, Math.min(k + 1, pts.length)), hid ? { ...rest, hidden: true, why: rest.why + ' (hidden: an impact wall stands in front of it)' } : rest);
-        from = k;
-      }
-      return;
-    }
     add(type, side, pts, extra);
   };
 
-  // 1. Impact sections from corners.js: a tyre wall in front of double armco,
-  // centred where cars that leave the road would arrive, turned to meet them.
-  const covered = [new Uint8Array(N), new Uint8Array(N)];
+  // 1. Tall stretches: where the departure tests say a car arrives (corners.js sections, justified by the departure
+  // that leaves nearest), the SAME containment line is 1.9 m high with the bolt-head face, sponsor wrap, white band and
+  // catch fence. It runs along the wall line, centred on the section, and tapers in height over TALL_RAMP m at each end.
   const nearBridge = new Uint8Array(N);
   for (let i = 0; i < N; i++) if (T.isBridge[i]) for (let k = -BRIDGE_APPROACH; k <= BRIDGE_APPROACH; k++) nearBridge[wrap(i + k, N)] = 1;
   for (let i = 0; i < N; i++) if (T.isBridge[i]) nearBridge[i] = 0;
-  const tooCloseToRoad = (x, z, y) => {
-    for (let j = 0; j < N; j++) {
-      if (Math.abs(T.h[j] - y) > 4) continue;
-      const dx = x - T.x[j], dz = z - T.z[j];
-      if (Math.abs(dx * T.tx[j] + dz * T.tz[j]) > 0.6) continue;
-      const d = dx * T.nx[j] + dz * T.nz[j], side = d < 0 ? 0 : 1;
-      if (Math.abs(d) - hw - T.kerb[side][j] - T.sausage[side][j] < 4) return true;
-    }
-    return false;
-  };
+  const tall = [new Float32Array(N), new Float32Array(N)], tallOwner = [new Int16Array(N).fill(-1), new Int16Array(N).fill(-1)], tallInfo = [];
+  T.tallStretches = tallInfo;
   for (const c of corners) {
     if (c.class === 'street') continue;
     for (const sec of c.sections || []) {
-      const sd = (sec.side || c.outside) === 'L' ? 0 : 1, g = sd ? 1 : -1;
-      const i = wrap(Math.round(sec.s / T.ds), N);
-      const off = c.class === 'street' ? T.wall[sd][i] : hw + sec.offset;
-      const cx = T.x[i] + T.nx[i] * off * g, cz = T.z[i] + T.nz[i] * off * g;
-      // the face runs along the track, turned outwards by `angle` so the car meets it at a glancing angle
-      const ang = (sec.angle || 0) * Math.PI / 180 * g;
-      const dx = T.tx[i] * Math.cos(ang) - T.tz[i] * Math.sin(ang), dz = T.tx[i] * Math.sin(ang) + T.tz[i] * Math.cos(ang);
-      const half = sec.length / 2, flare = 3, fa = 20 * Math.PI / 180;
-      // flared terminals: the last 3 m at each end bend away from the track
-      const ox = T.nx[i] * g, oz = T.nz[i] * g;
-      const end = sgn => [cx + dx * half * sgn + (dx * Math.cos(fa) * sgn + ox * Math.sin(fa)) * flare,
-        cz + dz * half * sgn + (dz * Math.cos(fa) * sgn + oz * Math.sin(fa)) * flare];
-      const a = end(-1), b = end(1);
-      const pts = [[a[0], T.groundAt(a[0], a[1], i), a[1], i],
-        [cx - dx * half, T.groundAt(cx - dx * half, cz - dz * half, i), cz - dz * half, i],
-        [cx + dx * half, T.groundAt(cx + dx * half, cz + dz * half, i), cz + dz * half, i],
-        [b[0], T.groundAt(b[0], b[1], i), b[1], i]];
-      if (pts.some(([x, y, z]) => tooCloseToRoad(x, z, y))) continue;
-      // why this section is here: the departure test whose stopping point it covers
+      const sd = (sec.side || c.outside) === 'L' ? 0 : 1;
       const dep = (c.departures || []).filter(d => d.depth > 0).sort((p, q) => Math.abs(p.s - sec.s) - Math.abs(q.s - sec.s))[0];
-      if (c.class !== 'street' && !(dep && Math.abs(dep.s - sec.s) <= sec.length / 2 + 20)) continue;   // no departure arrives here: no barrier
-      const why = dep ? `${c.name}: "${dep.test}" leaves at s=${dep.s}, ${dep.depth} m beyond the edge, at ${dep.angle}°` : `${c.name}: placed from corners.js with no departure listed`;
-      add(c.class === 'street' ? BARRIER.CONCRETE : BARRIER.TYRES, sd, pts, { corner: c.name, fence: c.class !== 'street', impact: true, why, spec: { length: sec.length, offset: sec.offset, angle: sec.angle || 0 } });
-      for (let k = -Math.ceil(half + flare); k <= half + flare; k++) covered[sd][wrap(i + k, N)] = 1;
+      if (!(dep && Math.abs(dep.s - sec.s) <= sec.length / 2 + 20)) continue;   // no departure arrives here: no tall wall
+      const nearby = c.departures.filter(d => Math.min(Math.abs(d.s - sec.s), T.length - Math.abs(d.s - sec.s)) <= sec.length / 2 + 3);
+      const need = Math.max(0, ...nearby.map(d => d.depth));
+      const why = `${c.name}: "${dep.test}" leaves at s=${dep.s}, ${dep.depth} m beyond the edge, at ${dep.angle}°: this stretch of the wall is 1.9 m with a catch fence`;
+      const id = tallInfo.push({ why, sd, need, s: sec.s, length: sec.length, corner: c.name, constrained: !!c.constrained }) - 1;
+      const half = sec.length / 2, centre = Math.round(sec.s / T.ds);
+      for (let k = -Math.ceil(half + TALL_RAMP); k <= half + TALL_RAMP; k++) {
+        const outside = Math.max(0, Math.abs(k) - half), r = Math.max(0, 1 - outside / TALL_RAMP), i = wrap(centre + k, N);
+        if (r > tall[sd][i]) { tall[sd][i] = r; tallOwner[sd][i] = id; }
+      }
     }
   }
 
@@ -684,7 +653,7 @@ function buildBarriers(T, corners) {
       let a = 0, b = run.length - 1;
       while (a < b && out(run[a])) a++;
       while (b > a && out(run[b])) b--;
-      const keep = run.slice(a, b + 1);
+      const keep = out(run[a]) ? [] : run.slice(a, b + 1);   // a street zone whose wall is wholly out on the containment line has no street wall
       for (const i of keep) streetWall[i] = 1;
       if (keep.length > 1) follow(BARRIER.CONCRETE, sd, keep, i => g * T.wall[sd][i], 3, { fence: true, why: 'street section: a wall at the track edge (the walls zones in layout.js)' });
     }
@@ -695,14 +664,67 @@ function buildBarriers(T, corners) {
       follow(BARRIER.PARAPET, sd, run, i => g * T.wall[sd][i], 1, { why: 'bridge parapet over the main straight and its approach' });
       for (const ends of [run.slice(0, 5), run.slice(-5)]) follow(BARRIER.TYRES, sd, ends, i => g * (T.wall[sd][i] + 0.3), 1, { impact: true, why: 'tyre stack at the end of the bridge parapet', spec: { length: 4, offset: T.wall[sd][ends[0]], angle: 0 } });
     }
-    // 4. the containment wall: keeps a car on the flat ground. Drawn as a plain 1.2 m tyre wall (plain: true); the
-    // 1.9 m impact sections above are where cars are expected to arrive.
-    // (behind an impact wall it stays for physics but is hidden, so the eye sees one line of barrier)
+    // 4. the containment wall: ONE line that keeps a car on the flat ground. A 1.2 m plain sponsored tyre wall, except along
+    // the tall stretches above (same line, taller, tapering over TALL_RAMP m), so the eye sees one line of barrier.
     // beside a street wall the containment wall keeps to the same easing line, so it joins the street wall in line
     const nearStreet = new Uint8Array(N);
     for (let i = 0; i < N; i++) if (streetWall[i]) for (let k = -20; k <= 20; k++) nearStreet[wrap(i + k, N)] = 1;
     const needs = i => !streetWall[i] && !T.isBridge[i] && !nearBridge[i] && !(sd === 0 && T.pitOut[i]);
-    for (const run of runsOf(N, needs)) if (run.length > 1) follow(BARRIER.ARMCO, sd, run, i => g * (nearStreet[i] ? Math.max(T.wall[sd][i], edge4(i)) : Math.max(T.wall[sd][i], hw + MIN_BARRIER)), 3, { hideWhere: i => covered[sd][i], plain: true, why: 'containment: a low sponsored tyre wall all round the flat ground, so a car never meets an unseen wall' });
+    const plainWhy = 'containment: a low sponsored tyre wall all round the flat ground, so a car never meets an unseen wall';
+    const base = new Float64Array(N);
+    for (let i = 0; i < N; i++) base[i] = nearStreet[i] ? Math.max(T.wall[sd][i], edge4(i)) : Math.max(T.wall[sd][i], hw + MIN_BARRIER);
+    // on the inside of a tight bend an offset line folds back on itself once it is further out than the bend's radius
+    // (the swallowtail kinks). There the wall line is held to 0.7 of the radius (never closer than the 4 m minimum),
+    // eased in and out at 0.25 m per metre, like the wall offset itself.
+    const bend = new Float64Array(N);
+    for (let i = 0; i < N; i++) {
+      const a = wrap(i - 2, N), c = wrap(i + 2, N);
+      const kx = (T.tx[c] - T.tx[a]) / 4, kz = (T.tz[c] - T.tz[a]) / 4;       // d(tangent)/ds, towards the centre of the bend
+      bend[i] = (kx * T.nx[i] + kz * T.nz[i]) * g;                             // curvature seen from this side (positive: inside)
+    }
+    for (let i = 0; i < N; i++) {
+      let towards = 0;
+      for (let k = -5; k <= 5; k++) towards = Math.max(towards, bend[wrap(i + k, N)]);   // the tightest part of the neighbourhood
+      if (towards > 1e-4 && !T.isBridge[i]) base[i] = Math.min(base[i], Math.max(edge4(i) + 0.5, 0.6 / towards));
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i < 2 * N; i++) { const a = (i - 1) % N, b = i % N; base[b] = Math.min(base[b], base[a] + 0.25); }
+      for (let i = 2 * N - 2; i >= 0; i--) { const a = (i + 1) % N, b = i % N; base[b] = Math.min(base[b], base[a] + 0.25); }
+    }
+    // where the wall offset turns from falling to rising (or back) at 0.25 m per metre, the line would bend by up to 28
+    // degrees between 3 m segments: round those turns off with a short moving average (a metre at most). Not beside
+    // a street wall, a bridge or the pit lane, where the line must stay on the exact line it joins.
+    const free = new Uint8Array(N).fill(1);
+    for (let i = 0; i < N; i++) if (nearStreet[i] || nearBridge[i] || T.isBridge[i] || (sd === 0 && T.pitOut[i])) for (let k = -3; k <= 3; k++) free[wrap(i + k, N)] = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      const out = Float64Array.from(base);
+      for (let i = 0; i < N; i++) if (free[i]) {
+        let sum = 0; for (let k = -4; k <= 4; k++) sum += base[wrap(i + k, N)];
+        out[i] = Math.max(sum / 9, edge4(i) + 0.5);
+      }
+      base.set(out);
+    }
+    T.lineOffset = T.lineOffset || [null, null]; T.lineOffset[sd] = base;
+    const line = i => g * base[i];
+    for (const run of runsOf(N, needs)) {
+      if (run.length < 2) continue;
+      const pts = [];
+      for (let k = 0; k < run.length; k += 3) pts.push(P(run[k], line(run[k])));
+      if ((run.length - 1) % 3) pts.push(P(run[run.length - 1], line(run[run.length - 1])));
+      // cut into plain and tall pieces. A tall piece starts and ends on a plain point (height 1.2 m), where the plain
+      // piece next to it ends or starts, so the taper is a ramp and the joint has no step.
+      const key = k => tall[sd][pts[k][3]] > 0 ? 't' + tallOwner[sd][pts[k][3]] : 'p';
+      let from = 0;
+      for (let k = 1; k <= pts.length; k++) {
+        if (k < pts.length && key(k) === key(from)) continue;
+        if (key(from) === 'p') add(BARRIER.ARMCO, sd, pts.slice(from, Math.min(k + 1, pts.length) - (k < pts.length ? 1 : 0)), { plain: true, why: plainWhy });
+        else {
+          const piece = pts.slice(from > 0 && key(from - 1) === 'p' ? from - 1 : from, Math.min(k + 1, pts.length)), info = tallInfo[tallOwner[sd][pts[from][3]]];
+          add(BARRIER.ARMCO, sd, piece, { plain: true, tall: true, hs: piece.map(p => tall[sd][p[3]]), need: info.need, why: info.why });
+        }
+        from = k;
+      }
+    }
   }
 
   // 5. pit wall (two faces) and the low wall on the far side of the pit lane

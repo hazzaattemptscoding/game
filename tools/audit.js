@@ -65,6 +65,54 @@ for (let i = 0; i < T.N; i++) {
   }
 }
 
+// The visible line: one containment wall all round the flat ground. Scan every non-street, non-pit, non-bridge barrier
+// (the plain and tall pieces of the containment wall) for kinks and for two lines standing close together.
+{
+  const line = T.barriers.filter(b => b.type === BARRIER.ARMCO);
+  const angleAt = (p, q, r) => {
+    const a1 = Math.atan2(q[2] - p[2], q[0] - p[0]), a2 = Math.atan2(r[2] - q[2], r[0] - q[0]);
+    let d = Math.abs(a2 - a1) * 180 / Math.PI; if (d > 180) d = 360 - d;
+    return d;
+  };
+  const same = (p, q) => Math.hypot(p[0] - q[0], p[2] - q[2]) < 0.01;
+  let kinks = 0, worst = 0;
+  const report = (q, d) => { kinks++; worst = Math.max(worst, d); errors.push(`barrier kink ${d.toFixed(0)} degrees at s=${T.s[q[3]].toFixed(0)} (${q[0].toFixed(1)}, ${q[2].toFixed(1)})`); };
+  for (const b of line) {
+    for (let k = 1; k < b.pts.length - 1; k++) { const d = angleAt(b.pts[k - 1], b.pts[k], b.pts[k + 1]); if (d > 25) report(b.pts[k], d); }
+    // across the joint to the piece that starts where this one ends
+    const e = b.pts.at(-1), next = line.find(o => o !== b && o.side === b.side && same(o.pts[0], e));
+    if (next && b.pts.length > 1 && next.pts.length > 1) { const d = angleAt(b.pts.at(-2), e, next.pts[1]); if (d > 25) report(e, d); }
+  }
+  // doubled lines: samples every 1 m; pieces that touch at an end are neighbours, anything else within 3 m is a second line
+  const samples = [];
+  line.forEach((b, n) => {
+    for (let k = 1; k < b.pts.length; k++) {
+      const p = b.pts[k - 1], q = b.pts[k], len = Math.hypot(q[0] - p[0], q[2] - p[2]);
+      for (let m = 0; m < len; m += 1) samples.push({ n, x: p[0] + (q[0] - p[0]) * m / len, z: p[2] + (q[2] - p[2]) * m / len, i: p[3] });
+    }
+  });
+  const touch = (a, c) => [a.pts[0], a.pts.at(-1)].some(p => [c.pts[0], c.pts.at(-1)].some(q => same(p, q)));
+  const grid = new Map(), doubled = new Set();
+  for (const sm of samples) {
+    const gx = Math.floor(sm.x / 3), gz = Math.floor(sm.z / 3);
+    for (let a = -1; a <= 1; a++) for (let c = -1; c <= 1; c++) for (const o of grid.get((gx + a) + ',' + (gz + c)) || []) {
+      if (o.n === sm.n || Math.hypot(o.x - sm.x, o.z - sm.z) >= 3) continue;
+      if (touch(line[o.n], line[sm.n]) && Math.min(Math.abs(o.i - sm.i), T.N - Math.abs(o.i - sm.i)) < 12) continue;
+      const key = Math.min(o.n, sm.n) + '/' + Math.max(o.n, sm.n);
+      if (!doubled.has(key)) { doubled.add(key); errors.push(`two visible barriers within 3 m at s=${T.s[sm.i].toFixed(0)} and s=${T.s[o.i].toFixed(0)} (${sm.x.toFixed(1)}, ${sm.z.toFixed(1)})`); }
+    }
+    const key = gx + ',' + gz; if (!grid.has(key)) grid.set(key, []); grid.get(key).push(sm);
+  }
+  console.log(`  containment line: ${line.length} pieces (${line.filter(b => b.tall).length} tall), ${kinks} kinks over 25 degrees (worst ${worst.toFixed(0)}), ${doubled.size} doubled stretches`);
+}
+
+// Tall stretches are justified by departures: the wall line at the section must be at least as far out as the deepest
+// departure listed for it (corners.js depth is measured from the track edge, as in tools/laptest.js).
+for (const t of T.tallStretches) {
+  const i = Math.round(t.s / T.ds), off = T.wall[t.sd][i] - T.halfWidth;
+  if (off < t.need && !t.constrained) errors.push(`${t.corner}: the wall line at s=${t.s} side ${t.sd ? 'R' : 'L'} is ${off.toFixed(1)} m out (edge to wall centreline) but a departure stops ${t.need} m out: push the wall out over s ${(t.s - t.length / 2).toFixed(0)} to ${(t.s + t.length / 2).toFixed(0)} (buildSides reach)`);
+}
+
 // Every barrier section needs a reason (docs/barrier-log.md), and the same section must not be repeated
 // more than twice: a (type, length, offset, angle) combination, rounded to 5%, that turns up three times
 // is a template being stamped, not a design.

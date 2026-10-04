@@ -144,7 +144,6 @@ export function buildTrackScene(T, ground) {
   // --- barriers, from the placed sections in track.js ------------------
   const posts = [], fencePosts = [];
   for (const b of T.barriers) {
-    if (b.hidden) continue;   // containment wall directly behind an impact wall: physics only, not drawn
     const pts = b.pts, nrm = inwardNormals(T, b);
     const at = (k, back, y) => [pts[k][0] - nrm[k][0] * back, pts[k][1] + y, pts[k][2] - nrm[k][1] * back];
     const idx = pts.map((_, k) => k), len = cumulative(pts);
@@ -163,6 +162,19 @@ export function buildTrackScene(T, ground) {
         for (let m = 0; m <= len[len.length - 1]; m += 5) fencePosts.push([...pointAt(pts, nrm, len, m, 3.3), FENCE_HEIGHT]);
         fencePosts.push([...pointAt(pts, nrm, len, len[len.length - 1], 3.3), FENCE_HEIGHT]);   // a post at both ends
       }
+    } else if (b.type === BARRIER.ARMCO && b.tall) {
+      // a tall stretch of the containment wall: the same line, 1.2 m at its ends rising to 1.9 m (b.hs is 0 to 1 at each point).
+      // Bolt-head tyre face, sponsor wrap, white top band and catch fence behind.
+      const hs = b.hs, H = k => 1.2 + 0.7 * hs[k];
+      const hAt = m => { let k = 0; while (k < len.length - 2 && len[k + 1] < m) k++; const t = Math.min(1, Math.max(0, (m - len[k]) / ((len[k + 1] - len[k]) || 1))); return hs[k] + (hs[k + 1] - hs[k]) * t; };
+      strips('tyre').strip(idx, k => at(k, 0, 0.05), k => at(k, 0, H(k) - 0.1), k => len[k] / 4, 0, 1);
+      strips('tyre').strip(idx, k => at(k, 0, H(k) - 0.1), k => at(k, 0.1, H(k)), k => len[k] / 4, 0.93, 1);
+      strips('tyre').strip(idx, k => at(k, 0.1, H(k)), k => at(k, 0.9, H(k)), () => 0, 0, 1);
+      sponsorPoly(strips('sponsor'), pts, nrm, len, 0.02, m => 0.25 + 0.2 * hAt(m), m => 0.95 + 0.5 * hAt(m), b.side, 1);
+      strips('white').strip(idx, k => at(k, 0.03, H(k) - 0.3 * hs[k]), k => at(k, 0.03, H(k) - 0.12 * hs[k]), k => len[k] / 4, 0, 1);
+      strips('fence').strip(idx, k => at(k, 3.3, 0.2), k => at(k, 3.3, 0.2 + (FENCE_HEIGHT - 0.2) * hs[k]), k => len[k] / 2, 0.1, FENCE_HEIGHT / 2);
+      for (let m = 0; m <= len[len.length - 1]; m += 5) fencePosts.push([...pointAt(pts, nrm, len, m, 3.3), 0.2 + (FENCE_HEIGHT - 0.2) * hAt(m)]);
+      fencePosts.push([...pointAt(pts, nrm, len, len[len.length - 1], 3.3), 0.2]);
     } else if (b.type === BARRIER.ARMCO) {
       // the containment wall: a plain sponsored tyre wall, 1.2 m high, rounded top, no armco and no posts
       wall('tyre', 0, 0.05, 1.1); strips('tyre').strip(idx, k => at(k, 0, 1.1), k => at(k, 0.1, 1.2), k => len[k] / 4, 0.93, 1); cap('tyre', 0.1, 0.8, 1.2);
@@ -270,8 +282,8 @@ function sponsorPoly(b, pts, nrm, len, inFront, y0, y1, side, every = 1) {
     const vTop = 1 - row / rows, vBot = 1 - (row + 1) / rows, idx = [];
     for (let q = 0; q <= steps; q++) idx.push(m + (m1 - m) * q / steps);
     const flipU = side === 1;
-    b.strip(idx, mm => { const p = pointAt(pts, nrm, len, mm, -inFront); return [p[0], p[1] + y0, p[2]]; },
-      mm => { const p = pointAt(pts, nrm, len, mm, -inFront); return [p[0], p[1] + y1, p[2]]; },
+    b.strip(idx, mm => { const p = pointAt(pts, nrm, len, mm, -inFront); return [p[0], p[1] + (typeof y0 === 'function' ? y0(mm) : y0), p[2]]; },
+      mm => { const p = pointAt(pts, nrm, len, mm, -inFront); return [p[0], p[1] + (typeof y1 === 'function' ? y1(mm) : y1), p[2]]; },
       (mm) => { const u = (mm - m) / (m1 - m); return flipU ? 1 - u : u; }, vBot, vTop);
   }
 }
