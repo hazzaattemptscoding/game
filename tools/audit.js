@@ -1,6 +1,8 @@
 // Geometry and containment audit. Run with `npm run audit`.
 
 import { buildTrack, BARRIER } from '../src/track.js';
+import { Car } from '../src/physics.js';
+import { GT } from '../src/cars.js';
 
 const T = buildTrack(), errors = [];
 const wrap = (i, n) => ((i % n) + n) % n;
@@ -75,6 +77,32 @@ for (const b of T.barriers) {
   templates.set(key, (templates.get(key) || 0) + 1);
 }
 for (const [key, n] of templates) if (n > 2) errors.push(`the same barrier section (type/length/offset/angle ${key}) is used ${n} times`);
+
+// Bridge: 200 cars come at the bridge approach from random places and angles at 60 to 200 km/h, coasting. None may
+// get past the parapet and off the deck (the drop).
+{
+  const rnd = random, bridgeStart = T.bridge[0], bridgeEnd = T.bridge[1];
+  let escaped = 0, hitWall = 0;
+  for (let n = 0; n < 200; n++) {
+    const car = new Car(GT, T);
+    const fromSide = n % 2 ? 1 : -1, before = n % 4 < 2;
+    const s = before ? bridgeStart - 30 - rnd() * 150 : bridgeEnd + 30 + rnd() * 150;   // always driving forward over the bridge, from the near or far side
+    car.placeAt(before ? s : s, fromSide * rnd() * 4);
+    const speed = (60 + rnd() * 140) / 3.6, angle = (5 + rnd() * 50) * Math.PI / 180 * fromSide;
+    car.heading += angle; car.vx = Math.cos(car.heading) * speed; car.vz = Math.sin(car.heading) * speed;
+    let hits = 0;
+    for (let t = 0; t < 600; t++) {
+      car.step({ steer: 0, throttle: 0, brake: 0, drs: false });
+      if (car.events.hit > 0.5) hits++;
+      const i = car.loc.i;
+      if (T.isBridge[i] && Math.abs(car.loc.d) > T.wall[car.loc.d < 0 ? 0 : 1][i] + 0.5) { escaped++; break; }
+      if (car.y < T.h[i] - 3 && T.isBridge[i]) { escaped++; break; }
+    }
+    if (hits) hitWall++;
+  }
+  console.log(`  bridge: 200 cars at 60 to 200 km/h, ${hitWall} met a barrier, ${escaped} got off the deck`);
+  if (escaped) errors.push(`${escaped} of 200 cars got past the bridge parapet`);
+}
 
 let maxGroundError = 0;
 for (let n = 0; n < 2000; n++) {

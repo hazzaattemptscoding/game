@@ -50,7 +50,8 @@ const LINE_WIDTH = 0.15;   // painted edge line, metres
 const PLAIN_RUNOFF = 22;   // flat grass beside the track where no corner needs more, metres
 const GRAVEL_APRON = 3;    // a gravel trap always has at least this much paved apron in front of it
 const STREET_GAP = 0.8;    // clear space between the kerb and a street-section wall, metres
-const BRIDGE_RUNOFF = 1.2;
+const BRIDGE_RUNOFF = 2.0;   // the deck is this much wider than the track on each side, and the parapet stands on its edge
+const BRIDGE_APPROACH = 40; // metres before and after the deck where a parapet funnels in towards it
 const MIN_BARRIER = 5;     // working clearance margin beyond the 4 m minimum (street, pit and bridge excepted)
 const SEPARATION = 70;     // single armco goes in only where another part of the track is closer than this
 
@@ -408,7 +409,7 @@ function buildSides(T, corners) {
   // far the flat ground reaches (out to the barrier, or the plain run-off)
   for (let sd = 0; sd < 2; sd++) {
     for (let i = 0; i < N; i++) {
-      if (T.isBridge[i]) { T.kerb[sd][i] = 0; T.runoff[sd][i] = 0; T.wall[sd][i] = hw + BRIDGE_RUNOFF; continue; }
+      if (T.isBridge[i]) { T.kerb[sd][i] = 0; T.runoff[sd][i] = BRIDGE_RUNOFF; T.wall[sd][i] = hw + BRIDGE_RUNOFF; continue; }   // the deck margin is paved
       if (sd === 0 && T.pitOut[i]) { T.runoff[sd][i] = 0; gravelW[sd][i] = 0; }
       if (gravelW[sd][i] > 0.5) T.runoff[sd][i] = Math.max(T.runoff[sd][i], GRAVEL_APRON * Math.min(1, gravelW[sd][i] / 5));
       const edge = hw + T.kerb[sd][i] + T.sausage[sd][i] + T.runoff[sd][i];
@@ -423,6 +424,11 @@ function buildSides(T, corners) {
     for (let pass = 0; pass < 3; pass++) {
       for (let i = 1; i < N; i++) T.wall[sd][i] = Math.min(T.wall[sd][i], T.wall[sd][i - 1] + 0.25);
       for (let i = N - 2; i >= 0; i--) T.wall[sd][i] = Math.min(T.wall[sd][i], T.wall[sd][i + 1] + 0.25);
+    }
+    // the paved bands never reach past the barrier line (matters where the line funnels in to a bridge)
+    for (let i = 0; i < N; i++) {
+      const room = Math.max(0, T.wall[sd][i] - hw - T.kerb[sd][i] - T.sausage[sd][i]);
+      T.runoff[sd][i] = Math.min(T.runoff[sd][i], room);
     }
   }
 }
@@ -565,6 +571,9 @@ function buildBarriers(T, corners) {
   // 1. Impact sections from corners.js: a tyre wall in front of double armco,
   // centred where cars that leave the road would arrive, turned to meet them.
   const covered = [new Uint8Array(N), new Uint8Array(N)];
+  const nearBridge = new Uint8Array(N);
+  for (let i = 0; i < N; i++) if (T.isBridge[i]) for (let k = -BRIDGE_APPROACH; k <= BRIDGE_APPROACH; k++) nearBridge[wrap(i + k, N)] = 1;
+  for (let i = 0; i < N; i++) if (T.isBridge[i]) nearBridge[i] = 0;
   const tooCloseToRoad = (x, z, y) => {
     for (let j = 0; j < N; j++) {
       if (Math.abs(T.h[j] - y) > 4) continue;
@@ -610,10 +619,15 @@ function buildBarriers(T, corners) {
     // 2. street section walls, right at the edge
     for (const run of runsOf(N, i => T.street[sd][i] && !T.isBridge[i])) follow(BARRIER.CONCRETE, sd, run, i => g * T.wall[sd][i], 3, { fence: true, why: 'street section: a wall at the track edge (the walls zones in layout.js)' });
     // 3. bridge parapets
-    for (const run of runsOf(N, i => T.isBridge[i])) follow(BARRIER.PARAPET, sd, run, i => g * T.wall[sd][i], 1, { why: 'bridge parapet over the main straight' });
+    // the parapet runs BRIDGE_APPROACH metres either side of the deck too, following the barrier line as it
+    // funnels in, and ends in a tyre stack, so there is no gap between the barrier and the bridge
+    for (const run of runsOf(N, i => T.isBridge[i] || nearBridge[i])) {
+      follow(BARRIER.PARAPET, sd, run, i => g * T.wall[sd][i], 1, { why: 'bridge parapet over the main straight and its approach' });
+      for (const ends of [run.slice(0, 5), run.slice(-5)]) follow(BARRIER.TYRES, sd, ends, i => g * (T.wall[sd][i] + 0.3), 1, { impact: true, why: 'tyre stack at the end of the bridge parapet', spec: { length: 4, offset: T.wall[sd][ends[0]], angle: 0 } });
+    }
     // 4. the containment rail: keeps a car on the flat ground. Not drawn (hidden: true); the visible barriers are the
     // impact sections above, which are the only place a car is expected to arrive.
-    const needs = i => !T.street[sd][i] && !T.isBridge[i] && !(sd === 0 && T.pitOut[i]);
+    const needs = i => !T.street[sd][i] && !T.isBridge[i] && !nearBridge[i] && !(sd === 0 && T.pitOut[i]);
     for (const run of runsOf(N, needs)) if (run.length > 1) follow(BARRIER.ARMCO, sd, run, i => g * Math.max(T.wall[sd][i], hw + MIN_BARRIER), 3, { hidden: true, why: 'containment: stops a car leaving the flat ground (hidden, physics only)' });
   }
 

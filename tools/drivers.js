@@ -222,7 +222,7 @@ export function runLaps(track, cfg, profile, { assists = true, laps = 1, seed = 
     const offW = w => car.wheelSurf[w] === SURF.GRASS || car.wheelSurf[w] === SURF.GRAVEL;
     const off = offW(0) || offW(1) || offW(2) || offW(3), left = (offW(0) && offW(2)) || (offW(1) && offW(3));
     if (off) { r.off++; if (onFor > 1) r.wheelOff++; onFor = 0; } else onFor += STEP;
-    if (left) { if (inFor > 1) r.excursions++; inFor = 0; } else inFor += STEP;
+    if (left) { if (inFor > 1) { r.excursions++; (r.where ||= []).push(Math.round(car.loc.s / 10) * 10); } inFor = 0; } else inFor += STEP;
     // a hit: barrier contact after at least a second clear of one
     if (car.events.hit > 0.5) { if (hitGap > 1) r.hits++; hitGap = 0; } else hitGap += STEP;
     if (onStep) onStep(car, inp, timer, driver);
