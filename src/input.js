@@ -19,8 +19,10 @@ export function createInput() {
   let usingPad = false;
   let padButtonsPrev = [];
 
+  // typing in a note box, a select or any editable field never drives the car or fires a shortcut
+  const typing = e => { const t = e.target; return !!t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)); };
   addEventListener('keydown', e => {
-    if (e.target && e.target.tagName === 'INPUT') return;
+    if (typing(e)) { keys.clear(); return; }
     if (!e.repeat) {
       if (e.code === 'KeyR') actions.push('reset');
       if (e.code === 'KeyC') actions.push('camera');
@@ -32,7 +34,7 @@ export function createInput() {
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F2', 'F3'].includes(e.code)) e.preventDefault();
     usingPad = false;
   });
-  addEventListener('keyup', e => keys.delete(e.code));
+  addEventListener('keyup', e => { if (!typing(e)) keys.delete(e.code); });
 
   // Touch: drag anywhere on the left half to steer, pedals on the right.
   const touch = createTouch(actions);

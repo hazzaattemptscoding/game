@@ -125,6 +125,7 @@ function frame(now) {
   last = now;
 
   for (const a of input.takeActions()) {
+    if (reportTool.opened && a !== 'report') continue;      // the report screen owns the keyboard while it is open
     if (a === 'reset') car.resetToTrack();
     if (a === 'camera') rig.next();
     if (a === 'settings') togglePanel();
