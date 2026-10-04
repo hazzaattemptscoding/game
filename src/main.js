@@ -147,6 +147,7 @@ function frame(now) {
       car.step(autopilot ? autopilot.drive(car) : playerInput);
       simTime += STEP;
       timer.update(car.loc.s, simTime);
+      timer.checkLimits(car, simTime);
       history.inputs.push({ t: simTime, device: input.device, keys: input.pressedKeys(), steer: playerInput.steer, throttle: playerInput.throttle, brake: playerInput.brake, drs: playerInput.drs });
       history.telemetry.push({ t: simTime, x: car.x, y: car.y, z: car.z, s: car.loc.s, d: car.loc.d, speed: car.speed });
       while (history.inputs.length && history.inputs[0].t < simTime - 10) history.inputs.shift();

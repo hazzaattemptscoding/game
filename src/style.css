@@ -5,6 +5,7 @@
   --green: #3ddc84;
   --purple: #b36bff;
   --red: #ff4d4d;
+  --amber: #ff9a1f;   /* track limits warnings: orange, apart from the yellow of the sector times and the red of braking */
 }
 * { box-sizing: border-box; }
 html, body {
@@ -28,6 +29,12 @@ html, body {
   padding: 4px 16px; background: rgba(20,24,29,.75); opacity: 0; transition: opacity .2s; white-space: nowrap; }
 .hud-flash.show { opacity: 1; }
 .hud-flash.pb { background: var(--purple); }
+
+.hud-limits { margin-top: 6px; display: inline-block; font-size: 14px; padding: 2px 7px; background: rgba(20,24,29,.85); color: var(--amber); }
+.hud-limits[hidden] { display: none; }
+.hud-warn { position: absolute; left: 50%; top: calc(18% + 54px); transform: translateX(-50%); max-width: calc(100vw - 32px); font-size: 22px; font-weight: 700;
+  padding: 4px 14px; background: rgba(20,24,29,.85); color: var(--amber); border-left: 4px solid var(--amber); opacity: 0; transition: opacity .2s; white-space: nowrap; }
+.hud-warn.show { opacity: 1; }
 
 .hud-dash { position: absolute; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: 230px; }
 .hud-rev { height: 8px; background: rgba(20,24,29,.6); overflow: hidden; }
@@ -86,6 +93,7 @@ body.touch .hud-dash { right: auto; left: 50%; transform: translateX(-50%); bott
 body.touch .hud-speed b, body.touch .hud-gear { font-size: 40px; }
 body.touch .hud-help, body.touch .hud-debug { display: none !important; }
 body.touch .hud-lap { font-size: 30px; }
+body.touch .hud-warn { top: calc(18% + 44px); font-size: 18px; }
 
 #report-layer { position: fixed; inset: 0; z-index: 8; pointer-events: none; color: #f2efe6; font-variant-numeric: tabular-nums; }
 #report-layer[hidden] { display: none; }

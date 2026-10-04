@@ -25,8 +25,10 @@ export class Hud {
           <div><span>Best</span><b id="h-best">-:--.---</b></div>
         </div>
         <div class="hud-sectors" id="h-sec"></div>
+        <div class="hud-limits" id="h-limits" hidden></div>
       </div>
       <div class="hud-flash" id="h-flash"></div>
+      <div class="hud-warn" id="h-warn"></div>
       <div class="hud-dash">
         <div class="hud-rev"><i id="h-rev"></i></div>
         <div class="hud-main">
@@ -40,8 +42,13 @@ export class Hud {
       <pre class="hud-debug" id="h-debug"></pre>
       <div class="hud-help" id="h-help">Arrows or WASD to drive · Space for DRS · R reset · C camera · Esc settings</div>`;
     const $ = id => root.querySelector('#' + id);
-    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help') };
+    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help') };
     this.flashUntil = 0;
+    this.warnUntil = 0;
+    this.warnLap = -1;   // the lap the counter was last drawn for
+    // ?warn=Aileron shows the track limits banner at the start, for checking how it looks
+    const forced = new URLSearchParams(location.search).get('warn');
+    if (forced) { this.warn(forced, 0); this.forcedWarn = forced; }
     this.sectorCells = [];
     setTimeout(() => this.el.help.classList.add('fade'), 9000);
   }
@@ -50,6 +57,13 @@ export class Hud {
     this.el.flash.textContent = text;
     this.el.flash.className = 'hud-flash show ' + cls;
     this.flashUntil = now + 2.5;
+  }
+
+  // track limits banner: amber on the dark HUD, 2.5 s
+  warn(corner, now) {
+    this.el.warn.textContent = 'Track limits: ' + corner;
+    this.el.warn.className = 'hud-warn show';
+    this.warnUntil = now + 2.5;
   }
 
   update(car, timer, track, simTime) {
@@ -92,6 +106,17 @@ export class Hud {
       }
     }
     if (this.flashUntil && simTime > this.flashUntil) { e.flash.className = 'hud-flash'; this.flashUntil = 0; }
+
+    // track limits: banner for each new warning, and the count for this lap beside the lap timer
+    for (const ev of timer.limits.takeNew()) this.warn(ev.corner, simTime);
+    if (this.forcedWarn) { this.warnUntil = simTime + 2.5; }   // ?warn= keeps the banner up
+    if (this.warnUntil && simTime > this.warnUntil) { e.warn.className = 'hud-warn'; this.warnUntil = 0; }
+    const lap = timer.currentLap(), n = timer.limits.countFor(lap);
+    if (n !== this._limN || lap !== this._limLap) {
+      this._limN = n; this._limLap = lap;
+      e.limits.hidden = n === 0;
+      e.limits.textContent = `Track limits ${n}`;
+    }
 
     if (s.debug) {
       e.debug.style.display = 'block';

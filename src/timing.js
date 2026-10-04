@@ -1,6 +1,8 @@
 // Lap and sector timing for one car. Uses simulation time (seconds), so the
 // headless lap test and the browser give the same numbers.
 
+import { TrackLimits } from './trackLimits.js';
+
 export class LapTimer {
   constructor(track) {
     this.track = track;
@@ -19,7 +21,14 @@ export class LapTimer {
     this.prevS = null;
     this.distance = 0;       // total distance driven along the lap, for race positions
     this.events = [];        // {type: 'sector'|'lap', ...} since last read
+    this.limits = new TrackLimits();   // track limit warnings this session, cleared with everything else
   }
+
+  // the lap being driven: 0 on the out lap, then 1, 2, ...
+  currentLap() { return this.lapStart === null ? 0 : this.lap + 1; }
+
+  // feed the car's wheels to the track limits check; returns the new warning, if any
+  checkLimits(car, time) { return this.limits.update(car, time, this.currentLap(), this.running(time)); }
 
   update(s, time) {
     const T = this.track, L = T.length;
