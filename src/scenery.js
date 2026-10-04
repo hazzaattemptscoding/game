@@ -15,7 +15,7 @@ export function createGround(T) {
   const coarse = [];
   for (let i = 0; i < T.N; i += 8) if (!T.isBridge[i]) coarse.push(i);
   // how far the flat ground around the track reaches (the pit side includes the paddock)
-  const reach = i => Math.max(T.wall[0][i] + (T.pitO[i] ? 70 : 0), T.wall[1][i]) + 4;
+  const reach = i => Math.max(T.wall[0][i] + (T.pitOut[i] ? 70 : 0), T.wall[1][i]) + 4;
 
   function sample(x, z) {
     let best = Infinity, near = 0, sw = 0, sh = 0;
@@ -49,7 +49,7 @@ export function createGround(T) {
   function clearance(x, z) {
     let best = Infinity;
     for (let i = 0; i < T.N; i += 2) {
-      const d = Math.hypot(x - T.x[i], z - T.z[i]) - Math.max(T.wall[0][i], T.wall[1][i]) - (T.pitO[i] ? 16 : 0);
+      const d = Math.hypot(x - T.x[i], z - T.z[i]) - Math.max(T.wall[0][i], T.wall[1][i]) - (T.pitOut[i] ? 16 : 0);
       if (d < best) best = d;
     }
     return best;

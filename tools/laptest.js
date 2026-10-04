@@ -14,7 +14,7 @@
 //    the car got). Under ~15 degrees means the car sorts itself out; a spin
 //    shows as 90+. With assists on, everything should stay small.
 
-import { buildTrack, SURF } from '../src/track.js';
+import { buildTrack, SURF, BARRIER } from '../src/track.js';
 import { Car, STEP } from '../src/physics.js';
 import { GT } from '../src/cars.js';
 import { LapTimer } from '../src/timing.js';
@@ -80,6 +80,60 @@ for (const [name, surf] of [['tarmac run-off', SURF.RUNOFF], ['grass', SURF.GRAS
   }
   console.log(`  ${name.padEnd(15)} ${t.toFixed(2)} s, out at ${(car.speed * 2.23694).toFixed(0)} mph`);
 }
+
+// Safety checks (reference/LAKESIDE_SAFETY_LAYOUT.md). Any failure makes the
+// test exit with an error.
+console.log('\nSAFETY CHECKS');
+const fails = [];
+const hw = track.halfWidth;
+// how far a point is from the nearest track edge (any part of the track at a similar height), kerbs included
+const edgeGap = (x, z, y) => {
+  let best = Infinity;
+  for (let i = 0; i < track.N; i++) {
+    if (Math.abs(track.h[i] - y) > 4) continue;
+    const dx = x - track.x[i], dz = z - track.z[i];
+    const along = dx * track.tx[i] + dz * track.tz[i];
+    if (Math.abs(along) > 0.6) continue;
+    const d = dx * track.nx[i] + dz * track.nz[i], sd = d < 0 ? 0 : 1;
+    best = Math.min(best, Math.abs(d) - hw - track.kerb[sd][i] - track.sausage[sd][i]);
+  }
+  return best;
+};
+// 1. every corner's barrier is beyond the departure stopping points, or the corner says why not
+for (const c of track.corners) {
+  if (c.class === 'street' || !c.departures) continue;
+  const deepest = Math.max(...c.departures.map(d => d.depth));
+  if (c.barrier < deepest && !c.constrained) fails.push(`${c.name}: barrier ${c.barrier} m is inside the ${deepest} m stopping distance`);
+  if (c.constrained && !c.reason) fails.push(`${c.name}: constrained with no reason given`);
+  for (const sec of c.sections) if (sec.offset < deepest && !c.constrained) fails.push(`${c.name}: section at s=${sec.s} is ${sec.offset} m out, cars stop ${deepest} m out`);
+}
+// 2. no barrier within 4 m of the track edge, except the street section, the pit wall and the bridge
+let closest = Infinity, pitClosest = Infinity;
+for (const b of track.barriers) {
+  if (b.type === BARRIER.CONCRETE || b.type === BARRIER.PARAPET) continue;
+  for (const [x, y, z] of b.pts) {
+    const gap = edgeGap(x, z, y);
+    if (b.type === BARRIER.PITWALL) pitClosest = Math.min(pitClosest, gap);
+    else closest = Math.min(closest, gap);
+    if (gap < 4) fails.push(`${['armco', 'tyre wall', '', '', 'pit wall', 'pit outer wall'][b.type]} ${gap.toFixed(1)} m from the track edge at (${x.toFixed(0)}, ${z.toFixed(0)})`);
+  }
+}
+// 3. the pit road never overlaps the racing surface
+let overlap = 0;
+for (let i = 0; i < track.N; i++) if (track.pitOut[i] && track.pitIn[i] < hw - 1e-6) overlap++;
+if (overlap) fails.push(`pit road overlaps the track on ${overlap} samples`);
+// 4. boards, posts and panels at least 30 m apart
+const furn = track.furniture.filter(f => ['board', 'post', 'panel'].includes(f.type));   // signs only need 6 m
+let pairs = 0;
+for (let a = 0; a < furn.length; a++) for (let b = a + 1; b < furn.length; b++) {
+  const dist = Math.hypot(furn[a].x - furn[b].x, furn[a].z - furn[b].z);
+  if (dist < 30) { pairs++; fails.push(`${furn[a].type} ${furn[a].value} and ${furn[b].type} ${furn[b].value} are ${dist.toFixed(0)} m apart`); }
+}
+console.log(`  corners checked ${track.corners.filter(c => c.class !== 'street').length}, constrained ${track.corners.filter(c => c.constrained).length}`);
+console.log(`  closest barrier to the track edge ${closest.toFixed(1)} m, closest pit wall ${pitClosest.toFixed(1)} m (both must be 4 m or more)`);
+console.log(`  pit road overlap ${overlap} samples, boards ${furn.length} and signs ${track.furniture.length - furn.length}, boards too close together ${pairs}`);
+if (fails.length) { console.log('  FAILED:'); for (const f of fails.slice(0, 30)) console.log('   - ' + f); process.exitCode = 1; }
+else console.log('  all passed');
 
 // Constant-radius test on an endless flat car park.
 function stability(speed, mode, assists) {

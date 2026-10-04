@@ -95,9 +95,9 @@ export function grassTexture(seed = 3) {
 // Gravel: rounded stones with raked lines across the trap.
 export function gravelTexture(seed = 5) {
   const [c, x] = canvas(256, 256), r = rng(seed);
-  x.fillStyle = '#c6b488'; x.fillRect(0, 0, 256, 256);
+  x.fillStyle = '#d4b06c'; x.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 256; i += 10) {
-    x.fillStyle = 'rgba(120,100,70,.18)'; x.fillRect(i, 0, 3, 256);
+    x.fillStyle = 'rgba(110,85,50,.3)'; x.fillRect(i, 0, 3, 256);
     x.fillStyle = 'rgba(255,245,215,.12)'; x.fillRect(i + 4, 0, 3, 256);
   }
   speckle(x, 256, 256, r, 14000, ['#b6a67c', '#d6c69c', '#a8986f', '#e0d3ad', '#9c8d68', '#8f8268'], 2.2);
@@ -342,4 +342,30 @@ export function pitLaneTexture() {
   x.fillStyle = '#f2f2ee'; x.fillRect(0, 0, 256, 6); x.fillRect(0, 250, 256, 6);
   for (let i = 0; i < 256; i += 64) x.fillRect(i, 128, 34, 4);
   return finish(c);
+}
+
+// Pit lane asphalt: lighter than the circuit, no markings (lines are drawn separately).
+export function pitAsphaltTexture() {
+  const [c, x] = canvas(256, 256), r = rng(37);
+  x.fillStyle = '#6a6d72'; x.fillRect(0, 0, 256, 256);
+  speckle(x, 256, 256, r, 10000, ['#5c5f64', '#787b80', '#82858a', '#55585c'], 1.5);
+  return finish(c);
+}
+
+// Painted chevrons, for the pit entry island and the pit wall attenuator.
+export function chevronTexture(a = '#f2f2ee', b = '#5b5e63') {
+  const [c, x] = canvas(128, 128);
+  x.fillStyle = b; x.fillRect(0, 0, 128, 128);
+  x.strokeStyle = a; x.lineWidth = 14;
+  for (let k = -128; k < 256; k += 48) { x.beginPath(); x.moveTo(k, 0); x.lineTo(k + 64, 64); x.lineTo(k, 128); x.stroke(); }
+  return finish(c);
+}
+
+// Round speed-limit sign: red ring, white face, black number.
+export function speedSignTexture(n) {
+  const [c, x] = canvas(128, 128);
+  x.fillStyle = '#c8102e'; x.beginPath(); x.arc(64, 64, 64, 0, 7); x.fill();
+  x.fillStyle = '#f2f0e8'; x.beginPath(); x.arc(64, 64, 48, 0, 7); x.fill();
+  x.fillStyle = '#111'; x.font = 'bold 52px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(n), 64, 68);
+  return finish(c, { repeat: false });
 }

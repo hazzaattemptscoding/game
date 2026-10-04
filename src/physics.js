@@ -25,6 +25,7 @@ export const SURFACE = {
   [SURF.GRASS]: { grip: 0.55, drag: 0.06, bump: 0.2 },
   [SURF.GRAVEL]: { grip: 0.35, drag: 0.7, bump: 0.6 },
   [SURF.PIT]: { grip: 1.0, drag: 0, bump: 0 },
+  [SURF.CONCRETE]: { grip: 0.97, drag: 0.002, bump: 0.25 },   // old runway concrete run-off: no penalty, mild rumble
 };
 
 const WALL_BOUNCE = 0.25;   // how much speed comes back off a barrier (0 = dead stop, 1 = rubber ball)
@@ -303,31 +304,20 @@ export class Car {
     }
   }
 
-  // Barriers: check the four corners of the car, push back out and bounce.
-  // Two kinds: the outer barrier each side, and the pit wall between the
-  // main straight and the pit lane, which can be hit from either face.
+  // Barriers: check the four corners of the car against the placed barrier
+  // sections (tools in track.js), push back out and bounce.
   collideWalls() {
     const c = this.cfg, T = this.track, loc = this.loc;
     const ch = Math.cos(this.heading), sh = Math.sin(this.heading);
-    const pitIn = T.pitWallIn[loc.i], pitOut = pitIn + 0.6;
-    let deepest = 0, cx = 0, cz = 0, push = 0;   // push: +1 = towards the right of the track, -1 = left
+    let deepest = 0, cx = 0, cz = 0, nnx = 0, nnz = 0;
     for (const lx of [c.length / 2, -c.length / 2]) for (const ly of [-c.width / 2, c.width / 2]) {
       const ox = lx * ch - ly * sh, oz = lx * sh + ly * ch;
-      const d = loc.d + ox * loc.nx + oz * loc.nz;
-      const sd = d < 0 ? 0 : 1;
-      let pen = Math.abs(d) - T.wall[sd][loc.i], dir = sd ? -1 : 1;
-      if (pitIn && d < -pitIn && d > -pitOut) {
-        // inside the pit wall: push back to whichever side the car is on
-        const onTrack = loc.d > -pitIn;
-        const p2 = onTrack ? -pitIn - d : d + pitOut;
-        if (p2 > pen) { pen = p2; dir = onTrack ? 1 : -1; }
-      }
-      if (pen > deepest) { deepest = pen; cx = ox; cz = oz; push = dir; }
+      const hit = T.collide ? T.collide(this.x + ox, this.z + oz, this.x, this.z, loc.h) : null;
+      if (hit && hit.pen > deepest) { deepest = hit.pen; cx = ox; cz = oz; nnx = hit.nx; nnz = hit.nz; }
     }
     if (deepest <= 0) return;
 
     // push out
-    const nnx = loc.nx * push, nnz = loc.nz * push;
     this.x += nnx * deepest; this.z += nnz * deepest;
 
     // impulse at the contact corner, with friction along the wall

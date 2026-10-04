@@ -11,7 +11,7 @@ const SPEED_FOV = 10;         // extra field of view at top speed
 
 export class CameraRig {
   constructor(aspect) {
-    this.camera = new THREE.PerspectiveCamera(BASE_FOV, aspect, 0.1, 6000);
+    this.camera = new THREE.PerspectiveCamera(BASE_FOV, aspect, 0.3, 6000);
     this.mode = 'chase';
     this.yaw = null;
     this.height = null;

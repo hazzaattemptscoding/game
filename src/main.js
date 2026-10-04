@@ -10,7 +10,7 @@ import { Car, STEP } from './physics.js';
 import { GT } from './cars.js';
 import { LapTimer } from './timing.js';
 import { Autopilot } from './autopilot.js';
-import { buildTrackScene } from './trackMesh.js';
+import { buildTrackScene, DEBUG_COLOURS } from './trackMesh.js';
 import { createGround, buildScenery } from './scenery.js';
 import { CarView } from './car.js';
 import { CameraRig } from './cameras.js';
@@ -57,7 +57,11 @@ const ground = createGround(track);
 const world = new THREE.Group();
 world.add(ground.mesh(), buildTrackScene(track, ground), buildScenery(track, ground));
 scene.add(world);
-setBlockout(world, settings.blockout);
+const markers = debugMarkers(track);
+markers.visible = false;
+scene.add(markers);
+let topDown = params.has('topdown');
+applyLook();
 const view = new CarView(GT, 0xffd21f);
 scene.add(view.root);
 
@@ -86,6 +90,7 @@ function syncPanel() {
   panel.querySelectorAll('[data-units]').forEach(b => b.classList.toggle('sel', b.dataset.units === settings.units));
   panel.querySelectorAll('[data-assists]').forEach(b => b.classList.toggle('sel', String(settings.assists) === b.dataset.assists));
   panel.querySelectorAll('[data-debug]').forEach(b => b.classList.toggle('sel', String(settings.debug) === b.dataset.debug));
+  panel.querySelectorAll('[data-topdown]').forEach(b => b.classList.toggle('sel', String(topDown) === b.dataset.topdown));
   panel.querySelectorAll('[data-blockout]').forEach(b => b.classList.toggle('sel', String(!!settings.blockout) === b.dataset.blockout));
   panel.querySelectorAll('[data-auto]').forEach(b => b.classList.toggle('sel', String(!!autopilot) === b.dataset.auto));
 }
@@ -95,7 +100,8 @@ panel.addEventListener('click', e => {
   if (b.dataset.units) settings.units = b.dataset.units;
   if (b.dataset.assists) { settings.assists = b.dataset.assists === 'true'; car.assists = settings.assists; }
   if (b.dataset.debug) settings.debug = b.dataset.debug === 'true';
-  if (b.dataset.blockout) { settings.blockout = b.dataset.blockout === 'true'; setBlockout(world, settings.blockout); }
+  if (b.dataset.blockout) { settings.blockout = b.dataset.blockout === 'true'; applyLook(); }
+  if (b.dataset.topdown) { topDown = b.dataset.topdown === 'true'; applyLook(); }
   if (b.dataset.auto) autopilot = b.dataset.auto === 'true' ? new Autopilot(track, GT, { skill: 0.9 }) : null;
   if (b.id === 'close') togglePanel(false);
   saveSettings(settings);
@@ -131,8 +137,14 @@ function frame(now) {
   }
 
   view.update(car, acc / STEP);
-  if (fixedView) { rig.camera.position.set(fixedView[0], fixedView[1], fixedView[2]); rig.camera.lookAt(fixedView[3], fixedView[4], fixedView[5]); }
-  else rig.update(view, car, dt);
+  if (topDown) {
+    // top-down debug view: high above the car, track direction up the screen
+    const p = view.root.position, hd = -view.root.rotation.y;
+    rig.camera.position.set(p.x, p.y + 260, p.z);
+    rig.camera.up.set(Math.cos(hd), 0, Math.sin(hd));
+    rig.camera.lookAt(p.x, p.y, p.z);
+  } else if (fixedView) { rig.camera.position.set(fixedView[0], fixedView[1], fixedView[2]); rig.camera.lookAt(fixedView[3], fixedView[4], fixedView[5]); }
+  else { rig.camera.up.set(0, 1, 0); rig.update(view, car, dt); }
 
   // keep the shadow map centred on the car
   const p = view.root.position;
@@ -191,4 +203,50 @@ function averageColour(texture) {
   try { x.drawImage(img, 0, 0, 1, 1); } catch (e) { return new THREE.Color(0x888888); }
   const [r, g, b] = x.getImageData(0, 0, 1, 1).data;
   return new THREE.Color().setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
+}
+
+// Full, Blockout and the top-down debug colours share one switch.
+function applyLook() {
+  markers.visible = topDown;
+  scene.fog.far = topDown ? 20000 : 2600;
+  setDebugColours(world, topDown);
+  if (!topDown) setBlockout(world, settings.blockout);
+}
+
+// Top-down debug view: every surface and barrier type in its own flat colour
+// (the same colours as `npm run trackmap`).
+function setDebugColours(root, on) {
+  const cache = {};
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    o.userData.fullMaterial ||= o.material;
+    if (!on) { o.material = o.userData.fullMaterial; return; }
+    let cat = o.userData.debug, p = o.parent;
+    while (!cat && p) { cat = p.userData.debug; p = p.parent; }
+    const colour = DEBUG_COLOURS[cat] ?? (o.userData.fullMaterial.vertexColors ? 0x2c4a26 : 0x777777);
+    cache[colour] ||= new THREE.MeshBasicMaterial({ color: colour, side: THREE.DoubleSide, transparent: cat === 'fence', opacity: cat === 'fence' ? 0.6 : 1 });
+    o.material = cache[colour];
+  });
+}
+
+// Tall coloured posts over every board and sign, and over each barrier
+// section's centre, so they are easy to spot from above.
+function debugMarkers(T) {
+  const g = new THREE.Group();
+  const geo = new THREE.CylinderGeometry(1.2, 1.2, 30, 8);
+  geo.translate(0, 15, 0);
+  for (const f of T.furniture) {
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: DEBUG_COLOURS[f.type] }));
+    m.position.set(f.x, f.y, f.z);
+    g.add(m);
+  }
+  const small = new THREE.CylinderGeometry(0.8, 0.8, 12, 6);
+  small.translate(0, 6, 0);
+  for (const b of T.barriers) if (b.impact) {
+    const k = Math.floor(b.pts.length / 2), [x, y, z] = b.pts[k];
+    const m = new THREE.Mesh(small, new THREE.MeshBasicMaterial({ color: 0xff2020 }));
+    m.position.set(x, y, z);
+    g.add(m);
+  }
+  return g;
 }

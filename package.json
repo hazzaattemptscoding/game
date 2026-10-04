@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "laptest": "node tools/laptest.js",
-    "trackmap": "node tools/trackmap.js"
+    "trackmap": "node tools/trackmap.js",
+    "cornersheet": "node tools/cornersheet.js"
   },
   "dependencies": {
     "peerjs": "^1.5.5",
