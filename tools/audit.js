@@ -104,6 +104,31 @@ for (const [key, n] of templates) if (n > 2) errors.push(`the same barrier secti
   if (escaped) errors.push(`${escaped} of 200 cars got past the bridge parapet`);
 }
 
+// Pit road: drive (as a path, wheels 1.7 m apart) from the track into the pit lane from five lateral offsets,
+// and from the pit lane back onto the track, merging inside the 15 m mouth (the path follows the inner
+// part of the lane, so it never crosses the gore). No wheel may touch grass, gravel or a kerb.
+{
+  const SURF_OK = new Set([0, 1, 4, 7]);             // tarmac, edge line, paved run-off, pit
+  const bad = [];
+  const [a, b] = T.pitRange, hw = T.halfWidth;
+  const at = s => Math.round(((s % T.length) + T.length) % T.length / T.ds) % T.N;
+  const lanePath = s => -(Math.max(T.pitIn[at(s)], hw) + 1.2);   // inner wheel 0.35 m inside the lane edge
+  const cosine = t => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, t)));
+  for (const entering of [true, false]) for (const start of [-4, -2, 0, 2, 4]) {
+    for (let u = 0; u <= 80; u += 1) {
+      const s = entering ? a - 20 + u : b - 60 + u;
+      const t = entering ? (s - a) / 15 : (s - (b - 15)) / 15;     // the car follows the lane edge, then merges across the mouth
+      const d = entering ? start + (lanePath(s) - start) * cosine(t) : lanePath(s) + (start - lanePath(s)) * cosine(t);
+      for (const w of [-0.85, 0.85]) {
+        const sf = T.surfaceAt(at(s), d + w);
+        if (!SURF_OK.has(sf)) { bad.push(`${entering ? 'entry' : 'exit'} from offset ${start} at s=${s.toFixed(0)} d=${(d + w).toFixed(1)} surface ${sf}`); break; }
+      }
+    }
+  }
+  console.log(`  pit road: 10 drive-ins and drive-outs, ${bad.length} wheel samples off the paved surface`);
+  if (bad.length) errors.push(...bad.slice(0, 5).map(m => 'pit road: ' + m));
+}
+
 let maxGroundError = 0;
 for (let n = 0; n < 2000; n++) {
   const i = Math.floor(random() * T.N);
