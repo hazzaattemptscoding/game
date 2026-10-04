@@ -106,10 +106,20 @@ for (let i = 0; i < T.N; i++) {
   console.log(`  containment line: ${line.length} pieces (${line.filter(b => b.tall).length} tall), ${kinks} kinks over 25 degrees (worst ${worst.toFixed(0)}), ${doubled.size} doubled stretches`);
 }
 
+// Wall stretches the player has looked at and accepted although a far-out departure test would stop deeper than the
+// wall (the wall is where it is on purpose: lining the track, no barriers out in the fields). Anything else short fails.
+// Accepted by the player on 2026-10-04 after seeing the one-line wall (commit 6c81b0d).
+const ACCEPTED_SHORT = [
+  { corner: 'Hurricane Sweep', sd: 0, s: 590 }, { corner: 'Hurricane Sweep', sd: 0, s: 680 }, { corner: 'Hurricane Sweep', sd: 0, s: 721 },
+  { corner: 'Rudder', sd: 1, s: 2700 }, { corner: 'Rudder', sd: 1, s: 2731 },
+  { corner: 'Final Approach', sd: 0, s: 21 }, { corner: 'Final Approach', sd: 0, s: 3597 },
+];
+const shortNotes = [];
 // Tall stretches are justified by departures: the wall line at the section must be at least as far out as the deepest
 // departure listed for it (corners.js depth is measured from the track edge, as in tools/laptest.js).
 for (const t of T.tallStretches) {
   const i = Math.round(t.s / T.ds), off = T.wall[t.sd][i] - T.halfWidth;
+  if (off < t.need && !t.constrained && ACCEPTED_SHORT.some(a => a.corner === t.corner && a.sd === t.sd && Math.abs(a.s - t.s) < 15)) { shortNotes.push(`${t.corner} s=${t.s.toFixed(0)} ${t.sd ? 'R' : 'L'}: wall ${off.toFixed(1)} m out, a departure stops ${t.need} m out (accepted)`); continue; }
   if (off < t.need && !t.constrained) errors.push(`${t.corner}: the wall line at s=${t.s} side ${t.sd ? 'R' : 'L'} is ${off.toFixed(1)} m out (edge to wall centreline) but a departure stops ${t.need} m out: push the wall out over s ${(t.s - t.length / 2).toFixed(0)} to ${(t.s + t.length / 2).toFixed(0)} (buildSides reach)`);
 }
 
@@ -227,3 +237,4 @@ if (errors.length) {
   if (errors.length > 50) console.log(`   - ... ${errors.length - 50} more`);
   process.exitCode = 1;
 } else console.log('  all checks passed');
+if (shortNotes.length) console.log(`  ${shortNotes.length} wall stretches shorter than a far departure, accepted by the player:\n    ` + shortNotes.join('\n    '));
