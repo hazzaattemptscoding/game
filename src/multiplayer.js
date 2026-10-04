@@ -302,6 +302,7 @@ export class Multiplayer {
       onRtt: ms => { if (this.relayRoom === room) { this.rtt = ms; this.onRtt(ms); } },
     });
     this.peers = room.peers;
+    room.onControl = (m, id) => { if (this.relayRoom === room && this.onControl) this.onControl(m, id); };
     if (asHost) room.host(this.name); else room.join(code, this.name);
   }
 
@@ -530,6 +531,8 @@ export class Multiplayer {
       }
       this.ghosts && this.ghosts.setName(id, p.name);
       this.changed();
+    } else if (data.t === 'clk' || data.t === 'clkr' || data.t === 'race') {
+      if (p.hello && this.onControl) this.onControl(data, id);      // clock samples and race starts (src/raceControl.js)
     } else if (data.t === 'name') {
       p.name = cleanName(data.n) || p.name;
       this.ghosts && this.ghosts.setName(id, p.name);
@@ -574,6 +577,22 @@ export class Multiplayer {
     if (this.relayRoom) { this.relayRoom.setName(this.name); return; }
     for (const p of this.peers.values()) this.sendTo(p.ctl, { t: 'name', n: this.name });
   }
+
+  // --- control messages: one-off JSON that is not car state (clock samples, the host's race start). onControl(msg, fromId) is set by
+  // the game (src/raceControl.js). Ids are the same on every machine: the peer id, or 'r<n>' over the relay. ---
+  get selfId() { return this.relayRoom ? (this.relayRoom.me == null ? '' : 'r' + this.relayRoom.me) : (this.peer ? this.peer.id : ''); }
+  // to everybody in the room (toId undefined) or one player; returns false when there is nobody to send to
+  sendControl(obj, toId) {
+    if (this.relayRoom) return this.relayRoom.sendControl(obj, toId);
+    let sent = false;
+    for (const p of this.peers.values()) {
+      if (!p.hello || (toId !== undefined && p.id !== toId)) continue;
+      this.sendTo(p.ctl, obj);
+      sent = true;
+    }
+    return sent;
+  }
+  broadcast(obj) { return this.sendControl(obj); }
 
   // Broadcast our car (an encoded state array). Called about 20 times a second; never waits.
   sendState(arr) {

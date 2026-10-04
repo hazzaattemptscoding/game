@@ -139,6 +139,7 @@ export class RelayClient {
 
 const randomToken = random => { let s = ''; for (let i = 0; i < 16; i++) s += 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(random() * 36)]; return s; };
 const peerId = n => 'r' + n;
+const CONTROL = new Set(['clk', 'clkr', 'race']);     // message types that go to Multiplayer.onControl
 
 export class RelayRoom {
   // opts: ghosts, url, onStatus(status), onPlayers(), onRtt(ms), now() ms clock, random(), makeCode(), WebSocket, timers
@@ -257,6 +258,8 @@ export class RelayRoom {
       this.changed();
     } else if (m.t === 'bye' && typeof m.id === 'number') {
       this.dropPeer(peerId(m.id), true);
+    } else if (CONTROL.has(m.t) && typeof m.from === 'number') {
+      if (this.peers.has(peerId(m.from)) && this.onControl) this.onControl(m, peerId(m.from));     // clock samples and race starts (src/raceControl.js)
     } else if (m.t === 'name' && typeof m.from === 'number') {
       const p = this.peers.get(peerId(m.from));
       if (!p) return;
@@ -288,6 +291,14 @@ export class RelayRoom {
   setName(name) {
     this.name = cleanName(name) || 'Driver';
     if (this.client) { this.client.name = this.name; this.client.send({ t: 'name', n: this.name }); }
+  }
+
+  // a control message for everyone, or for one player (`to` is a peer id 'r<n>'): the relay forwards unknown JSON as it is and adds `from`
+  sendControl(obj, to) {
+    if (!this.client || !this.peers.size) return false;
+    if (to === undefined) return this.client.send(obj);
+    const n = +String(to).slice(1);
+    return Number.isInteger(n) ? this.client.send({ ...obj, to: n }) : false;
   }
 
   // Broadcast our car (the array from encodeState) as one binary frame. About 20 times a second; never waits.

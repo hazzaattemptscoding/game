@@ -7,6 +7,7 @@
 import { StartSequence, START, pickHold, goOffset, gridSlot, pitSlot, sampleOffset, estimateOffset, toLocalTime, scheduleStart, sequenceFromMessage, cinematicPose, orbitPose } from '../src/start.js';
 import { makeSession, Flow, PHASE, RaceTracker, RACE, orderResults, timeTrialRows, hasStartLights } from '../src/session.js';
 import { buildTrack } from '../src/track.js';
+import { createRaceControl, cleanRaceMessage } from '../src/raceControl.js';
 
 const fails = [];
 const check = (ok, msg) => { if (!ok) fails.push(msg); };
@@ -212,6 +213,51 @@ console.log('ONLINE CLOCK AND SCHEDULE');
   check(sequenceFromMessage(msg, null).goAt === msg.startAt, 'without a clock sample the guest trusts its own clock');
   const grid = ['host', 'g1', 'g2'];
   check(grid.indexOf('g2') === 2 && gridSlot(buildTrack(), grid.indexOf('g2')).d === -3, 'grid slot from the order in the message');
+}
+
+console.log('ONLINE: A FAKE ROOM WITH SKEWED CLOCKS AND UNEVEN LATENCY');
+{
+  // real time T (ms) runs for everyone; each machine's clock reads T + skew. A message takes lat[from][to] ms.
+  let T = 0; const queue = [];
+  const at = (ms, f) => queue.push({ ms: T + ms, f });
+  const run = until => { for (;;) { queue.sort((a, b) => a.ms - b.ms); if (!queue.length || queue[0].ms > until) break; const e = queue.shift(); T = Math.max(T, e.ms); e.f(); } T = until; };
+  const nodes = {};
+  const make = (id, isHost, skew) => {
+    const n = { id, skew, got: [], mp: { isHost, selfId: id, peers: new Map(), sendControl(obj, to) { for (const o of Object.values(nodes)) if (o.id !== id && (to === undefined || to === o.id)) at(n.lat[o.id] ?? 30, () => o.rc.handle(JSON.parse(JSON.stringify(obj)), id)); return true; } } };
+    n.rc = createRaceControl({ mp: n.mp, now: () => T + skew, random: () => 0.5, setTimeout: (f, ms) => at(ms, f), onRace: r => n.got.push({ ...r, real: T }) });
+    nodes[id] = n; return n;
+  };
+  const H = make('host', true, 777000), A = make('g1', false, -42000), B = make('g2', false, 5);
+  H.lat = { g1: 20, g2: 90 }; A.lat = { host: 35, g2: 50 }; B.lat = { host: 60, g1: 50 };
+  for (const x of [H, A, B]) for (const y of [H, A, B]) if (x !== y) x.mp.peers.set(y.id, { id: y.id, hello: true });
+  A.rc.syncClock(); B.rc.syncClock();
+  run(1000);
+  check(A.rc.estimate && A.rc.estimate.n === 3 && B.rc.estimate && B.rc.estimate.n === 3, 'both guests took 3 clock samples');
+  check(Math.abs(A.rc.offset - 819000) < 40 && Math.abs(B.rc.offset - 776995) < 40, `clock offsets found (A error ${Math.abs(A.rc.offset - 819000).toFixed(1)} ms, B ${Math.abs(B.rc.offset - 776995).toFixed(1)} ms)`);
+  const r = H.rc.hostStart({ laps: 3, assists: 'off', racingLine: false });
+  check(r && r.msg.t === 'race' && r.msg.grid.join() === 'host,g1,g2' && r.slot === 0 && r.msg.laps === 3, 'the host builds the message with the grid in join order');
+  run(4000);
+  check(A.got.length === 1 && B.got.length === 1 && H.got.length === 0, 'each guest got the race message once, the host did not echo it');
+  check(A.got[0].slot === 1 && B.got[0].slot === 2 && !A.got[0].late && A.got[0].msg.assists === 'off' && A.got[0].msg.racingLine === false, 'slots follow the host grid order; options arrive');
+  // the real instant each machine thinks the lights go out: local goAt minus its clock skew
+  const outH = r.seq.goAt - 777000, outA = A.got[0].seq.goAt - -42000, outB = B.got[0].seq.goAt - 5;
+  check(Math.max(outH, outA, outB) - Math.min(outH, outA, outB) <= 100, `three machines, lights out within ${(Math.max(outH, outA, outB) - Math.min(outH, outA, outB)).toFixed(0)} ms of each other (limit 100)`);
+  check(A.got[0].seq.hold === r.msg.hold && B.got[0].seq.hold === r.msg.hold, 'everybody sees the same hold');
+  // a guest joins during the race: gets the message once, no grid slot, free drive
+  const C = make('g3', false, 9000); C.lat = { host: 40 }; H.lat.g3 = 40;
+  C.mp.peers.set('host', { id: 'host', hello: true });
+  H.mp.peers.set('g3', { id: 'g3', hello: true });
+  C.rc.syncClock();
+  run(T + 600);
+  H.rc.tick(); H.rc.tick();
+  run(T + 500);
+  check(C.got.length === 1 && C.got[0].late && C.got[0].slot >= 1, 'a late joiner is told once and takes part as a free drive');
+  // bad messages are cleaned
+  check(cleanRaceMessage({ t: 'race', startAt: 'x' }) === null && cleanRaceMessage(null) === null && cleanRaceMessage({ t: 'clk' }) === null, 'messages without a start time are dropped');
+  const c = cleanRaceMessage({ t: 'race', startAt: 5, laps: 999, hold: 99999, assists: 'weird', grid: ['a', 3, 'b'] });
+  check(c.laps === 99 && c.hold === START.HOLD_MAX_MS && c.assists === 'any' && c.grid.join() === 'a,b', 'laps, hold, assists and grid are clamped');
+  // the host does not obey a race message, a guest does not answer clock requests
+  const before = H.got.length; H.rc.handle({ t: 'race', startAt: 1, laps: 3 }, 'g1'); check(H.got.length === before, 'the host ignores race messages');
 }
 
 console.log(fails.length ? `FAILED\n  ${fails.join('\n  ')}` : 'session: all checks passed');
