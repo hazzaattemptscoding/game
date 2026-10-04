@@ -21,6 +21,7 @@
     "multiplayer": "node tools/multiplayer.js",
     "multiplayer-live": "node tools/multiplayer-live.mjs",
     "relay-live": "node tools/relay-live.mjs",
+    "session": "node tools/session.js",
     "check": "node tools/check.js",
     "barrierlog": "node tools/barrierlog.mjs"
   },
