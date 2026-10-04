@@ -1,19 +1,22 @@
-// Prints a one-screen summary of every play report in reports/ (no screenshots, no timelines).
-// Usage: npm run reports
-import fs from 'node:fs';
+// Print a compact index of report JSON files written by the Vite dev server.
+
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import { fileURLToPath } from 'node:url';
 
-const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'reports');
-if (!fs.existsSync(dir)) { console.log('No reports/ folder.'); process.exit(0); }
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'reports');
+let files = [];
+try { files = readdirSync(root).filter(name => name.endsWith('.json')).sort(); }
+catch (error) { if (error.code !== 'ENOENT') throw error; }
 
-for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort()) {
-  const r = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-  const t = r.telemetry || [];
-  const ds = t.map(p => p.d).filter(Number.isFinite);
-  const ss = t.map(p => p.s).filter(Number.isFinite);
-  console.log(`${r.id}  build ${r.build}  ${r.device}  debug=${r.quality?.settings?.debug}`);
-  console.log(`  note: ${r.note}`);
-  console.log(`  car at s=${r.car?.s?.toFixed(0)} (x ${r.car?.x?.toFixed(0)}, z ${r.car?.z?.toFixed(0)}, y ${r.car?.y?.toFixed(1)})`);
-  if (ss.length) console.log(`  telemetry: ${t.length} samples, s ${Math.min(...ss).toFixed(0)}..${Math.max(...ss).toFixed(0)}, d ${Math.min(...ds).toFixed(1)}..${Math.max(...ds).toFixed(1)}`);
+console.log(`Lakeside reports: ${files.length}`);
+for (const file of files) {
+  try {
+    const report = JSON.parse(readFileSync(path.join(root, file), 'utf8'));
+    const car = report.car || {}, point = `x=${Number(car.x || 0).toFixed(1)}, z=${Number(car.z || 0).toFixed(1)}, s=${Number(car.s || 0).toFixed(1)}, d=${Number(car.d || 0).toFixed(1)}`;
+    console.log(`\n${file}`);
+    console.log(`  ${report.createdAt || 'unknown time'} · ${report.category || 'uncategorized'} · ${point}`);
+    console.log(`  note: ${(report.note || '(none)').replace(/\s+/g, ' ')}`);
+    for (const feature of report.selections || []) console.log(`  ${feature.type || 'feature'} ${feature.id || ''}${feature.corner ? ` · ${feature.corner}` : ''}`);
+  } catch (error) { console.log(`\n${file}\n  unreadable report: ${error.message}`); }
 }

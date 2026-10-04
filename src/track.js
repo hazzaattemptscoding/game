@@ -24,6 +24,8 @@ export const SURF = {
   GRAVEL: 6,
   PIT: 7,        // pit lane tarmac
   CONCRETE: 8,   // old runway concrete used as paved run-off (the Sebring look): no penalty, mild rumble
+  RUMBLE: 9,     // painted rumble bands across the concrete apron
+  CONCRETE_OUTER: 10, // outer concrete apron, with grip falling away towards gravel
 };
 
 // Barrier types. Each barrier is a placed section (a polyline), used for
@@ -44,19 +46,19 @@ const SAUSAGE_WIDTH = 0.45; // raised kerb behind the flat kerb
 const LINE_WIDTH = 0.15;   // painted edge line, metres
 const PLAIN_RUNOFF = 22;   // flat grass beside the track where no corner needs more, metres
 const GRAVEL_APRON = 3;    // a gravel trap always has at least this much paved apron in front of it
-const STREET_GAP = 0.4;    // gap between the kerb and a street-section wall, metres
+const STREET_GAP = 0.8;    // clear space between the kerb and a street-section wall, metres
 const BRIDGE_RUNOFF = 1.2;
-const MIN_BARRIER = 4;     // no barrier closer than this to the track edge (street, pit and bridge excepted)
+const MIN_BARRIER = 5;     // working clearance margin beyond the 4 m minimum (street, pit and bridge excepted)
 const SEPARATION = 70;     // single armco goes in only where another part of the track is closer than this
 
 // Pit lane design (reference/LAKESIDE_SAFETY_LAYOUT.md 3.7)
 const PIT_ENTRY_ANGLE = 6;  // degrees the pit road splits away from the track
 const PIT_EXIT_ANGLE = 5;   // degrees it merges back
-const PIT_GROW = 60;        // metres for the pit road to grow to full width
 const PIT_WALL = 0.6;       // pit wall thickness, metres
 const PIT_WALL_CLEAR = 6;   // pit wall face at least this far from the track edge
 const PIT_ISLAND = 25;      // painted chevron island at the entry, metres long
 const PIT_APRON = 2;        // apron between the pit lane and the garage doors, metres
+const PIT_MOUTH_CLEAR = 15; // shared asphalt before either pit-lane island
 
 export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   const nPts = layout.points.length;
@@ -120,11 +122,76 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   // lane, and the placed barriers and boards.
   track.corners = corners;
   buildSides(track, corners);
+
+  track.groundAt = (px, pz, hint) => {
+    let near = 0, best = Infinity;
+    if (Number.isInteger(hint)) near = wrap(hint, N);
+    else {
+      for (let i = 0; i < N; i += 8) {
+        if (track.isBridge[i]) continue;
+        const q = (px - x[i]) ** 2 + (pz - z[i]) ** 2;
+        if (q < best) { best = q; near = i; }
+      }
+      for (let d = -8; d <= 8; d++) {
+        const i = wrap(near + d, N);
+        if (track.isBridge[i]) continue;
+        const q = (px - x[i]) ** 2 + (pz - z[i]) ** 2;
+        if (q < best) { best = q; near = i; }
+      }
+    }
+
+    let landNear = 0, landDist2 = Infinity, landSmooth = 0, landWeight = 0;
+    for (let i = 0; i < N; i += 8) {
+      if (track.isBridge[i]) continue;
+      const q = (px - x[i]) ** 2 + (pz - z[i]) ** 2;
+      if (q < landDist2) { landDist2 = q; landNear = i; }
+      const w = 1 / ((q + 900) * (q + 900));
+      landWeight += w; landSmooth += w * h[i];
+    }
+    for (let d = -8; d <= 8; d++) {
+      const i = wrap(landNear + d, N);
+      if (track.isBridge[i]) continue;
+      const q = (px - x[i]) ** 2 + (pz - z[i]) ** 2;
+      if (q < landDist2) { landDist2 = q; landNear = i; }
+    }
+    const dist = Math.sqrt(landDist2), corridor = Math.max(track.wall[0][landNear] + (track.pitOut[landNear] ? 70 : 0), track.wall[1][landNear]) + 4;
+    const far = Math.min(1, Math.max(0, (dist - corridor) / 120));
+    const blend = far * far * (3 - 2 * far);
+    const hills = 18 * Math.max(0, Math.min(1, (dist - 250) / 400)) * (0.6 + 0.4 * Math.sin(px * 0.004 + 1.3) * Math.cos(pz * 0.005));
+    let land = h[landNear] * (1 - blend) + landSmooth / (landWeight || 1) * blend + hills - 0.35;
+    if (dist < corridor) land = Math.min(land, h[landNear] - 0.35);
+    const bridgeHint = Number.isInteger(hint) && track.isBridge[near];
+    if (!bridgeHint) near = landNear;
+    let side = (px - x[near]) * nx[near] + (pz - z[near]) * nz[near] < 0 ? 0 : 1;
+    let lateral = Math.abs((px - x[near]) * nx[near] + (pz - z[near]) * nz[near]);
+    let paved = track.halfWidth + track.kerb[side][near] + track.sausage[side][near] + track.runoff[side][near];
+    if (side === 0 && track.pitOut[near]) paved = Math.max(paved, track.pitOut[near]);
+    if (track.isBridge[near]) paved = track.wall[side][near];
+    if (lateral <= paved) return h[near];
+    if (!bridgeHint) {
+      near = landNear;
+      side = (px - x[near]) * nx[near] + (pz - z[near]) * nz[near] < 0 ? 0 : 1;
+      lateral = Math.abs((px - x[near]) * nx[near] + (pz - z[near]) * nz[near]);
+      paved = track.halfWidth + track.kerb[side][near] + track.sausage[side][near] + track.runoff[side][near];
+      if (side === 0 && track.pitOut[near]) paved = Math.max(paved, track.pitOut[near]);
+      if (lateral <= paved) return h[near];
+    }
+    const roadHeight = h[near];
+    const slope = bridgeHint ? 1 / 3 : 0.12;
+    const rise = Math.min(Math.abs(land - roadHeight), (lateral - paved) * slope);
+    return roadHeight + Math.sign(land - roadHeight) * rise;
+  };
   buildBarriers(track, corners);
   buildFurniture(track, corners);
 
   track.locate = (px, pz, hint, out) => locate(track, px, pz, hint, out);
   track.surfaceAt = (i, d) => surfaceAt(track, i, d);
+  track.concreteProgressAt = (i, d) => {
+    const side = d < 0 ? 0 : 1;
+    const start = track.halfWidth + track.kerb[side][i] + track.sausage[side][i];
+    const out = Math.abs(d) - start, width = track.runoff[side][i];
+    return width > 0 ? Math.max(0, Math.min(1, (out - width * 2 / 3) / (width / 3))) : 0;
+  };
   track.inDRS = sv => track.drs.some(([a, b]) => inRange(sv, a, b, track.length));
   track.onBridge = sv => inRange(sv, track.bridge[0], track.bridge[1], track.length);
   track.findNearest = (px, pz, py) => findNearest(track, px, pz, py);
@@ -184,8 +251,14 @@ function surfaceAt(T, i, d) {
   if (a <= edge) return SURF.KERB;
   edge += T.sausage[side][i];
   if (a <= edge) return SURF.SAUSAGE;
+  const apronStart = edge;
   edge += T.runoff[side][i];
-  if (a <= edge) return T.concrete[side][i] ? SURF.CONCRETE : SURF.RUNOFF;
+  if (a <= edge) {
+    if (!T.concrete[side][i]) return SURF.RUNOFF;
+    const apronOffset = a - apronStart, apronWidth = T.runoff[side][i];
+    if (Math.abs(apronOffset - apronWidth / 3) <= 0.3 || Math.abs(apronOffset - apronWidth * 2 / 3) <= 0.3) return SURF.RUMBLE;
+    return apronOffset > apronWidth / 3 ? SURF.CONCRETE_OUTER : SURF.CONCRETE;
+  }
   if (T.gravelOut[side][i] > 0 && a >= T.gravelIn[side][i] && a <= T.gravelOut[side][i]) return SURF.GRAVEL;
   if (T.street[side][i] && a <= T.wall[side][i]) return SURF.RUNOFF;   // the paved gap between a street kerb and its wall
   return SURF.GRASS;
@@ -212,6 +285,27 @@ function findNearest(T, px, pz, py) {
     }
   }
   return bi;
+}
+
+function cornerWidths(corner, s, length) {
+  const profile = corner.widthProfile;
+  if (!profile || profile.length < 2) return { apron: corner.apron, gravel: corner.gravel, barrier: corner.barrier };
+  const points = [];
+  let lapOffset = 0, previous = profile[0][0];
+  for (const point of profile) {
+    if (point[0] < previous) lapOffset += length;
+    points.push([point[0] + lapOffset, point[1], point[2], point[3]]);
+    previous = point[0];
+  }
+  let target = ((s % length) + length) % length;
+  while (target < points[0][0]) target += length;
+  while (target > points.at(-1)[0] && target - length >= points[0][0]) target -= length;
+  for (let k = 1; k < points.length; k++) if (target <= points[k][0]) {
+    const a = points[k - 1], b = points[k], t = (target - a[0]) / (b[0] - a[0] || 1);
+    return { apron: a[1] + (b[1] - a[1]) * t, gravel: a[2] + (b[2] - a[2]) * t, barrier: a[3] + (b[3] - a[3]) * t };
+  }
+  const last = points.at(-1);
+  return { apron: last[1], gravel: last[2], barrier: last[3] };
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +343,7 @@ function buildSides(T, corners) {
   const forZone = (from, to, code, taper, fn) => {
     for (const sd of sides(code)) forRange(T.sAtPointRaw(from), T.sAtPointRaw(to), taper, (i, w) => fn(sd, i, w));
   };
-  const kerbOK = (sd, i) => !T.isBridge[i] && !(sd === 0 && T.pitOut[i] && T.pitIn[i] - hw < KERB_WIDTH + 1.5);
+  const kerbOK = (sd, i) => !T.isBridge[i] && !(sd === 0 && T.pitMouth[i]) && !(sd === 0 && T.pitOut[i] && T.pitIn[i] - hw < KERB_WIDTH + 1.5);
 
   // 1. Corners: kerbs where the car uses the edge, run-off on the outside
   const gravelW = pair(), reach = pair();
@@ -260,9 +354,10 @@ function buildSides(T, corners) {
     if (c.class === 'street') continue;
     const o = sideOf(c.outside);
     forRange(c.zone[0], c.zone[1], 25, (i, w) => {
-      T.runoff[o][i] = Math.max(T.runoff[o][i], c.apron * w);
-      gravelW[o][i] = Math.max(gravelW[o][i], c.gravel * w);
-      reach[o][i] = Math.max(reach[o][i], c.barrier * w);
+      const widths = cornerWidths(c, T.s[i], T.length);
+      T.runoff[o][i] = Math.max(T.runoff[o][i], widths.apron * w);
+      gravelW[o][i] = Math.max(gravelW[o][i], widths.gravel * w);
+      reach[o][i] = Math.max(reach[o][i], widths.barrier * w);
       if (c.sebring && w > 0.2) T.concrete[o][i] = 1;
     });
   }
@@ -301,6 +396,10 @@ function buildSides(T, corners) {
       if (T.gravelOut[sd][i] > T.wall[sd][i] - 1) T.gravelOut[sd][i] = Math.max(0, T.wall[sd][i] - 1);
       if (T.gravelOut[sd][i] <= T.gravelIn[sd][i] + 0.5) T.gravelOut[sd][i] = 0;
     }
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 1; i < N; i++) T.wall[sd][i] = Math.min(T.wall[sd][i], T.wall[sd][i - 1] + 0.25);
+      for (let i = N - 2; i >= 0; i--) T.wall[sd][i] = Math.min(T.wall[sd][i], T.wall[sd][i + 1] + 0.25);
+    }
   }
 }
 
@@ -338,6 +437,7 @@ function buildPit(T) {
   T.pitOut = new Float64Array(N);     // |d| of its far edge
   T.pitWall = new Uint8Array(N);      // 1 where the pit wall stands, from pitIn - PIT_WALL to pitIn
   T.pitIsland = new Uint8Array(N);    // painted chevron island between the two roads at the entry
+  T.pitMouth = new Uint8Array(N);
   T.pitLimiter = new Uint8Array(N);
   T.pitGarage = new Uint8Array(N);    // full-width stretch where the garages can go
   T.pitWidth = P.width;
@@ -351,12 +451,12 @@ function buildPit(T) {
   for (let u = 0; u <= len; u += T.ds) {
     const i = wrap(Math.round((a + u) / T.ds), N);
     const inner = Math.max(hw, smin(smin(hw + tIn * u, full, 1.5), hw + tOut * (len - u), 1.5));
-    const g = Math.min(1, Math.min(u, len - u) / PIT_GROW), grow = g * g * (3 - 2 * g);
     T.pitIn[i] = inner;
-    T.pitOut[i] = inner + Math.max(0.01, P.width * grow);
-    if (inner - PIT_WALL >= hw + PIT_WALL_CLEAR) T.pitWall[i] = 1;
-    if (u < PIT_ISLAND && inner > hw + 0.3) T.pitIsland[i] = 1;
-    if (T.pitWall[i] && grow > 0.999) T.pitLimiter[i] = 1;
+    T.pitOut[i] = inner + P.width;
+    if (u < PIT_MOUTH_CLEAR || len - u < PIT_MOUTH_CLEAR) T.pitMouth[i] = 1;
+    if (u >= PIT_MOUTH_CLEAR && u <= len - 20 && inner - PIT_WALL >= hw + PIT_WALL_CLEAR) T.pitWall[i] = 1;
+    if (u >= PIT_MOUTH_CLEAR && u < PIT_MOUTH_CLEAR + PIT_ISLAND && inner > hw + 0.3) T.pitIsland[i] = 1;
+    if (T.pitWall[i]) T.pitLimiter[i] = 1;
     if (T.pitLimiter[i]) T.pitGarage[i] = 1;
   }
 }
@@ -368,10 +468,13 @@ function buildBarriers(T, corners) {
   const { N } = T, hw = T.halfWidth;
   T.barriers = [];
   // points are [x, y, z, sample index the point was laid out from]
-  const P = (i, d) => [T.x[i] + T.nx[i] * d, T.h[i], T.z[i] + T.nz[i] * d, i];
+  const P = (i, d) => {
+    const x = T.x[i] + T.nx[i] * d, z = T.z[i] + T.nz[i] * d;
+    return [x, T.groundAt(x, z, i), z, i];
+  };
   const add = (type, side, pts, extra = {}) => { if (pts.length > 1) T.barriers.push({ type, side, pts, ...extra }); };
   // a polyline following the track, one point every `step` samples
-  const follow = (type, side, run, dFn, step = 3, extra) => {
+  const follow = (type, side, run, dFn, step = 1, extra) => {
     const pts = [];
     for (let k = 0; k < run.length; k += step) pts.push(P(run[k], dFn(run[k])));
     if ((run.length - 1) % step) pts.push(P(run[run.length - 1], dFn(run[run.length - 1])));
@@ -381,7 +484,18 @@ function buildBarriers(T, corners) {
   // 1. Impact sections from corners.js: a tyre wall in front of double armco,
   // centred where cars that leave the road would arrive, turned to meet them.
   const covered = [new Uint8Array(N), new Uint8Array(N)];
+  const tooCloseToRoad = (x, z, y) => {
+    for (let j = 0; j < N; j++) {
+      if (Math.abs(T.h[j] - y) > 4) continue;
+      const dx = x - T.x[j], dz = z - T.z[j];
+      if (Math.abs(dx * T.tx[j] + dz * T.tz[j]) > 0.6) continue;
+      const d = dx * T.nx[j] + dz * T.nz[j], side = d < 0 ? 0 : 1;
+      if (Math.abs(d) - hw - T.kerb[side][j] - T.sausage[side][j] < 4) return true;
+    }
+    return false;
+  };
   for (const c of corners) {
+    if (c.class === 'street') continue;
     for (const sec of c.sections || []) {
       const sd = (sec.side || c.outside) === 'L' ? 0 : 1, g = sd ? 1 : -1;
       const i = wrap(Math.round(sec.s / T.ds), N);
@@ -396,7 +510,11 @@ function buildBarriers(T, corners) {
       const end = sgn => [cx + dx * half * sgn + (dx * Math.cos(fa) * sgn + ox * Math.sin(fa)) * flare,
         cz + dz * half * sgn + (dz * Math.cos(fa) * sgn + oz * Math.sin(fa)) * flare];
       const a = end(-1), b = end(1);
-      const pts = [[a[0], T.h[i], a[1], i], [cx - dx * half, T.h[i], cz - dz * half, i], [cx + dx * half, T.h[i], cz + dz * half, i], [b[0], T.h[i], b[1], i]];
+      const pts = [[a[0], T.groundAt(a[0], a[1], i), a[1], i],
+        [cx - dx * half, T.groundAt(cx - dx * half, cz - dz * half, i), cz - dz * half, i],
+        [cx + dx * half, T.groundAt(cx + dx * half, cz + dz * half, i), cz + dz * half, i],
+        [b[0], T.groundAt(b[0], b[1], i), b[1], i]];
+      if (pts.some(([x, y, z]) => tooCloseToRoad(x, z, y))) continue;
       add(c.class === 'street' ? BARRIER.CONCRETE : BARRIER.TYRES, sd, pts, { corner: c.name, fence: c.class !== 'street', impact: true });
       for (let k = -Math.ceil(half + flare); k <= half + flare; k++) covered[sd][wrap(i + k, N)] = 1;
     }
@@ -409,15 +527,15 @@ function buildBarriers(T, corners) {
     // 3. bridge parapets
     for (const run of runsOf(N, i => T.isBridge[i])) follow(BARRIER.PARAPET, sd, run, i => g * T.wall[sd][i]);
     // 4. single armco, set back, only where another part of the track is close
-    const needs = i => T.room[sd][i] < SEPARATION && !T.street[sd][i] && !T.isBridge[i] && !covered[sd][i] && !(sd === 0 && T.pitOut[i]);
-    for (const run of runsOf(N, needs)) if (run.length > 8) follow(BARRIER.ARMCO, sd, run, i => g * Math.max(T.wall[sd][i], hw + MIN_BARRIER), 3);
+    const needs = i => !T.street[sd][i] && !T.isBridge[i] && !(sd === 0 && T.pitOut[i]);
+    for (const run of runsOf(N, needs)) if (run.length > 1) follow(BARRIER.ARMCO, sd, run, i => g * Math.max(T.wall[sd][i], hw + MIN_BARRIER), 3);
   }
 
   // 5. pit wall (two faces) and the low wall on the far side of the pit lane
   for (const run of runsOf(N, i => T.pitWall[i])) {
     follow(BARRIER.PITWALL, 0, run, i => -(T.pitIn[i] - PIT_WALL), 3);
   }
-  for (const run of runsOf(N, i => T.pitOut[i] && T.pitOut[i] > hw + PIT_WALL_CLEAR)) {
+  for (const run of runsOf(N, i => T.pitOut[i] && T.pitOut[i] > hw + PIT_WALL_CLEAR && !T.pitMouth[i])) {
     follow(BARRIER.PITOUTER, 0, run, i => -(T.pitOut[i] + (T.pitGarage[i] ? PIT_APRON : 0.5)), 3);
   }
 
@@ -488,7 +606,7 @@ function buildFurniture(T, corners) {
   T.furniture = [];
   const place = (type, value, i, d, extra = {}) => {
     const x = T.x[i] + T.nx[i] * d, z = T.z[i] + T.nz[i] * d;
-    return { type, value, i, s: T.s[i], d, x, z, y: T.h[i], ...extra };
+    return { type, value, i, s: T.s[i], d, x, z, y: T.groundAt(x, z, i), ...extra };
   };
   const SPACED = ['board', 'post', 'panel'];   // these keep 30 m apart; signs only need 6 m
   const nearOther = (x, z, r, types) => T.furniture.some(f => (!types || types.includes(f.type)) && (f.x - x) ** 2 + (f.z - z) ** 2 < r * r);

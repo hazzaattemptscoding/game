@@ -15,7 +15,7 @@ const SPONSOR_CHUNK = 9;      // length of one sponsor panel, metres (three 3 m 
 
 // colours for the top-down debug view
 export const DEBUG_COLOURS = {
-  road: 0x3a3a3a, line: 0xffffff, kerb: 0xe03030, sausage: 0xffcc00, apron: 0x9a9a9a, concrete: 0xd8c99a,
+  road: 0x3a3a3a, line: 0xffffff, kerb: 0xe03030, sausage: 0xffcc00, apron: 0x9a9a9a, concrete: 0xd8c99a, rumble: 0xe85d4a,
   gravel: 0xf0b040, grass: 0x4f8f3a, pit: 0x8a5cd6, island: 0xc0a8ff, tyres: 0xff2020, armco: 0x1e5bff,
   armcoSingle: 0x66ccff, street: 0xffffff, parapet: 0xbbbbbb, pitwall: 0xff55ff, fence: 0xffa000,
   board: 0xffff00, sign: 0x00ffff, building: 0x777777,
@@ -25,7 +25,10 @@ const tag = (mesh, cat) => { mesh.userData.debug = cat; return mesh; };
 export function buildTrackScene(T, ground) {
   const group = new THREE.Group();
   const hw = T.halfWidth;
-  const P = (i, d, lift = 0) => [T.x[i] + T.nx[i] * d, T.h[i] + lift, T.z[i] + T.nz[i] * d];
+  const P = (i, d, lift = 0) => {
+    const x = T.x[i] + T.nx[i] * d, z = T.z[i] + T.nz[i] * d;
+    return [x, T.groundAt(x, z, i) + lift, z];
+  };
   const all = [];
   for (let i = 0; i <= T.N; i++) all.push(wrap(i, T.N));
   const sOf = (i, j, idx) => (j === idx.length - 1 && i === idx[0] && j > 0 ? T.length : T.s[i]);
@@ -39,6 +42,7 @@ export function buildTrackScene(T, ground) {
     sausage: new THREE.MeshStandardMaterial({ map: tex.kerbTexture('#f2c200', '#111111'), roughness: 0.6 }),
     apron: new THREE.MeshStandardMaterial({ map: tex.runoffTexture(), roughness: 0.9, ...off(-2) }),
     concrete: new THREE.MeshStandardMaterial({ map: tex.runwayTexture(), roughness: 0.95, ...off(-2) }),
+    rumble: new THREE.MeshStandardMaterial({ map: tex.kerbTexture('#f2eee4', '#ba2f30'), roughness: 0.75, ...off(-2) }),
     grass: new THREE.MeshStandardMaterial({ map: tex.grassTexture(), roughness: 1 }),
     gravel: new THREE.MeshStandardMaterial({ map: tex.gravelTexture(), roughness: 1, ...off(-2) }),
     gravelEdge: new THREE.MeshStandardMaterial({ color: 0x6e5a3c, roughness: 1, ...off(-3) }),
@@ -61,7 +65,7 @@ export function buildTrackScene(T, ground) {
     lampOff: new THREE.MeshStandardMaterial({ color: 0x2a0606, emissive: 0xff1a1a, emissiveIntensity: 0 }),
   };
   const DEBUG_OF = {
-    road: 'road', line: 'line', kerb: 'kerb', sausage: 'sausage', apron: 'apron', concrete: 'concrete', grass: 'grass',
+    road: 'road', line: 'line', kerb: 'kerb', sausage: 'sausage', apron: 'apron', concrete: 'concrete', rumble: 'rumble', grass: 'grass',
     gravel: 'gravel', gravelEdge: 'gravel', pit: 'pit', island: 'island', armco: 'armco', armcoSingle: 'armcoSingle',
     wallConcrete: 'pitwall', street: 'street', parapet: 'parapet', sponsor: 'tyres', tyre: 'tyres', white: 'tyres',
     fence: 'fence', garage: 'building', glass: 'building', roof: 'building', attenuator: 'pitwall', pitOuter: 'pitwall',
@@ -72,7 +76,10 @@ export function buildTrackScene(T, ground) {
   const strips = name => (S[name] ||= new Strips());
 
   strips('road').strip(all, i => P(i, -hw, 0.03), i => P(i, hw, 0.03), (i, j) => sOf(i, j, all) / 8, -hw / 8, hw / 8);
-  for (const g of [-1, 1]) strips('line').strip(all, i => P(i, g * (hw - 0.15), 0.035), i => P(i, g * hw, 0.035), () => 0, 0, 1);
+  for (const g of [-1, 1]) {
+    const lineRuns = g < 0 ? runs(T.N, i => !T.pitMouth[i]) : [all];
+    for (const run of lineRuns) strips('line').strip(run, i => P(i, g * (hw - 0.15), 0.035), i => P(i, g * hw, 0.035), () => 0, 0, 1);
+  }
 
   for (const sd of [0, 1]) {
     const g = sd ? 1 : -1;
@@ -97,6 +104,14 @@ export function buildTrackScene(T, ground) {
           (i, j) => sOf(i, j, run) / (concrete ? 15 : 8), i => sausOut(i) / (concrete ? 15 : 8), i => runOut(i) / (concrete ? 15 : 8));
       }
     }
+    for (const run of runs(T.N, i => T.concrete[sd][i] && T.runoff[sd][i] > 1.8)) {
+      const inner = i => hw + T.kerb[sd][i] + T.sausage[sd][i];
+      for (const fraction of [1 / 3, 2 / 3]) {
+        strips('rumble').strip(run, i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction - 0.3), 0.045),
+          i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction + 0.3), 0.045),
+          (i, j) => sOf(i, j, run) / 2, 0, 1);
+      }
+    }
     // gravel, with a dark edge on both sides so it reads from the cockpit
     for (const run of runs(T.N, i => T.gravelOut[sd][i] > 0)) {
       strips('gravel').strip(run, i => P(i, g * T.gravelIn[sd][i], 0.05), i => P(i, g * T.gravelOut[sd][i], 0.05),
@@ -112,7 +127,7 @@ export function buildTrackScene(T, ground) {
     }
     if (sd === 0) {
       // beside the pit road: grass between the track and the pit wall or island, and beyond the pit road
-      for (const run of runs(T.N, i => pitHere(i) && T.pitIn[i] - (T.pitWall[i] ? 0.6 : 0) > runOut(i) + 0.2 && !T.pitIsland[i])) {
+      for (const run of runs(T.N, i => pitHere(i) && !T.pitMouth[i] && T.pitIn[i] - (T.pitWall[i] ? 0.6 : 0) > runOut(i) + 0.2 && !T.pitIsland[i])) {
         strips('grass').strip(run, i => P(i, -runOut(i), 0.0), i => P(i, -(T.pitIn[i] - (T.pitWall[i] ? 0.6 : 0)), 0.0), (i, j) => sOf(i, j, run) / 40, 0, 1);
       }
       for (const run of runs(T.N, i => pitHere(i) && T.wall[0][i] > T.pitOut[i] + 0.2)) {
@@ -126,6 +141,11 @@ export function buildTrackScene(T, ground) {
     const g = sd ? 1 : -1;
     for (const run of runs(T.N, i => !T.isBridge[i])) {
       strips('grass').strip(run, i => P(i, g * T.wall[sd][i], -1.5), i => P(i, g * T.wall[sd][i], 0.0), (i, j) => sOf(i, j, run) / 40, 0, 0.1);
+    }
+    const outerGrass = i => Math.min(T.wall[sd][i] + 15, T.room[sd][i]);
+    for (const run of runs(T.N, i => !T.isBridge[i] && outerGrass(i) > T.wall[sd][i] + 0.5)) {
+      strips('grass').strip(run, i => P(i, g * T.wall[sd][i], 0.005), i => P(i, g * outerGrass(i), 0.005),
+        (i, j) => sOf(i, j, run) / 40, i => T.wall[sd][i] / 12, i => outerGrass(i) / 12);
     }
   }
 
@@ -391,7 +411,8 @@ class Strips {
 function crossLine(b, T, s, width, d0, d1, lift = 0.045) {
   const i0 = wrap(Math.round(s / T.ds), T.N), idx = [];
   for (let k = 0; k <= Math.max(1, Math.round(width / T.ds)); k++) idx.push(wrap(i0 + k, T.N));
-  b.strip(idx, i => [T.x[i] + T.nx[i] * d0, T.h[i] + lift, T.z[i] + T.nz[i] * d0], i => [T.x[i] + T.nx[i] * d1, T.h[i] + lift, T.z[i] + T.nz[i] * d1], () => 0, 0, 1);
+  const y = (i, d) => T.groundAt(T.x[i] + T.nx[i] * d, T.z[i] + T.nz[i] * d, i) + lift;
+  b.strip(idx, i => [T.x[i] + T.nx[i] * d0, y(i, d0), T.z[i] + T.nz[i] * d0], i => [T.x[i] + T.nx[i] * d1, y(i, d1), T.z[i] + T.nz[i] * d1], () => 0, 0, 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +424,11 @@ function bridge(T, mat, ground) {
   for (let i = 0; i < T.N; i++) if (T.isBridge[i]) idx.push(i);
   if (!idx.length) return g;
   const b = new Strips();
-  const P = (i, d, lift) => [T.x[i] + T.nx[i] * d, T.h[i] + lift, T.z[i] + T.nz[i] * d];
+  const P = (i, d, lift) => {
+    const x = T.x[i] + T.nx[i] * d;
+    const z = T.z[i] + T.nz[i] * d;
+    return [x, T.groundAt(x, z, i) + lift, z];
+  };
   b.strip(idx, i => P(i, -T.wall[0][i] - 0.45, -1.3), i => P(i, T.wall[1][i] + 0.45, -1.3), () => 0, 0, 1);
   // deck edge beams carry a big PowerMedia banner on the outside faces
   const banners = new Strips();
@@ -522,7 +547,8 @@ function gantry(T, mat, sponsorTex) {
     lights.push(pair);
   }
   g.userData.lights = lights;
-  g.position.set(T.x[i], T.h[i], T.z[i]);
+  const x = T.x[i], z = T.z[i];
+  g.position.set(x, T.groundAt(x, z, i), z);
   g.rotation.y = -Math.atan2(T.tz[i], T.tx[i]);
   return g;
 }

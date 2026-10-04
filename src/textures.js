@@ -347,8 +347,8 @@ export function pitLaneTexture() {
 // Pit lane asphalt: lighter than the circuit, no markings (lines are drawn separately).
 export function pitAsphaltTexture() {
   const [c, x] = canvas(256, 256), r = rng(37);
-  x.fillStyle = '#6a6d72'; x.fillRect(0, 0, 256, 256);
-  speckle(x, 256, 256, r, 10000, ['#5c5f64', '#787b80', '#82858a', '#55585c'], 1.5);
+  x.fillStyle = '#45484b'; x.fillRect(0, 0, 256, 256);
+  speckle(x, 256, 256, r, 10000, ['#3b3e41', '#505356', '#595c5f', '#424548'], 1.5);
   return finish(c);
 }
 

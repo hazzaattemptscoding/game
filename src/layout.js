@@ -68,7 +68,7 @@ export const LAYOUT = {
     [22, 23, 'Sandbag'], [28, 30, 'Searchlight'], [31, 32, 'Roundel Bridge'],
     [33, 35, 'Station Corner'], [36, 39, 'Chandelle'], [40, 43, 'Hangar Straight'],
     [43, 45, 'Aileron'], [45, 46, 'Rudder'], [50, 53, 'Boundary Loop'],
-    [54, 56, 'Mess Straight'], [57, 58, 'Guardroom Chicane'],
+    [54, 56, 'Mess Straight'], [57, 58, 'Guardroom Chicane'], [59.3, 62.9, 'Final Approach'],
   ],
 
   // What sits either side of the track, from Harry's colour map
@@ -105,12 +105,14 @@ export const LAYOUT = {
     [16.8, 17.6, 'L', 5],
     [19.5, 21, 'L', 5],
     [22, 23.2, 'R', 5],
+    [24.2, 25.0, 'L', 12],     // paved extension beside the Sandbag street wall
     [27.5, 29, 'L', 8],
     [29.6, 30.6, 'R', 6],
     [34.6, 35.6, 'L', 7],
     [38.8, 40.2, 'R', 8],
     [48, 49.2, 'L', 8],
     [56.3, 57.2, 'L', 6],
+    [29.4, 30.6, 'L', 18],    // widen Searchlight's outside-left entry apron
     [59, 60.6, 'L', 12],       // widest: chicane exit onto the main straight
   ],
 

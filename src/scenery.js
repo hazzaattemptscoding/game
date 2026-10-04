@@ -33,16 +33,8 @@ export function createGround(T) {
     }
     return { dist: Math.sqrt(best), near, smooth: sh / sw };
   }
-
   function height(x, z) {
-    const { dist, near, smooth } = sample(x, z);
-    const corridor = reach(near);
-    const far = Math.min(1, Math.max(0, (dist - corridor) / 120));
-    const blend = far * far * (3 - 2 * far);
-    const hills = 18 * Math.max(0, Math.min(1, (dist - 250) / 400)) * (0.6 + 0.4 * Math.sin(x * 0.004 + 1.3) * Math.cos(z * 0.005));
-    let h = T.h[near] * (1 - blend) + smooth * blend + hills - 0.35;
-    if (dist < corridor) h = Math.min(h, T.h[near] - 0.35);
-    return h;
+    return T.groundAt(x, z);
   }
 
   // free space around a point: metres between it and the nearest barrier (or paddock)
@@ -65,17 +57,25 @@ export function createGround(T) {
     x0 -= pad; x1 += pad; z0 -= pad; z1 += pad;
     const nx = Math.ceil((x1 - x0) / cell) + 1, nz = Math.ceil((z1 - z0) / cell) + 1;
     const pos = new Float32Array(nx * nz * 3), uv = new Float32Array(nx * nz * 2), col = new Float32Array(nx * nz * 3), ind = [];
+    const insideTrackside = new Uint8Array(nx * nz);
     const c1 = new THREE.Color(0x4f7a3a), c2 = new THREE.Color(0x7c8a4a), tmp = new THREE.Color();
     for (let j = 0; j < nz; j++) for (let k = 0; k < nx; k++) {
       const x = x0 + k * cell, z = z0 + j * cell, n = j * nx + k;
       pos[n * 3] = x; pos[n * 3 + 1] = height(x, z); pos[n * 3 + 2] = z;
       uv[n * 2] = x / 24; uv[n * 2 + 1] = z / 24;
       // mown near the circuit, rougher meadow further out
-      const { dist } = sample(x, z);
+      const { dist, near } = sample(x, z);
+      const signed = (x - T.x[near]) * T.nx[near] + (z - T.z[near]) * T.nz[near];
+      const side = signed < 0 ? 0 : 1;
+      insideTrackside[n] = dist <= T.wall[side][near] ? 1 : 0;
       const rough = Math.min(1, Math.max(0, (dist - 60) / 200)) * (0.6 + 0.4 * Math.sin(x * 0.013) * Math.cos(z * 0.011));
       tmp.copy(c1).lerp(c2, rough);
       col[n * 3] = tmp.r; col[n * 3 + 1] = tmp.g; col[n * 3 + 2] = tmp.b;
-      if (j && k) { const a = (j - 1) * nx + k - 1, b = a + 1, c = j * nx + k - 1, d = c + 1; ind.push(a, c, b, b, c, d); }
+      if (j && k) {
+        const a = (j - 1) * nx + k - 1, b = a + 1, c = j * nx + k - 1, d = c + 1;
+        if (!insideTrackside[a] && !insideTrackside[c] && !insideTrackside[b]) ind.push(a, c, b);
+        if (!insideTrackside[b] && !insideTrackside[c] && !insideTrackside[d]) ind.push(b, c, d);
+      }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));

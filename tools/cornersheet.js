@@ -8,11 +8,10 @@
 //    zone, and where the car comes within 1 m of each track edge.
 // 3. Departure tests with the real physics and surface drag
 //    (reference/LAKESIDE_SAFETY_LAYOUT.md 3.1):
-//      straight on: from the braking point, brakes locked, wheel straight
-//      tangent: from the apex and the exit, heading along the track and
-//               10 degrees either side, reaction time + 0.3 s, then brakes locked
-//    Each test runs for the average and the new keyboard driver, at their
-//    own speeds; the deeper one sizes the run-off.
+//      fan: every 10 m from the braking point through the exit, at 0-40 degrees
+//           outwards in 5 degree steps, with both keyboard profiles' reaction
+//           delay and steering-position error before braking.
+//    Each fan runs for the average and new keyboard drivers at their own speeds.
 //    The barrier goes at the deepest stopping point plus 30%.
 // 4. Writes src/corners.js (read by the game) and docs/corner-sheet.md.
 //
@@ -38,12 +37,12 @@ const CLASSES = {
   slow: { apron: 8, gravel: 12, barrier: 22, note: 'slow hairpin, under 90 km/h' },
   street: { apron: 0, gravel: 0, barrier: 0, note: 'street section, walls at the edge' },
 };
-const SEBRING = ['Scramble', 'Windsock Hairpin', 'Boundary Loop'];   // old runway concrete aprons
+const SEBRING = ['Scramble', 'Windsock Hairpin', 'Boundary Loop', 'Final Approach'];   // old runway concrete aprons
 
 // ---------------------------------------------------------------------------
 // 1. Telemetry lap
 
-const base = buildTrack();
+const base = buildTrack(LAYOUT, PREVIOUS.map(c => ({ ...c, sections: [] })));
 const hw = base.halfWidth;
 // Keyboard is the baseline: speeds, braking, kerb contacts and the apex and
 // exit come from the average keyboard driver; the run-off is sized for the
@@ -141,6 +140,20 @@ for (const [p0, p1, name] of LAYOUT.corners) {
     for (const [a, b] of contacts[inside]) if (between(a, s0 - 30, s0 + len + 30) || between(b, s0 - 30, s0 + len + 30)) kerbs.inside.push([a - 10, b + 10]);
     if (exitV * KMH > 110) for (const [a, b] of contacts[outside]) if (between(a, apexS, apexS + 200)) kerbs.outside.push([a - 5, b + 10]);
   }
+  let curveRun = 0, curveExit = null;
+  for (let k = 0; k <= len + 80; k++) {
+    if (Math.abs(base.curv[at(s0 + k)]) > 1 / 400) curveRun++;
+    else {
+      if (curveRun > 60) { curveExit = s0 + k; break; }
+      curveRun = 0;
+    }
+  }
+  if (curveRun > 60) curveExit = s0 + len + 80;
+  if (curveExit !== null) kerbs.outside.push([curveExit - 15, curveExit + 25]);
+  if (name === 'Final Approach') {
+    kerbs.inside.push([apexS - 45, apexS + 10]);
+    kerbs.outside.push([exitS - 25, exitS + 25]);
+  }
 
   measured.push({
     name, points: [p0, p1], class: cls, inside, outside,
@@ -181,8 +194,8 @@ for (let pass = 0; pass < 2; pass++) {
     c.needed = round(deepest * MARGIN);
     const room = roomAt(T, c);
     c.room = round(room.free);
-    // the class size where it fits, never less than the departure tests need
-    c.barrier = round(Math.max(c.needed, Math.min(CLASSES[c.class].barrier, room.free - 1)));
+    // Keep the class width as the baseline; the fan sizes local profile points.
+    c.barrier = round(Math.max(4, Math.min(CLASSES[c.class].barrier, room.free - 1)));
     c.constrained = false; c.reason = '';
     if (c.needed > room.free - 1) {
       if (pass === 0) c.gravel = Math.max(c.gravel, Math.round(room.free - c.apron - 4));
@@ -191,6 +204,7 @@ for (let pass = 0; pass < 2; pass++) {
       c.reason = `needs ${c.needed} m of run-off, only ${round(room.free)} m before ${room.near}`;
     }
     c.gravel = Math.max(0, Math.min(c.gravel, c.barrier - c.apron - 3));
+    c.widthProfile = widthProfile(c);
   }
 }
 
@@ -215,7 +229,7 @@ for (const c of out) {
 
 function publicFields(c) {
   const keep = ['name', 'points', 'class', 'inside', 'outside', 'entryKmh', 'minKmh', 'exitKmh', 'brakeStart', 'brakeEnd', 'brakeDistance',
-    'apexS', 'exitS', 'contacts', 'kerbs', 'zone', 'flat', 'apron', 'gravel', 'barrier', 'needed', 'room', 'sebring', 'departures',
+    'apexS', 'exitS', 'contacts', 'kerbs', 'zone', 'flat', 'apron', 'gravel', 'barrier', 'widthProfile', 'needed', 'room', 'sebring', 'departures',
     'sections', 'constrained', 'reason'];
   const o = {};
   for (const k of keep) if (c[k] !== undefined) o[k] = c[k];
@@ -254,18 +268,72 @@ function depart(T, c, s, d, v, angle, reaction) {
 // left it as late as they ever do; the tangent tests give them their
 // reaction time plus 0.3 s to realise they are off before braking.
 function departures(T, c) {
-  const res = [];
-  const start = c.brakeStart ?? norm(c._s0 - 20);
+  const summary = [], stops = [];
+  let start = c._from, end = c._exitS;
+  while (end < start) end += base.length;
   for (const t of [tel, telNew]) {
-    const p = t.profile, who = p.label.replace('Keyboard, ', '');
-    const late = Math.max(0, 2 * p.brakeSpread - p.brakeEarly);
-    const v0 = t.speed[at(start)];
-    res.push({ test: `${who}: straight on`, ...depart(T, c, start, line0(start), v0, 0, late / Math.max(v0, 1)) });
-    for (const [label, s] of [['apex', c._apexS], ['exit', c._exitS]]) {
-      for (const angle of [-10, 0, 10]) res.push({ test: `${who}: ${label} ${angle > 0 ? '+' : ''}${angle}°`, ...depart(T, c, s, line0(s), t.speed[at(s)], angle, p.reaction + 0.3) });
+    const who = t.profile.label.replace('Keyboard, ', '');
+    for (let launch = start; launch <= end; launch += 10) {
+      let deepest = null;
+      const s = norm(launch), v = t.speed[at(s)];
+      for (let angle = 0; angle <= 40; angle += 5) {
+        const noise = t.profile.aim * Math.sin(launch * 0.137 + angle * 0.31);
+        const result = { test: `${who}: fan ${s.toFixed(0)} m ${angle}°`, launchS: s,
+          ...depart(T, c, s, line0(s) + noise, v, angle, t.profile.reaction + 0.3) };
+        stops.push(result);
+        if (!deepest || result.depth > deepest.depth) deepest = result;
+      }
+      summary.push(deepest);
     }
   }
-  return res;
+  c._fanStops = stops;
+  return summary;
+}
+
+function widthProfile(c) {
+  const start = c._from - 20;
+  const profileEnd = norm(c._exitS + 60);
+  let end = start + ((profileEnd - norm(start) + base.length) % base.length);
+  for (const stop of c._fanStops || []) {
+    let stopS = norm(stop.s);
+    while (stopS < norm(start)) stopS += base.length;
+    if (stopS <= start + base.length) end = Math.max(end, stopS + 20);
+  }
+  const baseBarrier = CLASSES[c.class].barrier;
+  const profile = [];
+  for (let s = start; s < end; s += 20) {
+    let depth = 0;
+    for (const stop of c._fanStops || []) {
+      const delta = Math.abs(stop.s - norm(s));
+      if (Math.min(delta, base.length - delta) <= 15) depth = Math.max(depth, stop.depth);
+    }
+    const required = Math.max(baseBarrier, depth * MARGIN);
+    const barrier = Number.isFinite(c.room) ? Math.min(required, Math.max(4, c.room - 1)) : required;
+    const gravel = Math.min(c.gravel, Math.max(0, barrier - c.apron - 3));
+    profile.push([round(norm(s)), round(c.apron), round(gravel), round(barrier)]);
+  }
+  profile.push([round(norm(end)), round(c.apron), round(c.gravel), round(baseBarrier)]);
+  return profile;
+}
+
+function profileBarrierAt(c, s) {
+  const profile = c.widthProfile;
+  if (!profile?.length) return c.barrier;
+  const points = [];
+  let offset = 0, previous = profile[0][0];
+  for (const point of profile) {
+    if (point[0] < previous) offset += base.length;
+    points.push([point[0] + offset, point[3]]);
+    previous = point[0];
+  }
+  let target = norm(s);
+  while (target < points[0][0]) target += base.length;
+  while (target > points.at(-1)[0] && target - base.length >= points[0][0]) target -= base.length;
+  for (let i = 1; i < points.length; i++) if (target <= points[i][0]) {
+    const [a, wa] = points[i - 1], [b, wb] = points[i];
+    return wa + (wb - wa) * (target - a) / (b - a || 1);
+  }
+  return points.at(-1)[1];
 }
 
 // where the average driver's first flying lap was across the track
@@ -324,7 +392,8 @@ function sections(T, c) {
     return dedupe(out);
   }
   const length = Math.round(Math.min(40, Math.max(20, c.entryKmh / 7)));
-  const pts = c.departures.filter(d => d.depth > 0.5).map(d => ({ s: d.s, angle: Math.min(25, d.angle / 2) }));
+  const pts = c.departures.filter(d => d.depth > 0.5 && between(d.s, c.zone[0], c.zone[1]))
+    .map(d => ({ s: d.s, depth: d.depth, angle: Math.min(25, d.angle / 2) }));
   pts.sort((a, b) => a.s - b.s);
   const groups = [];
   for (const p of pts) {
@@ -334,8 +403,10 @@ function sections(T, c) {
   groups.forEach((g, n) => {
     const s = g.reduce((a, p) => a + p.s, 0) / g.length;
     const angle = g.reduce((a, p) => a + p.angle, 0) / g.length;
+    const depth = Math.max(...g.map(p => p.depth));
     const span = g[g.length - 1].s - g[0].s;
-    out.push({ s: round(norm(s)), side: c.outside, offset: round(c.barrier + (n % 2) * 1.0), length: Math.min(40, round(length + span)), angle: round(angle) });
+    const roomLimit = Number.isFinite(c.room) ? Math.max(4, c.room - 1) : Infinity;
+    out.push({ s: round(norm(s)), side: c.outside, offset: round(Math.min(depth + 5, roomLimit) + (n % 2) * 1.0), length: Math.min(40, round(length + span)), angle: round(angle) });
   });
   // overlap neighbouring sections by 5 m
   for (let k = 1; k < out.length; k++) {

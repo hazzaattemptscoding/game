@@ -26,6 +26,8 @@ export const SURFACE = {
   [SURF.GRAVEL]: { grip: 0.35, drag: 0.7, bump: 0.6 },
   [SURF.PIT]: { grip: 1.0, drag: 0, bump: 0 },
   [SURF.CONCRETE]: { grip: 0.97, drag: 0.002, bump: 0.25 },   // old runway concrete run-off: no penalty, mild rumble
+  [SURF.RUMBLE]: { grip: 0.95, drag: 0.02, bump: 1.2 },
+  [SURF.CONCRETE_OUTER]: { grip: 0.95, drag: 0.002, bump: 0.25 },
 };
 
 const WALL_BOUNCE = 0.25;   // how much speed comes back off a barrier (0 = dead stop, 1 = rubber ball)
@@ -75,6 +77,8 @@ export class Car {
     this.steerRange = this.cfg.maxLock;
     this.loc = { i, h: this.y };
     this.track.locate(this.x, this.z, i, this.loc);
+    this.y = T.groundAt ? T.groundAt(this.x, this.z, i) : this.loc.h;
+    this.groundY = this.y;
     this.savePrev();
   }
 
@@ -111,9 +115,13 @@ export class Car {
       const sf = T.surfaceAt(loc.i, d);
       this.wheelSurf[w] = sf;
       const S = SURFACE[sf];
-      if (w < 2) gripF += S.grip / 2; else gripR += S.grip / 2;
-      surfDrag += S.drag / 4;
-      bump = Math.max(bump, S.bump);
+      const progress = sf === SURF.CONCRETE_OUTER && T.concreteProgressAt ? T.concreteProgressAt(loc.i, d) : 0;
+      const grip = sf === SURF.CONCRETE_OUTER ? 0.95 - 0.25 * progress : S.grip;
+      const drag = sf === SURF.CONCRETE_OUTER ? 0.002 + 0.018 * progress : S.drag;
+      const roughness = sf === SURF.CONCRETE_OUTER ? 0.25 + 0.75 * progress : S.bump;
+      if (w < 2) gripF += grip / 2; else gripR += grip / 2;
+      surfDrag += drag / 4;
+      bump = Math.max(bump, roughness);
     }
     this.bump = bump * Math.min(1, speed / 15);
 
@@ -250,7 +258,9 @@ export class Car {
     // --- back onto the road surface, then barriers ---
     T.locate(this.x, this.z, loc.i, loc);
     this.collideWalls();
-    this.y = loc.h;
+    const groundY = T.groundAt ? T.groundAt(this.x, this.z, loc.i) : loc.h;
+    this.groundY += (groundY - this.groundY) * (1 - Math.exp(-dt / 0.05));
+    this.y = this.groundY;
 
     // --- outputs for camera, sound, HUD ---
     const fx2 = Math.cos(this.heading), fz2 = Math.sin(this.heading);

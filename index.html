@@ -20,7 +20,33 @@
 <div class="t-top">
   <button data-action="reset" aria-label="Back on track">Reset</button>
   <button data-action="camera" aria-label="Switch camera">Camera</button>
+  <button data-action="report" aria-label="Report a problem">Report</button>
   <button data-action="settings" aria-label="Settings">Settings</button>
+</div>
+<div id="report-layer" hidden>
+  <header class="report-head">
+    <strong>Track report</strong>
+    <div><button id="report-center" type="button">Center</button><button id="report-follow" type="button">Follow</button><button id="report-resume" type="button">Resume</button></div>
+  </header>
+  <nav class="report-tools">
+    <button data-report-tool="pick" class="selected" type="button">Pick</button>
+    <button data-report-tool="box" type="button">Box select</button>
+    <button id="report-clear" type="button">Clear</button>
+    <output id="report-coordinate">Move over the map</output>
+  </nav>
+  <section class="report-details">
+    <div id="report-selection">No features selected</div>
+    <label for="report-category">Category</label>
+    <select id="report-category">
+      <option>barrier on track</option><option>empty space</option><option>floating</option><option>collision</option><option>other</option>
+    </select>
+    <label for="report-note">Note</label>
+    <textarea id="report-note" rows="3" maxlength="2000"></textarea>
+    <button id="report-save" type="button">Save report</button>
+    <span id="report-status" role="status"></span>
+    <span id="report-pending">0 unsent</span>
+  </section>
+  <div id="report-rect" hidden></div>
 </div>
 <div id="settings" hidden>
   <div class="box">
