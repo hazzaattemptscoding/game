@@ -65,6 +65,7 @@ html, body {
 #settings .row { display: flex; gap: 8px; }
 #settings button { flex: 1; font: inherit; font-size: 17px; font-weight: 700; padding: 9px; border: 0; cursor: pointer; background: #3a3f46; color: var(--paper); }
 #settings button.sel { background: var(--paper); color: var(--ink); }
+#settings input[type=range] { width: 100%; accent-color: var(--yel); margin: 4px 0 0; }
 #settings button.main { width: 100%; margin-top: 22px; background: var(--yel); color: var(--ink); }
 #settings button:focus-visible { outline: 3px solid var(--yel); outline-offset: 2px; }
 

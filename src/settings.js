@@ -2,7 +2,7 @@
 // handling readout; more arrive with later phases.
 
 const KEY = 'lakeside-settings';
-const DEFAULTS = { units: 'mph', assists: true, debug: false, blockout: false };
+const DEFAULTS = { units: 'mph', assists: true, debug: false, blockout: false, sound: true, volume: 0.7 };
 
 export function loadSettings() {
   let saved = {};

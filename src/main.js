@@ -18,6 +18,7 @@ import { createInput } from './input.js';
 import { Hud } from './hud.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { ReportTool } from './report.js';
+import { CarAudio } from './audio.js';
 
 const params = new URLSearchParams(location.search);
 const settings = loadSettings();
@@ -75,6 +76,8 @@ if (params.has('viewat')) {
   fixedView = [track.x[i] + track.nx[i] * d, track.h[i] + hgt, track.z[i] + track.nz[i] * d, track.x[j], track.h[j], track.z[j]];
 }
 const input = createInput();
+const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthesised sound, starts at the first key press or touch
+audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
 const history = { inputs: [], telemetry: [] };
 let restoreTopDown = false;
@@ -99,6 +102,8 @@ function syncPanel() {
   panel.querySelectorAll('[data-debug]').forEach(b => b.classList.toggle('sel', String(settings.debug) === b.dataset.debug));
   panel.querySelectorAll('[data-topdown]').forEach(b => b.classList.toggle('sel', String(topDown) === b.dataset.topdown));
   panel.querySelectorAll('[data-blockout]').forEach(b => b.classList.toggle('sel', String(!!settings.blockout) === b.dataset.blockout));
+  panel.querySelectorAll('[data-sound]').forEach(b => b.classList.toggle('sel', String(settings.sound !== false) === b.dataset.sound));
+  const vol = panel.querySelector('#volume'); if (vol) vol.value = Math.round(settings.volume * 100);
   panel.querySelectorAll('[data-auto]').forEach(b => b.classList.toggle('sel', String(!!autopilot) === b.dataset.auto));
 }
 panel.addEventListener('click', e => {
@@ -109,10 +114,16 @@ panel.addEventListener('click', e => {
   if (b.dataset.debug) settings.debug = b.dataset.debug === 'true';
   if (b.dataset.blockout) { settings.blockout = b.dataset.blockout === 'true'; applyLook(); }
   if (b.dataset.topdown) { topDown = b.dataset.topdown === 'true'; applyLook(); }
+  if (b.dataset.sound) settings.sound = b.dataset.sound === 'true';
   if (b.dataset.auto) autopilot = b.dataset.auto === 'true' ? new Autopilot(track, GT, { skill: 0.9 }) : null;
   if (b.id === 'close') togglePanel(false);
   saveSettings(settings);
   syncPanel();
+});
+panel.addEventListener('input', e => {
+  if (e.target.id !== 'volume') return;
+  settings.volume = Math.max(0, Math.min(1, +e.target.value / 100));
+  saveSettings(settings);
 });
 function togglePanel(open = panel.hidden) { panel.hidden = !open; syncPanel(); }
 syncPanel();
@@ -145,6 +156,7 @@ function frame(now) {
     acc += dt;
     while (acc >= STEP) {
       car.step(autopilot ? autopilot.drive(car) : playerInput);
+      audio.latch(car);
       simTime += STEP;
       timer.update(car.loc.s, simTime);
       timer.checkLimits(car, simTime);
@@ -178,6 +190,7 @@ function frame(now) {
   sun.target.position.copy(p);
   sun.position.copy(p).addScaledVector(SUN_DIR, 150);
 
+  audio.update(car, dt, paused);
   hud.update(car, timer, track, simTime);
   renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);
