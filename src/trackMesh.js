@@ -307,6 +307,7 @@ function attenuator(pts, nrm, material) {
 
 function furniture(T) {
   const g = new THREE.Group();
+  const bollardMat = { white: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.5 }), orange: new THREE.MeshStandardMaterial({ color: 0xff6a13, roughness: 0.5 }) };
   const boardMats = {}, postMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.6 });
   const signMat = new THREE.MeshStandardMaterial({ map: tex.speedSignTexture(T.layout.pit.speedLimit), roughness: 0.6, side: THREE.DoubleSide });
   for (const f of T.furniture) {
@@ -320,6 +321,13 @@ function furniture(T) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.25, 0.08), postMat);
       post.position.set(f.x, f.y + 0.6, f.z);
       g.add(tag(board, 'board'), tag(post, 'board'));
+    } else if (f.type === 'bollard') {
+      // a flexible white post with an orange band, standing on the kerb
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.9, 8), bollardMat.white);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0625, 0.0625, 0.18, 8), bollardMat.orange);
+      post.position.set(f.x, f.y + 0.45, f.z); band.position.set(f.x, f.y + 0.72, f.z);
+      post.castShadow = true;
+      g.add(tag(post, 'sign'), tag(band, 'sign'));
     } else if (f.type === 'sign') {
       const sign = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), signMat);
       sign.position.set(f.x, f.y + 2.4, f.z);

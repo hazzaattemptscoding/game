@@ -53,7 +53,7 @@ export const LAYOUT = {
   // Pit lane: leaves the track on the left at `entry`, runs alongside the
   // main straight (under the bridge) and rejoins on the left at `exit`.
   pit: {
-    entry: 59,
+    entry: 60.5,
     exit: 4.6,
     offset: 15.5,       // distance from the track centreline to the pit lane centreline, metres
     width: 12,          // pit lane width: 4 m fast lane plus 8 m working lane
