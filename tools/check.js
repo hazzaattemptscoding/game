@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 
 const quiet = process.argv.includes('--quiet');
-const steps = [['laptest', 'tools/laptest.js'], ['audit', 'tools/audit.js'], ['bumps', 'tools/bumps.js'], ['surfaces', 'tools/surfaces.js']];
+const steps = [['laptest', 'tools/laptest.js'], ['audit', 'tools/audit.js'], ['bumps', 'tools/bumps.js'], ['surfaces', 'tools/surfaces.js'], ['smoke', 'tools/smoke.mjs']];
 const results = [];
 for (const [name, file] of steps) {
   const r = spawnSync(process.execPath, [file], { encoding: 'utf8' });

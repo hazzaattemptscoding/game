@@ -61,12 +61,12 @@ scene.add(world);
 const markers = debugMarkers(track);
 markers.visible = false;
 scene.add(markers);
+const rig = new CameraRig(innerWidth / innerHeight);
 let topDown = params.has('topdown');
 applyLook();
 const view = new CarView(GT, 0xffd21f);
 scene.add(view.root);
 
-const rig = new CameraRig(innerWidth / innerHeight);
 // ?view=x,y,z,tx,ty,tz pins the camera (for screenshots); ?viewat=s,d,height,lookahead places it by track position
 let fixedView = params.has('view') ? params.get('view').split(',').map(Number) : null;
 if (params.has('viewat')) {
@@ -230,7 +230,7 @@ function applyLook() {
   scene.fog.far = topDown ? 20000 : 2600;
   // the race view only looks 2.6 km and starts at 0.5 m: that keeps the depth buffer fine enough that
   // nothing a few millimetres apart flickers
-  if (typeof rig !== 'undefined') { rig.camera.near = topDown ? 1 : 0.5; rig.camera.far = topDown ? 6000 : 2600; rig.camera.updateProjectionMatrix(); }
+  { rig.camera.near = topDown ? 1 : 0.5; rig.camera.far = topDown ? 6000 : 2600; rig.camera.updateProjectionMatrix(); }
   setDebugColours(world, topDown);
   if (!topDown) setBlockout(world, settings.blockout);
 }
