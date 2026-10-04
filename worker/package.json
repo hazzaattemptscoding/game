@@ -5,10 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node dev-relay.mjs",
-    "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
-  },
-  "devDependencies": {
-    "wrangler": "^4.0.0"
+    "deploy": "npx wrangler deploy",
+    "tail": "npx wrangler tail"
   }
 }
