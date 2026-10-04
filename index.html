@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Lakeside</title>
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="hud"></div>
+<div id="settings" hidden>
+  <div class="box">
+    <h2>Settings</h2>
+    <label>Speed</label>
+    <div class="row"><button data-units="mph">mph</button><button data-units="kmh">km/h</button></div>
+    <label>Assists (traction, ABS, stability)</label>
+    <div class="row"><button data-assists="true">On</button><button data-assists="false">Off</button></div>
+    <label>Handling readout</label>
+    <div class="row"><button data-debug="false">Hide</button><button data-debug="true">Show</button></div>
+    <label>Autopilot demo lap</label>
+    <div class="row"><button data-auto="false">Off</button><button data-auto="true">On</button></div>
+    <button id="close" class="main">Back to driving</button>
+  </div>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
