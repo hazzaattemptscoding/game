@@ -614,15 +614,24 @@ function buildBarriers(T, corners) {
     const pts = [];
     for (let k = 0; k < run.length; k += step) pts.push(P(run[k], dFn(run[k])));
     if ((run.length - 1) % step) pts.push(P(run[run.length - 1], dFn(run[run.length - 1])));
-    // a containment wall that meets an impact wall is joined to its end, so there is never a gap beside it
-    if (extra && extra.joins) { const [before, after] = extra.joins; if (before) pts.unshift(before.b); if (after) pts.push(after.a); delete extra.joins; }
+    // a part of the containment wall directly behind an impact wall is kept for physics but not drawn
+    if (extra && extra.hideWhere) {
+      const { hideWhere, ...rest } = extra;
+      let from = 0;
+      for (let k = 1; k <= pts.length; k++) {
+        if (k < pts.length && !!hideWhere(pts[k][3]) === !!hideWhere(pts[from][3])) continue;
+        const hid = !!hideWhere(pts[from][3]);
+        add(type, side, pts.slice(from, Math.min(k + 1, pts.length)), hid ? { ...rest, hidden: true, why: rest.why + ' (hidden: an impact wall stands in front of it)' } : rest);
+        from = k;
+      }
+      return;
+    }
     add(type, side, pts, extra);
   };
 
   // 1. Impact sections from corners.js: a tyre wall in front of double armco,
   // centred where cars that leave the road would arrive, turned to meet them.
   const covered = [new Uint8Array(N), new Uint8Array(N)];
-  const secByLo = [new Map(), new Map()], secByHi = [new Map(), new Map()];   // impact sections by where their span starts and ends
   const nearBridge = new Uint8Array(N);
   for (let i = 0; i < N; i++) if (T.isBridge[i]) for (let k = -BRIDGE_APPROACH; k <= BRIDGE_APPROACH; k++) nearBridge[wrap(i + k, N)] = 1;
   for (let i = 0; i < N; i++) if (T.isBridge[i]) nearBridge[i] = 0;
@@ -641,8 +650,7 @@ function buildBarriers(T, corners) {
     for (const sec of c.sections || []) {
       const sd = (sec.side || c.outside) === 'L' ? 0 : 1, g = sd ? 1 : -1;
       const i = wrap(Math.round(sec.s / T.ds), N);
-      // the impact wall stands ON the barrier line (T.wall), not in front of it: one line of barrier, never two
-      const want = hw + sec.offset, off = c.class === 'street' ? T.wall[sd][i] : (T.wall[sd][i] >= want - 2 && T.wall[sd][i] <= want + 25 ? T.wall[sd][i] : want);
+      const off = c.class === 'street' ? T.wall[sd][i] : hw + sec.offset;
       const cx = T.x[i] + T.nx[i] * off * g, cz = T.z[i] + T.nz[i] * off * g;
       // the face runs along the track, turned outwards by `angle` so the car meets it at a glancing angle
       const ang = (sec.angle || 0) * Math.PI / 180 * g;
@@ -664,9 +672,6 @@ function buildBarriers(T, corners) {
       const why = dep ? `${c.name}: "${dep.test}" leaves at s=${dep.s}, ${dep.depth} m beyond the edge, at ${dep.angle}°` : `${c.name}: placed from corners.js with no departure listed`;
       add(c.class === 'street' ? BARRIER.CONCRETE : BARRIER.TYRES, sd, pts, { corner: c.name, fence: c.class !== 'street', impact: true, why, spec: { length: sec.length, offset: sec.offset, angle: sec.angle || 0 } });
       for (let k = -Math.ceil(half + flare); k <= half + flare; k++) covered[sd][wrap(i + k, N)] = 1;
-      const sec2 = { a: pts[0], b: pts[3], span: [wrap(i - Math.ceil(half + flare), N), wrap(i + Math.ceil(half + flare), N)] };
-      secByLo[sd].set(sec2.span[0], sec2); secByHi[sd].set(sec2.span[1], sec2);
-      T.barriers.at(-1).span = sec2.span;
     }
   }
 
@@ -692,12 +697,12 @@ function buildBarriers(T, corners) {
     }
     // 4. the containment wall: keeps a car on the flat ground. Drawn as a plain 1.2 m tyre wall (plain: true); the
     // 1.9 m impact sections above are where cars are expected to arrive.
-    // (not where an impact wall already stands on the line: that wall is the barrier there)
+    // (behind an impact wall it stays for physics but is hidden, so the eye sees one line of barrier)
     // beside a street wall the containment wall keeps to the same easing line, so it joins the street wall in line
     const nearStreet = new Uint8Array(N);
     for (let i = 0; i < N; i++) if (streetWall[i]) for (let k = -20; k <= 20; k++) nearStreet[wrap(i + k, N)] = 1;
-    const needs = i => !streetWall[i] && !T.isBridge[i] && !nearBridge[i] && !(sd === 0 && T.pitOut[i]) && !covered[sd][i];
-    for (const run of runsOf(N, needs)) if (run.length > 1) follow(BARRIER.ARMCO, sd, run, i => g * (nearStreet[i] ? Math.max(T.wall[sd][i], edge4(i)) : Math.max(T.wall[sd][i], hw + MIN_BARRIER)), 3, { joins: [secByHi[sd].get(wrap(run[0] - 1, N)), secByLo[sd].get(wrap(run.at(-1) + 1, N))], plain: true, why: 'containment: a low sponsored tyre wall all round the flat ground, so a car never meets an unseen wall' });
+    const needs = i => !streetWall[i] && !T.isBridge[i] && !nearBridge[i] && !(sd === 0 && T.pitOut[i]);
+    for (const run of runsOf(N, needs)) if (run.length > 1) follow(BARRIER.ARMCO, sd, run, i => g * (nearStreet[i] ? Math.max(T.wall[sd][i], edge4(i)) : Math.max(T.wall[sd][i], hw + MIN_BARRIER)), 3, { hideWhere: i => covered[sd][i], plain: true, why: 'containment: a low sponsored tyre wall all round the flat ground, so a car never meets an unseen wall' });
   }
 
   // 5. pit wall (two faces) and the low wall on the far side of the pit lane

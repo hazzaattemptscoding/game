@@ -144,6 +144,7 @@ export function buildTrackScene(T, ground) {
   // --- barriers, from the placed sections in track.js ------------------
   const posts = [], fencePosts = [];
   for (const b of T.barriers) {
+    if (b.hidden) continue;   // containment wall directly behind an impact wall: physics only, not drawn
     const pts = b.pts, nrm = inwardNormals(T, b);
     const at = (k, back, y) => [pts[k][0] - nrm[k][0] * back, pts[k][1] + y, pts[k][2] - nrm[k][1] * back];
     const idx = pts.map((_, k) => k), len = cumulative(pts);

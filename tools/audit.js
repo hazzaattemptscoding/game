@@ -25,11 +25,10 @@ function edgeGap(x, z, y) {
 
 const coverage = [new Uint8Array(T.N), new Uint8Array(T.N)];
 for (const b of T.barriers) {
-  if (b.impact && !b.span) continue;
-  const isContainment = [BARRIER.ARMCO, BARRIER.PARAPET, BARRIER.CONCRETE, BARRIER.PITWALL, BARRIER.PITOUTER].includes(b.type) || b.span;
+  if (b.impact) continue;
+  const isContainment = [BARRIER.ARMCO, BARRIER.PARAPET, BARRIER.CONCRETE, BARRIER.PITWALL, BARRIER.PITOUTER].includes(b.type);
   if (!isContainment) continue;
   const mask = coverage[b.side];
-  if (b.span) { for (let k = b.span[0]; k !== wrap(b.span[1] + 1, T.N); k = wrap(k + 1, T.N)) mask[k] = 1; continue; }   // an impact wall standing on the line covers its span
   for (let p = 1; p < b.pts.length; p++) {
     const a = b.pts[p - 1][3], end = b.pts[p][3];
     let length = wrap(end - a, T.N);

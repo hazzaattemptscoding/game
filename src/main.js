@@ -157,7 +157,13 @@ function frame(now) {
 
   view.update(car, acc / STEP);
   if (reportTool.opened) reportTool.update();
-  else if (topDown) {
+  else if (topDown && fixedView) {
+    // ?viewat with ?topdown: looking straight down at that track position, the lookahead point up the screen
+    const [x, y, z, tx, , tz] = fixedView, l = Math.hypot(tx - x, tz - z) || 1;
+    rig.camera.position.set(x, y, z);
+    rig.camera.up.set((tx - x) / l, 0, (tz - z) / l);
+    rig.camera.lookAt(x, y - 1, z);
+  } else if (topDown) {
     // top-down debug view: high above the car, track direction up the screen
     const p = view.root.position, hd = -view.root.rotation.y;
     rig.camera.position.set(p.x, p.y + 260, p.z);
