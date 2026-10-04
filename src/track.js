@@ -122,6 +122,8 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   // lane, and the placed barriers and boards.
   track.corners = corners;
   buildSides(track, corners);
+  smoothKerbs(track);
+  buildReach(track);
 
   track.groundAt = (px, pz, hint) => {
     let near = 0, best = Infinity;
@@ -184,6 +186,7 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   buildBarriers(track, corners);
   buildFurniture(track, corners);
 
+  track.relief = (sd, i, a) => relief(track, sd, i, a);
   track.locate = (px, pz, hint, out) => locate(track, px, pz, hint, out);
   track.surfaceAt = (i, d) => surfaceAt(track, i, d);
   track.concreteProgressAt = (i, d) => {
@@ -243,6 +246,7 @@ function segT(T, i, j, px, pz) {
 
 function surfaceAt(T, i, d) {
   const side = d < 0 ? 0 : 1, a = Math.abs(d), hw = T.halfWidth;
+  if (side === 0 && T.pitMouth[i] && a <= T.pitOut[i]) return a < T.pitIn[i] ? SURF.TARMAC : SURF.PIT;   // the mouth is one surface with the track
   if (a <= hw - LINE_WIDTH) return SURF.TARMAC;
   if (a <= hw) return SURF.PAINT;
   if (side === 0 && T.pitOut[i] && a >= T.pitIn[i] && a <= T.pitOut[i]) return SURF.PIT;
@@ -401,6 +405,57 @@ function buildSides(T, corners) {
       for (let i = N - 2; i >= 0; i--) T.wall[sd][i] = Math.min(T.wall[sd][i], T.wall[sd][i + 1] + 0.25);
     }
   }
+}
+
+// Kerb and sausage widths change by at most KERB_SLOPE metres per metre of track, so a kerb
+// eases in and out instead of starting with a hard step.
+const KERB_SLOPE = 0.2;
+function smoothKerbs(T) {
+  const { N } = T, step = KERB_SLOPE * T.ds;
+  for (let sd = 0; sd < 2; sd++) for (const arr of [T.kerb[sd], T.sausage[sd]]) {
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i < N * 2; i++) arr[i % N] = Math.min(arr[i % N], arr[(i - 1) % N] + step);
+      for (let i = N * 2 - 2; i >= 0; i--) arr[i % N] = Math.min(arr[i % N], arr[(i + 1) % N] + step);
+    }
+  }
+}
+
+// How far out each band may go before the offset curve would fold over itself on the inside of a
+// bend (a distance past about 90% of the corner radius). Bands are drawn no further out than this.
+function buildReach(T) {
+  const { N } = T;
+  T.reach = [new Float64Array(N).fill(Infinity), new Float64Array(N).fill(Infinity)];
+  const k = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    const a = wrap(i - 6, N), b = wrap(i + 6, N);
+    k[i] = ((T.tx[b] - T.tx[a]) * T.nx[i] + (T.tz[b] - T.tz[a]) * T.nz[i]) / (12 * T.ds);   // + curves towards side 1
+  }
+  for (let i = 0; i < N; i++) for (const sd of [0, 1]) {
+    const inside = sd ? k[i] : -k[i];
+    if (inside > 1e-4) T.reach[sd][i] = 0.9 / inside;
+  }
+  for (let sd = 0; sd < 2; sd++) {
+    const r = T.reach[sd], tmp = Float64Array.from(r);
+    for (let i = 0; i < N; i++) for (let d = -8; d <= 8; d++) tmp[i] = Math.min(tmp[i], r[wrap(i + d, N)]);
+    for (let pass = 0; pass < 3; pass++) {
+      for (let i = 1; i < N * 2; i++) tmp[i % N] = Math.min(tmp[i % N], tmp[(i - 1) % N] + 0.5);
+      for (let i = N * 2 - 2; i >= 0; i--) tmp[i % N] = Math.min(tmp[i % N], tmp[(i + 1) % N] + 0.5);
+    }
+    r.set(tmp);
+  }
+}
+
+// Real height above the road surface at `a` metres out from the centreline, on side sd at sample i.
+// Only the kerb and the sausage have any: a kerb rises to 2 cm, the sausage on to 5 cm and drops
+// away at its outer edge. Narrow (tapering) kerbs are lower, so each one ramps in and out.
+// The wheels follow this too (physics.js), and the mesh is built from it (trackMesh.js).
+const KERB_RISE = 0.02, SAUSAGE_RISE = 0.05;
+function relief(T, sd, i, a) {
+  const hw = T.halfWidth, kw = T.kerb[sd][i], sw = T.sausage[sd][i];
+  if (a <= hw || a >= hw + kw + sw) return 0;
+  if (a <= hw + kw) return KERB_RISE * Math.min(1, kw / KERB_WIDTH) * (a - hw) / (kw || 1);
+  const t = (a - hw - kw) / (sw || 1), top = SAUSAGE_RISE * Math.min(1, sw / SAUSAGE_WIDTH);
+  return t <= 0.5 ? KERB_RISE + (top - KERB_RISE) * 2 * t : top * 2 * (1 - t);
 }
 
 // Free distance from the centreline on each side before running into the

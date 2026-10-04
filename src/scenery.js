@@ -11,6 +11,8 @@ import { wrap } from './track.js';
 import * as tex from './textures.js';
 
 // Ground height anywhere, matching the track near it and rolling away from it.
+const TERRAIN_SINK = 1.0;   // metres the terrain lies under the surface strips
+
 export function createGround(T) {
   const coarse = [];
   for (let i = 0; i < T.N; i += 8) if (!T.isBridge[i]) coarse.push(i);
@@ -54,28 +56,29 @@ export function createGround(T) {
       z0 = Math.min(z0, T.z[i]); z1 = Math.max(z1, T.z[i]);
     }
     const pad = 700, cell = 12;
+    let lowest = Infinity;
     x0 -= pad; x1 += pad; z0 -= pad; z1 += pad;
     const nx = Math.ceil((x1 - x0) / cell) + 1, nz = Math.ceil((z1 - z0) / cell) + 1;
     const pos = new Float32Array(nx * nz * 3), uv = new Float32Array(nx * nz * 2), col = new Float32Array(nx * nz * 3), ind = [];
-    const insideTrackside = new Uint8Array(nx * nz);
     const c1 = new THREE.Color(0x4f7a3a), c2 = new THREE.Color(0x7c8a4a), tmp = new THREE.Color();
     for (let j = 0; j < nz; j++) for (let k = 0; k < nx; k++) {
       const x = x0 + k * cell, z = z0 + j * cell, n = j * nx + k;
-      pos[n * 3] = x; pos[n * 3 + 1] = height(x, z); pos[n * 3 + 2] = z;
-      uv[n * 2] = x / 24; uv[n * 2 + 1] = z / 24;
-      // mown near the circuit, rougher meadow further out
+      // The terrain is never cut. Under the circuit it sits TERRAIN_SINK below the surface
+      // strips, easing back up to the real ground over 24 m, so a gap between two strips shows
+      // grass, never sky, and the terrain can never poke through the tarmac.
       const { dist, near } = sample(x, z);
       const signed = (x - T.x[near]) * T.nx[near] + (z - T.z[near]) * T.nz[near];
       const side = signed < 0 ? 0 : 1;
-      insideTrackside[n] = dist <= T.wall[side][near] ? 1 : 0;
+      const out = Math.min(1, Math.max(0, (dist - Math.min(T.wall[side][near], T.reach[side][near])) / 24));
+      const sink = TERRAIN_SINK * (1 - out * out * (3 - 2 * out));
+      pos[n * 3] = x; pos[n * 3 + 1] = height(x, z) - sink; pos[n * 3 + 2] = z;
+      uv[n * 2] = x / 24; uv[n * 2 + 1] = z / 24;
+      lowest = Math.min(lowest, pos[n * 3 + 1]);
+      // mown near the circuit, rougher meadow further out
       const rough = Math.min(1, Math.max(0, (dist - 60) / 200)) * (0.6 + 0.4 * Math.sin(x * 0.013) * Math.cos(z * 0.011));
       tmp.copy(c1).lerp(c2, rough);
       col[n * 3] = tmp.r; col[n * 3 + 1] = tmp.g; col[n * 3 + 2] = tmp.b;
-      if (j && k) {
-        const a = (j - 1) * nx + k - 1, b = a + 1, c = j * nx + k - 1, d = c + 1;
-        if (!insideTrackside[a] && !insideTrackside[c] && !insideTrackside[b]) ind.push(a, c, b);
-        if (!insideTrackside[b] && !insideTrackside[c] && !insideTrackside[d]) ind.push(b, c, d);
-      }
+      if (j && k) { const a = (j - 1) * nx + k - 1, b = a + 1, c = j * nx + k - 1, d = c + 1; ind.push(a, c, b, b, c, d); }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -86,6 +89,12 @@ export function createGround(T) {
     const grass = tex.grassTexture(31);
     const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: grass, roughness: 1 }));
     m.receiveShadow = true;
+    // last resort: a huge dark earth plane well below everything, so a hole can never show the sky
+    const earth = new THREE.Mesh(new THREE.PlaneGeometry(60000, 60000).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x2b2a22 }));
+    earth.position.set((x0 + x1) / 2, lowest - 5, (z0 + z1) / 2);
+    earth.userData.debug = 'earth';
+    m.add(earth);
     return m;
   }
 

@@ -9,8 +9,10 @@
 import * as THREE from 'three';
 import { wrap, BARRIER } from './track.js';
 import * as tex from './textures.js';
+import { buildGroundRibbon } from './groundRibbon.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
+const DECAL = 0.012;          // paint sits this far above the surface, drawn with polygonOffset so it never fights
 const SPONSOR_CHUNK = 9;      // length of one sponsor panel, metres (three 3 m wall units)
 
 // colours for the top-down debug view
@@ -25,10 +27,16 @@ const tag = (mesh, cat) => { mesh.userData.debug = cat; return mesh; };
 export function buildTrackScene(T, ground) {
   const group = new THREE.Group();
   const hw = T.halfWidth;
+  // A point at sample i, d metres to the side. Every ground surface takes its height from
+  // T.groundAt, so neighbouring bands share their edge vertices exactly and nothing is stacked.
+  // `lift` is only for real relief (T.relief) and paint decals (DECAL).
   const P = (i, d, lift = 0) => {
-    const x = T.x[i] + T.nx[i] * d, z = T.z[i] + T.nz[i] * d;
+    const e = T.reach ? Math.sign(d) * Math.min(Math.abs(d), T.reach[d < 0 ? 0 : 1][i]) : d;   // never fold on the inside of a bend
+    const x = T.x[i] + T.nx[i] * e, z = T.z[i] + T.nz[i] * e;
     return [x, T.groundAt(x, z, i) + lift, z];
   };
+  const rel = (sd, i, a) => T.relief(sd, i, a);
+  const G = (x, z, i) => T.groundAt(x, z, i);
   const all = [];
   for (let i = 0; i <= T.N; i++) all.push(wrap(i, T.N));
   const sOf = (i, j, idx) => (j === idx.length - 1 && i === idx[0] && j > 0 ? T.length : T.s[i]);
@@ -46,7 +54,7 @@ export function buildTrackScene(T, ground) {
     grass: new THREE.MeshStandardMaterial({ map: tex.grassTexture(), roughness: 1 }),
     gravel: new THREE.MeshStandardMaterial({ map: tex.gravelTexture(), roughness: 1, ...off(-2) }),
     gravelEdge: new THREE.MeshStandardMaterial({ color: 0x6e5a3c, roughness: 1, ...off(-3) }),
-    pit: new THREE.MeshStandardMaterial({ map: tex.pitAsphaltTexture(), roughness: 0.85, ...off(-2) }),
+    pit: new THREE.MeshStandardMaterial({ map: tex.pitAsphaltTexture(), vertexColors: true, roughness: 0.85, ...off(-2) }),
     island: new THREE.MeshStandardMaterial({ map: tex.chevronTexture(), roughness: 0.8, ...off(-2) }),
     armco: new THREE.MeshStandardMaterial({ map: tex.armcoTexture(), roughness: 0.4, metalness: 0.6, side: THREE.DoubleSide }),
     post: new THREE.MeshStandardMaterial({ color: 0x6b7075, roughness: 0.5, metalness: 0.5 }),
@@ -75,63 +83,29 @@ export function buildTrackScene(T, ground) {
   const S = {};
   const strips = name => (S[name] ||= new Strips());
 
-  strips('road').strip(all, i => P(i, -hw, 0.03), i => P(i, hw, 0.03), (i, j) => sOf(i, j, all) / 8, -hw / 8, hw / 8);
+  strips('road').strip(all, i => P(i, -hw), i => P(i, hw), (i, j) => sOf(i, j, all) / 8, -hw / 8, hw / 8);
   for (const g of [-1, 1]) {
     const lineRuns = g < 0 ? runs(T.N, i => !T.pitMouth[i]) : [all];
-    for (const run of lineRuns) strips('line').strip(run, i => P(i, g * (hw - 0.15), 0.035), i => P(i, g * hw, 0.035), () => 0, 0, 1);
+    for (const run of lineRuns) strips('line').strip(run, i => P(i, g * (hw - 0.15), DECAL), i => P(i, g * hw, DECAL), () => 0, 0, 1);
   }
 
+  // all the ground beside the tarmac, as one ribbon with shared vertices (groundRibbon.js)
+  buildGroundRibbon(T, strips, P, G);
+
+  // paint on top of it: rumble bands across the concrete apron, dark edges on the gravel
   for (const sd of [0, 1]) {
     const g = sd ? 1 : -1;
-    const kerbOut = i => hw + T.kerb[sd][i];
-    const sausOut = i => kerbOut(i) + T.sausage[sd][i];
-    const runOut = i => sausOut(i) + T.runoff[sd][i];
-    const pitHere = i => sd === 0 && T.pitOut[i] > 0;
-
-    for (const run of runs(T.N, i => T.kerb[sd][i] > 0)) {
-      strips('kerb').strip(run, i => P(i, g * hw, 0.04), i => P(i, g * kerbOut(i), 0.06), (i, j) => sOf(i, j, run) / 2, 0, 1);
-    }
-    for (const run of runs(T.N, i => T.sausage[sd][i] > 0)) {
-      // raised half-round: up, across, down
-      const mid = i => kerbOut(i) + T.sausage[sd][i] / 2;
-      strips('sausage').strip(run, i => P(i, g * kerbOut(i), 0.06), i => P(i, g * mid(i), 0.16), (i, j) => sOf(i, j, run) / 1.6, 0, 0.5);
-      strips('sausage').strip(run, i => P(i, g * mid(i), 0.16), i => P(i, g * sausOut(i), 0.06), (i, j) => sOf(i, j, run) / 1.6, 0.5, 1);
-    }
-    // paved apron: plain run-off tarmac, or old runway concrete (the Sebring look)
-    for (const concrete of [0, 1]) {
-      for (const run of runs(T.N, i => T.runoff[sd][i] > 0.2 && T.concrete[sd][i] === concrete)) {
-        strips(concrete ? 'concrete' : 'apron').strip(run, i => P(i, g * sausOut(i), 0.035), i => P(i, g * runOut(i), 0.035),
-          (i, j) => sOf(i, j, run) / (concrete ? 15 : 8), i => sausOut(i) / (concrete ? 15 : 8), i => runOut(i) / (concrete ? 15 : 8));
-      }
-    }
     for (const run of runs(T.N, i => T.concrete[sd][i] && T.runoff[sd][i] > 1.8)) {
       const inner = i => hw + T.kerb[sd][i] + T.sausage[sd][i];
       for (const fraction of [1 / 3, 2 / 3]) {
-        strips('rumble').strip(run, i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction - 0.3), 0.045),
-          i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction + 0.3), 0.045),
+        strips('rumble').strip(run, i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction - 0.3), DECAL),
+          i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction + 0.3), DECAL),
           (i, j) => sOf(i, j, run) / 2, 0, 1);
       }
     }
-    // gravel, with a dark edge on both sides so it reads from the cockpit
     for (const run of runs(T.N, i => T.gravelOut[sd][i] > 0)) {
-      strips('gravel').strip(run, i => P(i, g * T.gravelIn[sd][i], 0.05), i => P(i, g * T.gravelOut[sd][i], 0.05),
-        (i, j) => sOf(i, j, run) / 6, i => T.gravelIn[sd][i] / 6, i => T.gravelOut[sd][i] / 6);
       for (const e of [i => T.gravelIn[sd][i], i => T.gravelOut[sd][i] - 0.35]) {
-        strips('gravelEdge').strip(run, i => P(i, g * e(i), 0.055), i => P(i, g * (e(i) + 0.35), 0.055), () => 0, 0, 1);
-      }
-    }
-    // grass: from wherever the paved and gravel bands end, out to the edge of the flat ground
-    const grassIn = i => (T.gravelOut[sd][i] > 0 ? T.gravelOut[sd][i] : runOut(i));
-    for (const run of runs(T.N, i => !pitHere(i) && T.wall[sd][i] > grassIn(i) + 0.2)) {
-      strips('grass').strip(run, i => P(i, g * grassIn(i), 0.0), i => P(i, g * T.wall[sd][i], 0.0), (i, j) => sOf(i, j, run) / 40, i => grassIn(i) / 12, i => T.wall[sd][i] / 12);
-    }
-    if (sd === 0) {
-      // beside the pit road: grass between the track and the pit wall or island, and beyond the pit road
-      for (const run of runs(T.N, i => pitHere(i) && !T.pitMouth[i] && T.pitIn[i] - (T.pitWall[i] ? 0.6 : 0) > runOut(i) + 0.2 && !T.pitIsland[i])) {
-        strips('grass').strip(run, i => P(i, -runOut(i), 0.0), i => P(i, -(T.pitIn[i] - (T.pitWall[i] ? 0.6 : 0)), 0.0), (i, j) => sOf(i, j, run) / 40, 0, 1);
-      }
-      for (const run of runs(T.N, i => pitHere(i) && T.wall[0][i] > T.pitOut[i] + 0.2)) {
-        strips('grass').strip(run, i => P(i, -T.pitOut[i], 0.0), i => P(i, -T.wall[0][i], 0.0), (i, j) => sOf(i, j, run) / 40, 0, 1);
+        strips('gravelEdge').strip(run, i => P(i, g * e(i), DECAL), i => P(i, g * (e(i) + 0.35), DECAL), () => 0, 0, 1);
       }
     }
   }
@@ -140,30 +114,19 @@ export function buildTrackScene(T, ground) {
   for (const sd of [0, 1]) {
     const g = sd ? 1 : -1;
     for (const run of runs(T.N, i => !T.isBridge[i])) {
-      strips('grass').strip(run, i => P(i, g * T.wall[sd][i], -1.5), i => P(i, g * T.wall[sd][i], 0.0), (i, j) => sOf(i, j, run) / 40, 0, 0.1);
-    }
-    const outerGrass = i => Math.min(T.wall[sd][i] + 15, T.room[sd][i]);
-    for (const run of runs(T.N, i => !T.isBridge[i] && outerGrass(i) > T.wall[sd][i] + 0.5)) {
-      strips('grass').strip(run, i => P(i, g * T.wall[sd][i], 0.005), i => P(i, g * outerGrass(i), 0.005),
-        (i, j) => sOf(i, j, run) / 40, i => T.wall[sd][i] / 12, i => outerGrass(i) / 12);
+      strips('grass').strip(run, i => P(i, g * T.wall[sd][i], -1.5), i => P(i, g * T.wall[sd][i]), (i, j) => sOf(i, j, run) / 40, 0, 0.1);
     }
   }
 
-  // pit road: its own lighter asphalt, a white fast-lane line, the chevron island at the entry
-  for (const run of runs(T.N, i => T.pitOut[i] > 0)) {
-    strips('pit').strip(run, i => P(i, -T.pitIn[i], 0.035), i => P(i, -T.pitOut[i], 0.035), (i, j) => sOf(i, j, run) / 16, i => T.pitIn[i] / 16, i => T.pitOut[i] / 16);
-  }
+  // pit road lines and boxes (its surface, and the mouth that joins it to the track, are in the ground ribbon)
   for (const run of runs(T.N, i => T.pitLimiter[i] > 0)) {
-    strips('line').strip(run, i => P(i, -(T.pitIn[i] + 4), 0.045), i => P(i, -(T.pitIn[i] + 4.15), 0.045), () => 0, 0, 1);
-    strips('line').strip(run, i => P(i, -(T.pitOut[i] - 0.15), 0.045), i => P(i, -T.pitOut[i], 0.045), () => 0, 0, 1);
+    strips('line').strip(run, i => P(i, -(T.pitIn[i] + 4), DECAL), i => P(i, -(T.pitIn[i] + 4.15), DECAL), () => 0, 0, 1);
+    strips('line').strip(run, i => P(i, -(T.pitOut[i] - 0.15), DECAL), i => P(i, -T.pitOut[i], DECAL), () => 0, 0, 1);
     // pit box outlines in the working lane, 7 m apart
     for (let k = 0; k < run.length - 6; k += 7) {
       const i = run[k];
-      crossLine(strips('line'), T, T.s[i], 0.12, -(T.pitIn[i] + 4.2), -(T.pitOut[i] - 0.2), 0.045);
+      crossLine(strips('line'), T, T.s[i], 0.12, -(T.pitIn[i] + 4.2), -(T.pitOut[i] - 0.2));
     }
-  }
-  for (const run of runs(T.N, i => T.pitIsland[i] > 0)) {
-    strips('island').strip(run, i => P(i, -hw, 0.04), i => P(i, -T.pitIn[i], 0.04), (i, j) => sOf(i, j, run) / 4, 0, 1);
   }
 
   // start line, grid slots, sector and DRS lines, pit limiter lines
@@ -175,7 +138,7 @@ export function buildTrackScene(T, ground) {
     crossLine(strips('line'), T, s, 0.15, d - 1, d + 1);
   }
   const lim = runs(T.N, i => T.pitLimiter[i] > 0)[0];
-  if (lim) for (const i of [lim[0], lim[lim.length - 1]]) crossLine(strips('line'), T, T.s[i], 0.5, -T.pitIn[i], -T.pitOut[i], 0.045);
+  if (lim) for (const i of [lim[0], lim[lim.length - 1]]) crossLine(strips('line'), T, T.s[i], 0.5, -T.pitIn[i], -T.pitOut[i]);
 
   // --- barriers, from the placed sections in track.js ------------------
   const posts = [], fencePosts = [];
@@ -239,7 +202,7 @@ export function buildTrackScene(T, ground) {
     strips('roof').strip(bay, i => P(i, front(i), 5.5), i => P(i, front(i), 6.6), () => 0, 0, 1);
     strips('wallConcrete').strip(bay, i => P(i, back(i), 0), i => P(i, back(i), H), (i, j) => sOf(i, j, bay) / 8, 0, 1);
     // concrete forecourt in front of the garages
-    strips('apron').strip(bay, i => P(i, -T.pitOut[i], 0.035), i => P(i, front(i), 0.035), (i, j) => sOf(i, j, bay) / 8, 0, 1);
+    strips('apron').strip(bay, i => P(i, -T.pitOut[i]), i => P(i, front(i)), (i, j) => sOf(i, j, bay) / 8, 0, 1);
   }
 
   for (const [name, b] of Object.entries(S)) {
@@ -369,16 +332,17 @@ function furniture(T) {
 // Strip builder: quads between two edge lines, merged into one geometry.
 
 class Strips {
-  constructor() { this.pos = []; this.uv = []; this.ind = []; }
+  constructor() { this.pos = []; this.uv = []; this.ind = []; this.col = null; }
 
   // a(i), b(i): world positions of the two edges at sample i.
   // u(i, j): texture coordinate along the strip. va, vb: across (number or function of i).
-  strip(idx, a, b, u, va, vb) {
+  strip(idx, a, b, u, va, vb, colour) {
     if (idx.length < 2) return;
     const base = this.pos.length / 3;
     const V = (v, i) => (typeof v === 'function' ? v(i) : v);
     idx.forEach((i, j) => {
       this.pos.push(...a(i), ...b(i));
+      if (colour) { const c = colour(i, j); (this.col ||= []).push(...c, ...c); }
       const uu = u(i, j);
       this.uv.push(uu, V(va, i), uu, V(vb, i));
     });
@@ -396,10 +360,29 @@ class Strips {
     }
   }
 
+  // Like strip(), but cut across its width into pieces no wider than `maxWidth`, each corner taking
+  // its height from `ground(x, z, i)`. A wide band drawn as one quad would cut a straight chord
+  // through ground that bends (a bank beside the circuit, a hill beyond the run-off).
+  band(idx, a, b, u, va, vb, ground, colour, maxWidth = 6) {
+    if (idx.length < 2) return;
+    let widest = 0;
+    for (const i of idx) { const p = a(i), q = b(i); widest = Math.max(widest, Math.hypot(q[0] - p[0], q[2] - p[2])); }
+    const n = Math.max(1, Math.ceil(widest / maxWidth)), V = (v, i) => (typeof v === 'function' ? v(i) : v);
+    const at = (i, t) => {
+      const p = a(i), q = b(i), x = p[0] + (q[0] - p[0]) * t, z = p[2] + (q[2] - p[2]) * t;
+      return [x, t === 0 ? p[1] : t === 1 ? q[1] : ground(x, z, i), z];
+    };
+    for (let k = 0; k < n; k++) {
+      const t0 = k / n, t1 = (k + 1) / n;
+      this.strip(idx, i => at(i, t0), i => at(i, t1), u, i => V(va, i) + (V(vb, i) - V(va, i)) * t0, i => V(va, i) + (V(vb, i) - V(va, i)) * t1, colour);
+    }
+  }
+
   geometry() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    if (this.col) g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.setIndex(this.ind);
     g.computeVertexNormals();
     return g;
@@ -408,7 +391,7 @@ class Strips {
 
 // sponsor panels for straight runs are drawn by sponsorPoly above
 
-function crossLine(b, T, s, width, d0, d1, lift = 0.045) {
+function crossLine(b, T, s, width, d0, d1, lift = DECAL) {
   const i0 = wrap(Math.round(s / T.ds), T.N), idx = [];
   for (let k = 0; k <= Math.max(1, Math.round(width / T.ds)); k++) idx.push(wrap(i0 + k, T.N));
   const y = (i, d) => T.groundAt(T.x[i] + T.nx[i] * d, T.z[i] + T.nz[i] * d, i) + lift;
@@ -562,8 +545,10 @@ export function runs(N, test) {
   let cur = null;
   for (let k = 1; k <= N; k++) {
     const i = (start + k) % N;
-    if (test(i)) { if (!cur) cur = [wrap(i - 1, N)]; cur.push(i); }
-    else if (cur) { cur.push(i); out.push(cur); cur = null; }
+    // only samples that pass the test: a band must never be closed with a sample where its edges
+    // are zero, which would stretch it across the road to the centreline
+    if (test(i)) { if (!cur) cur = []; cur.push(i); }
+    else if (cur) { out.push(cur); cur = null; }
   }
   if (cur) out.push(cur);
   return out;
