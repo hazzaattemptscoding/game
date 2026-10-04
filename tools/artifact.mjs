@@ -4,7 +4,7 @@ import { execSync } from 'node:child_process';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 
 const out = process.argv[2] || 'lakeside-artifact.html';
-execSync('npx vite build', { stdio: 'ignore' });
+execSync('npx vite build', { stdio: 'ignore', env: { ...process.env, ARTIFACT: '1' } });
 const files = readdirSync('dist/assets');
 const css = readFileSync('dist/assets/' + files.find(f => f.endsWith('.css')), 'utf8');
 const js = readFileSync('dist/assets/' + files.find(f => f.endsWith('.js')), 'utf8').replace(/<\/script/gi, '<\\/script');

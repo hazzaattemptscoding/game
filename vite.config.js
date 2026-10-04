@@ -46,5 +46,6 @@ export default {
   base: './',
   define: { __BUILD_COMMIT__: JSON.stringify(commit) },
   plugins: [localReportWriter()],
-  build: { chunkSizeWarningLimit: 900 },
+  // ARTIFACT=1 packs everything, PeerJS included, into one file (the claude.ai artifact is a single html page)
+  build: { chunkSizeWarningLimit: 900, rollupOptions: process.env.ARTIFACT ? { output: { inlineDynamicImports: true } } : {} },
 };
