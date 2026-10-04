@@ -67,6 +67,18 @@
     <input id="volume" type="range" min="0" max="100" step="1" value="70">
     <label>Autopilot demo lap</label>
     <div class="row"><button data-auto="false">Off</button><button data-auto="true">On</button></div>
+    <label>Multiplayer (optional)</label>
+    <div class="mp">
+      <input id="mp-name" type="text" maxlength="16" placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false">
+      <div class="row" id="mp-start"><button id="mp-host" type="button">Host a room</button></div>
+      <div class="row" id="mp-joinrow"><input id="mp-code" type="text" maxlength="5" placeholder="Room code" aria-label="Room code" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="mp-join" type="button">Join</button></div>
+      <div id="mp-room" hidden>
+        <div class="mp-big" id="mp-big" aria-label="Room code"></div>
+        <div class="row"><button id="mp-copy" type="button">Copy code</button><button id="mp-leave" type="button">Leave</button></div>
+      </div>
+      <p class="mp-status" id="mp-status" role="status">Race other people online. Needs a real web host, not the claude.ai preview.</p>
+      <p class="mp-status" id="mp-who"></p>
+    </div>
     <button id="close" class="main">Back to driving</button>
   </div>
 </div>

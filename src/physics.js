@@ -6,6 +6,7 @@
 // Body frame: vx forward, vy to the right, yaw rate r positive = turning right.
 
 import { SURF } from './track.js';
+import { carContact } from './carContact.js';
 
 export const STEP = 1 / 120;
 const G = 9.81;
@@ -32,6 +33,7 @@ export const SURFACE = {
 
 const WALL_BOUNCE = 0.25;   // how much speed comes back off a barrier (0 = dead stop, 1 = rubber ball)
 const WALL_FRICTION = 0.5;  // how much the barrier scrubs speed when you slide along it
+const CAR_BOUNCE = 0.2;     // how much closing speed comes back off another car
 
 // Grip as the tyre slips more. Builds to 1 at the peak slip angle, then
 // falls off smoothly to `slide` (planted until overdriven, slides are
@@ -324,6 +326,54 @@ export class Car {
       this.gear++; this.shiftTimer = c.shiftTime; this.events.shift = 1;
     } else if (this.gear > 1 && rpmIn(this.gear - 1) < c.downshiftRpm) {
       this.gear--; this.shiftTimer = c.shiftTime * 0.5; this.events.shift = -1;
+    }
+  }
+
+  // Other players' cars (multiplayer). There is no server, so each player resolves contact for their own car only,
+  // against the other cars as they are drawn. `others` is a list of { x, z, heading, vx, vz, yawRate, age, silent }.
+  // Same treatment as a barrier hit, but at half strength: the other player's game applies the other half to their car.
+  // Call it before step(). With no other cars it does nothing.
+  collideCars(others, dt = STEP) {
+    this.clock = (this.clock || 0) + dt;
+    if (this.contactGrace > 0) { this.contactGrace -= dt; return; }   // just appeared or reset: no contact for a moment
+    const eps = this.contactEpisodes || (this.contactEpisodes = new Map());   // id -> { vn: closing speed after our impulse, t: last contact }
+    const c = this.cfg, m = c.mass, I = c.yawInertia;
+    for (const o of others) {
+      if (o.silent > 0.5 || o.age < 1.5) continue;
+      const k = carContact(this, o, c.length, c.width);
+      if (!k) continue;
+      const cx = k.px - this.x, cz = k.pz - this.z, r = this.yawRate, ro = o.yawRate || 0;
+      const rx = k.px - o.x, rz = k.pz - o.z;
+      const rvx = this.vx - r * cz - (o.vx - ro * rz), rvz = this.vz + r * cx - (o.vz + ro * rx);   // my velocity at the contact, relative to theirs
+      const vn = rvx * k.nx + rvz * k.nz;
+      if (k.depth > 0.3 && Math.hypot(rvx, rvz) < 3) {
+        // overlapping while nearly still (a reset or a join on top of someone): drift apart gently, no impulse
+        this.x += k.nx * 1.5 * dt; this.z += k.nz * 1.5 * dt;
+        continue;
+      }
+      const push = Math.min(0.5 * k.depth, 0.5);
+      this.x += k.nx * push; this.z += k.nz * push;
+      // One impulse per touch. The other player's game answers 100 ms or more later, and until it does we see them standing
+      // still; hitting them again every step would stop us dead against a car that is about to move away.
+      const ep = eps.get(o.id);
+      const fresh = !ep || this.clock - ep.t > 0.25;
+      if (ep) ep.t = this.clock;
+      if (vn >= 0 || (!fresh && vn >= ep.vn - 2)) continue;
+      const cross = (ax, az, bx, bz) => ax * bz - az * bx;
+      const kn = 1 / m + cross(cx, cz, k.nx, k.nz) ** 2 / I;
+      const jn = 0.5 * (1 + CAR_BOUNCE) * -vn / kn;
+      let tx = rvx - vn * k.nx, tz = rvz - vn * k.nz;
+      const vt = Math.hypot(tx, tz);
+      let jt = 0;
+      if (vt > 1e-3) {
+        tx /= vt; tz /= vt;
+        const kt = 1 / m + cross(cx, cz, tx, tz) ** 2 / I;
+        jt = -Math.min(0.5 * vt / kt, WALL_FRICTION * jn);
+      }
+      const Jx = jn * k.nx + jt * tx, Jz = jn * k.nz + jt * tz;
+      this.vx += Jx / m; this.vz += Jz / m;
+      this.yawRate += cross(cx, cz, Jx, Jz) / I;
+      eps.set(o.id, { vn: vn + (1 + CAR_BOUNCE) * 0.5 * -vn, t: this.clock });
     }
   }
 

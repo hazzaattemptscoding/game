@@ -18,6 +18,7 @@ import { createInput } from './input.js';
 import { Hud } from './hud.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { ReportTool } from './report.js';
+import { createLobby } from './lobby.js';
 import { CarAudio } from './audio.js';
 
 const params = new URLSearchParams(location.search);
@@ -79,6 +80,8 @@ const input = createInput();
 const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthesised sound, starts at the first key press or touch
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
+const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search });   // multiplayer: idle until a room is opened
+const IDLE = { steer: 0, throttle: 0, brake: 0.3, drs: false };
 const history = { inputs: [], telemetry: [] };
 let restoreTopDown = false;
 const reportTool = new ReportTool({
@@ -137,7 +140,7 @@ function frame(now) {
 
   for (const a of input.takeActions()) {
     if (reportTool.opened && a !== 'report') continue;      // the report screen owns the keyboard while it is open
-    if (a === 'reset') car.resetToTrack();
+    if (a === 'reset') { car.resetToTrack(); car.contactGrace = 1.5; }
     if (a === 'camera') rig.next();
     if (a === 'settings') togglePanel();
     if (a === 'debug') { settings.debug = !settings.debug; saveSettings(settings); syncPanel(); }
@@ -150,12 +153,13 @@ function frame(now) {
     }
   }
 
-  const paused = !panel.hidden || reportTool.opened;
+  const paused = (!panel.hidden && !lobby.active) || reportTool.opened;     // in a room the car keeps rolling behind the panel
   const playerInput = input.read(dt, car.speed);
   if (!paused) {
     acc += dt;
     while (acc >= STEP) {
-      car.step(autopilot ? autopilot.drive(car) : playerInput);
+      if (lobby.active) car.collideCars(lobby.solids(now - (acc - STEP) * 1000));
+      car.step(autopilot ? autopilot.drive(car) : panel.hidden ? playerInput : IDLE);
       audio.latch(car);
       simTime += STEP;
       timer.update(car.loc.s, simTime);
@@ -191,6 +195,7 @@ function frame(now) {
   sun.position.copy(p).addScaledVector(SUN_DIR, 150);
 
   audio.update(car, dt, paused);
+  lobby.update(now);
   hud.update(car, timer, track, simTime);
   renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);
@@ -198,7 +203,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // for quick checks from the browser console
-window.lakeside = { car, track, timer, settings, reportTool };
+window.lakeside = { car, track, timer, settings, reportTool, lobby };
 
 function skyTexture(top, bottom) {
   const c = document.createElement('canvas');

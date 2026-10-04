@@ -26,6 +26,7 @@ export class Hud {
         </div>
         <div class="hud-sectors" id="h-sec"></div>
         <div class="hud-limits" id="h-limits" hidden></div>
+        <div class="hud-stand" id="h-stand" hidden></div>
       </div>
       <div class="hud-flash" id="h-flash"></div>
       <div class="hud-warn" id="h-warn"></div>
