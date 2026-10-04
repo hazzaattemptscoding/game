@@ -1,0 +1,17 @@
+name = "lakeside-relay"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Websites allowed to open a room. Comma separated, no trailing slash, exactly as shown in the browser address bar
+# (https://your-domain.example). Use * only for testing. Change this before you deploy.
+[vars]
+ALLOWED_ORIGINS = "https://your-domain.example"
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+# SQLite-backed Durable Objects are the kind the free plan allows.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

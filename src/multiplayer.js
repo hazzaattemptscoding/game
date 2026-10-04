@@ -14,15 +14,30 @@
 
 import { decodeState, cleanName, MAX_PLAYERS } from './ghosts.js';
 
-// The one place the broker is configured. These defaults are the free public PeerJS broker. Override any of them
-// from the address: ?broker=host:port/path  (add http:// for a plain connection), ?brokerkey=key, ?ice=none or ?ice=stun:host:port.
+// ICE servers: the helpers WebRTC uses to find a route between two browsers. We list them explicitly instead of relying on
+// PeerJS defaults. STUN servers only tell a browser its outside address (fine for most home networks). TURN servers relay the
+// traffic and are what makes strict networks (mobile data, school or office Wi-Fi, symmetric NAT) work.
+// NOTE: the openrelay.metered.ca entries are a shared FREE public service with a publicly documented login. It is best
+// effort only: it can be slow, rate limited or switched off at any time. For reliable play the owner should replace them with
+// their own TURN (Cloudflare Calls TURN, a metered.ca account, or coturn on a small VPS) by editing multiplayer.json (README).
+export const DEFAULT_ICE_SERVERS = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+  { urls: 'stun:stun.cloudflare.com:3478' },
+  { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
+];
+
+// The one place the broker is configured. Order of precedence, lowest first: these defaults, then multiplayer.json next to
+// index.html (read when someone hosts or joins, so it can be edited on the web space without a rebuild), then the address
+// bar: ?broker=host:port/path (add http:// for a plain connection), ?brokerkey=key, ?ice=none or ?ice=stun:host:port,turn:host:port,
+// ?relay=1 (relay only, to test TURN).
 export const BROKER = {
   host: '0.peerjs.com',
   port: 443,
   path: '/',
   secure: true,
   key: 'peerjs',
-  iceServers: null,     // null = PeerJS's own default list (public STUN and TURN); an array replaces it, [] = none (local network only)
+  iceServers: DEFAULT_ICE_SERVERS,   // an array replaces the list, [] = none (local network only)
+  relayOnly: false,     // true: iceTransportPolicy 'relay', every connection must go through a TURN server
   debug: 0,             // PeerJS log level, 0 silent to 3 everything
 };
 
@@ -49,7 +64,83 @@ export function brokerFromSearch(search, base = BROKER) {
   const cfg = q.has('broker') ? parseBroker(q.get('broker'), base) : { ...base };
   if (q.has('brokerkey')) cfg.key = q.get('brokerkey');
   if (q.has('ice')) cfg.iceServers = q.get('ice') === 'none' ? [] : q.get('ice').split(',').map(urls => ({ urls }));   // ?ice=none for a local network, or ?ice=stun:host:3478
+  if (q.has('relay')) cfg.relayOnly = q.get('relay') !== '0' && q.get('relay') !== 'false';
   return cfg;
+}
+
+// --- multiplayer.json: { "broker": {host,port,path,secure,key}, "iceServers": [{urls,username,credential}], "relayOnly": false } ---
+const ICE_URL = /^(stun|stuns|turn|turns):[^\s]+$/i;
+export function cleanIceServers(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const e of list.slice(0, 16)) {
+    if (!e || typeof e !== 'object') continue;
+    const urls = (Array.isArray(e.urls) ? e.urls : [e.urls]).filter(u => typeof u === 'string' && u.length < 300 && ICE_URL.test(u));
+    if (!urls.length) continue;
+    const o = { urls: urls.length === 1 ? urls[0] : urls };
+    if (typeof e.username === 'string') o.username = e.username.slice(0, 300);
+    if (typeof e.credential === 'string') o.credential = e.credential.slice(0, 600);
+    out.push(o);
+  }
+  return out;
+}
+// Values from the file replace the defaults. Anything of the wrong type is ignored. Returns a new config.
+export function applyConfigFile(base, file) {
+  const cfg = { ...base };
+  if (!file || typeof file !== 'object') return cfg;
+  const b = file.broker;
+  if (b && typeof b === 'object') {
+    if (typeof b.host === 'string' && b.host.trim() && b.host.length < 254) cfg.host = b.host.trim();
+    if (Number.isInteger(b.port) && b.port > 0 && b.port < 65536) cfg.port = b.port;
+    if (typeof b.path === 'string' && b.path) { let p = b.path.startsWith('/') ? b.path : '/' + b.path; if (!p.endsWith('/')) p += '/'; cfg.path = p; }
+    if (typeof b.secure === 'boolean') cfg.secure = b.secure;
+    if (typeof b.key === 'string' && b.key) cfg.key = b.key;
+  }
+  const ice = cleanIceServers(file.iceServers);
+  if (ice && (ice.length || file.iceServers.length === 0)) cfg.iceServers = ice;
+  if (typeof file.relayOnly === 'boolean') cfg.relayOnly = file.relayOnly;
+  return cfg;
+}
+// Fetch and parse multiplayer.json. Never throws: any failure (missing file, bad JSON, slow server) gives null.
+export async function fetchConfigFile(fetchFn, url, timeoutMs = 4000) {
+  try {
+    const job = (async () => { const res = await fetchFn(url, { cache: 'no-store' }); if (!res || !res.ok) return null; const j = await res.json(); return j && typeof j === 'object' ? j : null; })();
+    let t; const timeout = new Promise(r => { t = setTimeout(() => r(null), timeoutMs); });
+    const out = await Promise.race([job.catch(() => null), timeout]);
+    clearTimeout(t);
+    return out;
+  } catch (e) { return null; }
+}
+// defaults < multiplayer.json < address bar
+export function resolveConfig(search, file, base = BROKER) { return brokerFromSearch(search, applyConfigFile(base, file)); }
+export async function loadConfig({ fetchFn, search = '', build = '', base = BROKER, url = 'multiplayer.json' } = {}) {
+  if (typeof fetchFn !== 'function') return resolveConfig(search, null, base);
+  const file = await fetchConfigFile(fetchFn, `${url}?v=${encodeURIComponent(build || Date.now())}`);
+  return resolveConfig(search, file, base);
+}
+export const hasTurn = list => Array.isArray(list) && list.some(e => e && [].concat(e.urls || []).some(u => /^turns?:/i.test(u)));
+// what RTCPeerConnection gets for this config; `relay` forces relay only for one attempt
+export function rtcConfig(cfg, relay = false) {
+  const rc = { iceServers: Array.isArray(cfg.iceServers) ? cfg.iceServers : DEFAULT_ICE_SERVERS, sdpSemantics: 'unified-plan' };
+  if (cfg.relayOnly || relay) rc.iceTransportPolicy = 'relay';
+  return rc;
+}
+
+// --- diagnostics: plain text for the lobby ---
+export const NO_OUTSIDE = 'No outside address was found, so this network blocks the connection helpers. Try another network or add a TURN server (README)';
+export const NEEDS_RELAY = "Your network or the host's network needs a relay (TURN)";
+export const newDiag = () => ({ broker: null, brokerHost: '', attempt: 0, relayForced: false, states: [], cand: { host: 0, srflx: 0, relay: 0 }, ever: { host: false, srflx: false, relay: false }, gathered: false, reason: '' });
+export const failureReason = d => (d && (d.ever.srflx || d.ever.relay)) ? NEEDS_RELAY : NO_OUTSIDE;
+export function diagText(d) {
+  if (!d) return '';
+  const found = ['host', 'srflx', 'relay'].filter(k => d.ever[k]);
+  const lines = [
+    `Broker: ${d.broker === null ? 'not tried yet' : d.broker ? 'reachable' : 'not reachable'}${d.brokerHost ? ` (${d.brokerHost})` : ''}`,
+    `Attempt ${d.attempt + 1}${d.relayForced ? ' (relay only)' : ''}. Connection: ${d.states.length ? d.states.join(', ') : 'not started'}`,
+    `Addresses found: ${found.length ? found.join(', ') : 'none'} (host = this device, srflx = STUN worked, relay = TURN worked)${d.gathered ? '' : ' (still looking)'}`,
+  ];
+  if (d.reason) lines.push(`Result: ${d.reason}`);
+  return lines.join('\n');
 }
 
 const LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';      // no I or O: they look like 1 and 0
@@ -65,16 +156,24 @@ const randomSuffix = random => { let s = ''; for (let i = 0; i < 6; i++) s += 'a
 
 const BLOCKED = 'If you are viewing this inside the claude.ai artifact page, that page blocks outside connections, so multiplayer only works when the game is on a real web host.';
 const CONNECT_TIMEOUT = 9000;     // ms to reach the broker
-const JOIN_TIMEOUT = 15000;       // ms to reach the host once the broker answers
+const JOIN_TIMEOUT = 25000;       // ms to reach the host once the broker answers (per attempt; a failed first attempt is retried once)
+const TRYING_MS = 30000;          // how long the host shows "a player is connecting"
 
 export class Multiplayer {
-  // opts: ghosts (a Ghosts), config (a BROKER-shaped object), onStatus(status), onPlayers(), now() ms clock,
-  // loadPeer() resolving to the PeerJS Peer class, random().
+  // opts: ghosts (a Ghosts), config (a BROKER-shaped object), loadConfig() resolving to one (read at host or join time),
+  // onStatus(status), onDiag(text), onPlayers(), now() ms clock, loadPeer() resolving to the PeerJS Peer class, random(),
+  // joinTimeout ms, setTimeout/clearTimeout (for tests).
   constructor(opts = {}) {
     this.ghosts = opts.ghosts;
     this.config = opts.config || BROKER;
     this.onStatus = opts.onStatus || (() => {});
     this.onPlayers = opts.onPlayers || (() => {});
+    this.onDiag = opts.onDiag || (() => {});
+    this.loadConfig = opts.loadConfig || null;
+    this.joinTimeout = opts.joinTimeout || JOIN_TIMEOUT;
+    this.setT = opts.setTimeout || ((f, ms) => setTimeout(f, ms));
+    this.clearT = opts.clearTimeout || (t => clearTimeout(t));
+    this.diag = newDiag();
     this.now = opts.now || (() => performance.now());
     this.random = opts.random || Math.random;
     this.loadPeer = opts.loadPeer || (async () => (await import('peerjs')).Peer);
@@ -90,7 +189,10 @@ export class Multiplayer {
     this.peers = new Map();    // id -> { id, ctl, st, name, hello }
     this.isHost = false;
     this.gen = (this.gen || 0) + 1;     // callbacks from an old session check this and stop
-    clearTimeout(this.timer);
+    this.trying = new Set();   // host side: guests whose connection arrived but is not open yet
+    this.attempt = 0;
+    this.relay = false;        // this attempt is relay only
+    if (this.clearT) this.clearT(this.timer);
   }
 
   get active() { return this.phase === 'hosting' || this.phase === 'joined' || this.phase === 'connecting'; }
@@ -98,8 +200,11 @@ export class Multiplayer {
 
   status(phase, text) {
     this.phase = phase;
-    this.onStatus({ phase, text, code: this.code, players: this.players, host: this.isHost });
+    this.onStatus({ phase, text, code: this.code, players: this.players, host: this.isHost, details: diagText(this.diag) });
   }
+
+  // update the diagnostics: fn changes this.diag, then the lobby is told
+  note(fn) { try { fn(this.diag); this.onDiag(diagText(this.diag)); } catch (e) { /* diagnostics must never break a connection */ } }
 
   fail(text) {
     this.teardown();
@@ -111,10 +216,12 @@ export class Multiplayer {
     if (this.active) return;
     this.name = cleanName(name) || 'Driver';
     this.reset();
+    this.cfg = null;
+    if (tries === 0) this.diag = newDiag();
     this.isHost = true;
     this.code = makeCode(this.random);
     await this.open(hostId(this.code), async () => {
-      this.status('hosting', `Room ${this.code} is open. Share the code; up to ${MAX_PLAYERS} players.`);
+      this.status('hosting', this.lastText());
     }, tries);
   }
 
@@ -123,30 +230,63 @@ export class Multiplayer {
     code = cleanCode(code);
     if (code.length !== 5) { this.status('error', 'Type the 5 letters of the room code.'); return; }
     this.name = cleanName(name) || 'Driver';
+    this.cfg = null;
+    this.diag = newDiag();
+    await this.attemptJoin(code, 0, false);
+  }
+
+  // One try at reaching the host. The first try that times out is repeated once with a fresh peer.
+  async attemptJoin(code, attempt, relay) {
     this.reset();
     this.code = code;
+    this.attempt = attempt;
+    this.relay = relay;
+    this.note(d => { d.attempt = attempt; d.relayForced = relay; if (attempt) d.states.push('retry'); d.cand = { host: 0, srflx: 0, relay: 0 }; d.gathered = false; d.broker = null; });
     await this.open(`${hostId(code)}-${randomSuffix(this.random)}`, async () => {
-      this.status('connecting', `Looking for room ${code}...`);
-      this.timer = setTimeout(() => { if (this.phase === 'connecting') this.fail(`Reached the broker but not the host of room ${code}. A strict firewall can stop players connecting directly. Playing single player.`); }, JOIN_TIMEOUT);
+      const gen = this.gen;
+      this.status('connecting', `Looking for room ${code}${attempt ? ' (second try)' : ''}...`);
+      this.timer = this.setT(() => { if (gen === this.gen && this.phase === 'connecting') this.joinFailed(code, attempt); }, this.joinTimeout);
       this.connectTo(hostId(code), true);
     });
+  }
+
+  // The host did not answer in time (or the link failed). Retry once, otherwise explain.
+  joinFailed(code, attempt) {
+    const reason = failureReason(this.diag);
+    if (attempt === 0) {
+      // with no relay candidate seen, the second try goes through TURN only (when there is a TURN server to use)
+      const cfg = this.cfg || this.config;
+      const relay = !this.diag.ever.relay && !cfg.relayOnly && hasTurn(cfg.iceServers);
+      this.teardown();
+      this.attemptJoin(code, 1, relay);
+      return;
+    }
+    this.note(d => { d.reason = reason; });
+    this.fail(`Reached the broker but not the host of room ${code}. ${reason}. Playing single player.`);
   }
 
   // Create the peer and wait for the broker to answer.
   async open(id, onOpen, tries = 0) {
     const gen = this.gen;
-    this.status('connecting', 'Connecting to the broker...');
+    this.status('connecting', this.attempt ? 'Trying again...' : 'Connecting to the broker...');
     let Peer;
     try { Peer = await this.loadPeer(); } catch (e) { if (gen === this.gen) this.fail('The multiplayer library could not be loaded. Playing single player.'); return; }
     if (gen !== this.gen) return;
-    const c = this.config;
+    if (!this.cfg) {
+      let cfg = null;
+      if (this.loadConfig) { try { cfg = await this.loadConfig(); } catch (e) { cfg = null; } }     // a missing or broken multiplayer.json is fine
+      if (gen !== this.gen) return;
+      this.cfg = cfg || this.config;
+    }
+    const c = this.cfg;
+    this.note(d => { d.brokerHost = c.host; });
     let peer;
     try {
-      peer = new Peer(id, { host: c.host, port: c.port, path: c.path, secure: c.secure, key: c.key, debug: c.debug, config: c.iceServers ? { iceServers: c.iceServers } : undefined });
+      peer = new Peer(id, { host: c.host, port: c.port, path: c.path, secure: c.secure, key: c.key, debug: c.debug, config: rtcConfig(c, this.relay) });
     } catch (e) { this.fail(`Multiplayer is not available in this browser. Playing single player. ${BLOCKED}`); return; }
     this.peer = peer;
-    this.timer = setTimeout(() => { if (this.phase === 'connecting' && !peer.open) this.fail(`Could not reach the multiplayer broker (${c.host}). It may be down, or this network or page blocks outside connections. Playing single player. ${BLOCKED}`); }, CONNECT_TIMEOUT);
-    peer.on('open', () => { if (gen !== this.gen) return; clearTimeout(this.timer); onOpen(); });
+    this.timer = this.setT(() => { if (gen === this.gen && this.phase === 'connecting' && !peer.open) { this.note(d => { d.broker = false; }); this.fail(`Could not reach the multiplayer broker (${c.host}). It may be down, or this network or page blocks outside connections. Playing single player. ${BLOCKED}`); } }, CONNECT_TIMEOUT);
+    peer.on('open', () => { if (gen !== this.gen) return; this.clearT(this.timer); this.note(d => { d.broker = true; }); onOpen(); });
     peer.on('connection', conn => { if (gen === this.gen) this.accept(conn); });
     peer.on('disconnected', () => { if (gen === this.gen && this.phase !== 'error') { try { peer.reconnect(); } catch (e) { /* stays connected to the players it has */ } } });
     peer.on('error', err => { if (gen === this.gen) this.peerError(err, tries); });
@@ -161,7 +301,8 @@ export class Multiplayer {
     }
     if (this.phase === 'connecting' || type === 'network' || type === 'server-error' || type === 'socket-error' || type === 'socket-closed') {
       if (this.phase === 'hosting' || this.phase === 'joined') return;   // already playing: the broker is only needed to meet new players
-      this.fail(`Could not reach the multiplayer broker (${this.config.host}). It may be down, or this network or page blocks outside connections. Playing single player. ${BLOCKED}`);
+      this.note(d => { d.broker = false; });
+      this.fail(`Could not reach the multiplayer broker (${(this.cfg || this.config).host}). It may be down, or this network or page blocks outside connections. Playing single player. ${BLOCKED}`);
       return;
     }
     if (type === 'browser-incompatible') { this.fail('This browser cannot do peer to peer connections. Playing single player.'); return; }
@@ -181,6 +322,7 @@ export class Multiplayer {
     if (!this.peer || this.peers.has(id) || id === this.peer.id) return;
     const ctl = this.peer.connect(id, { label: 'ctl', reliable: true, serialization: 'json', metadata: { first } });
     this.attach(ctl, id, 'ctl', true);
+    if (first) this.watchIce(ctl);
     const st = this.peer.connect(id, { label: 'st', reliable: false, serialization: 'json' });
     this.attach(st, id, 'st', true);
   }
@@ -191,6 +333,48 @@ export class Multiplayer {
     if (typeof id !== 'string' || !ID.test(id)) { conn.close(); return; }
     const kind = conn.label === 'st' ? 'st' : 'ctl';
     this.attach(conn, id, kind, false, conn.metadata && conn.metadata.first);
+    if (kind === 'ctl' && this.isHost && !(this.peers.get(id) || {}).hello) { this.markTrying(id); this.watchIce(conn); }
+  }
+
+  // Host side: a guest's connection reached us through the broker but its data link is not open yet.
+  markTrying(id) {
+    if (this.trying.has(id)) return;
+    this.trying.add(id);
+    const gen = this.gen;
+    this.setT(() => { if (gen === this.gen && this.trying.delete(id)) this.changed(); }, TRYING_MS);
+    this.changed();
+  }
+
+  // Record the ICE connection state and candidate types of a DataConnection's RTCPeerConnection (conn.peerConnection).
+  // PeerJS creates it inside connect() or soon after, so look a few times. Everything is guarded: internals vary by version.
+  watchIce(conn, n = 0) {
+    const gen = this.gen;
+    try {
+      const pc = conn && conn.peerConnection;
+      if (!pc) { if (n < 10) this.setT(() => { if (gen === this.gen) this.watchIce(conn, n + 1); }, 100); return; }
+      if (pc.__lakesideWatched) return;
+      pc.__lakesideWatched = true;
+      const state = () => {
+        try {
+          if (gen !== this.gen) return;
+          const st = pc.iceConnectionState;
+          this.note(d => { if (st && d.states[d.states.length - 1] !== st) d.states.push(st); if (d.states.length > 12) d.states.shift(); });
+          if (st === 'failed' && !this.isHost && this.phase === 'connecting') this.joinFailed(this.code, this.attempt);     // no point waiting out the clock
+        } catch (e) { /* ignore */ }
+      };
+      pc.addEventListener('iceconnectionstatechange', state);
+      pc.addEventListener('icecandidate', ev => {
+        try {
+          if (gen !== this.gen) return;
+          const c = ev && ev.candidate;
+          if (!c) { this.note(d => { d.gathered = true; }); return; }
+          let type = c.type; if (!type) { const m = / typ (host|srflx|prflx|relay)/.exec(c.candidate || ''); type = m && m[1]; }
+          if (type === 'prflx') type = 'srflx';
+          if (type === 'host' || type === 'srflx' || type === 'relay') this.note(d => { d.cand[type]++; d.ever[type] = true; });
+        } catch (e) { /* ignore */ }
+      });
+      state();
+    } catch (e) { /* diagnostics only */ }
   }
 
   attach(conn, id, kind, outgoing, first = false) {
@@ -202,7 +386,7 @@ export class Multiplayer {
     conn.on('open', () => {
       if (gen !== this.gen) return;
       if (kind === 'ctl') {
-        if (!outgoing && this.players >= MAX_PLAYERS && !p.hello) { this.sendTo(conn, { t: 'full' }); setTimeout(() => { try { conn.close(); } catch (e) { /* closed */ } }, 300); this.peers.delete(id); return; }
+        if (!outgoing && this.players >= MAX_PLAYERS && !p.hello) { this.sendTo(conn, { t: 'full' }); this.setT(() => { try { conn.close(); } catch (e) { /* closed */ } }, 300); this.peers.delete(id); return; }
         this.sendTo(conn, { t: 'hi', n: this.name });
       }
     });
@@ -226,12 +410,13 @@ export class Multiplayer {
       p.name = cleanName(data.n) || 'Player';
       if (!p.hello) {
         p.hello = true;
+        this.trying.delete(id);
         if (this.isHost && p.pending) {
           p.pending = false;
           const ids = [...this.peers.values()].filter(q => q.hello && q.id !== id && ID.test(q.id)).map(q => q.id);
           this.sendTo(p.ctl, { t: 'peers', ids });
         }
-        if (!this.isHost && id === hostId(this.code) && this.phase === 'connecting') { clearTimeout(this.timer); this.status('joined', `Joined room ${this.code}.`); }
+        if (!this.isHost && id === hostId(this.code) && this.phase === 'connecting') { this.clearT(this.timer); this.status('joined', `Joined room ${this.code}.`); }
       }
       this.ghosts && this.ghosts.setName(id, p.name);
       this.changed();
@@ -252,11 +437,12 @@ export class Multiplayer {
     const p = this.peers.get(id);
     if (!p) return;
     this.peers.delete(id);
+    this.trying.delete(id);
     for (const c of [p.ctl, p.st]) { try { if (c) c.close(); } catch (e) { /* closed */ } }
     if (this.ghosts) this.ghosts.remove(id);
     if (this.phase === 'joined' || this.phase === 'hosting') {
       const left = !this.isHost && id === hostId(this.code);
-      this.status(this.phase, left ? `The host left. The room carries on with ${this.players - 1} other player${this.players === 2 ? '' : 's'}.` : this.phase === 'hosting' ? `Room ${this.code} is open. Share the code; up to ${MAX_PLAYERS} players.` : `Joined room ${this.code}.`);
+      this.status(this.phase, left ? `The host left. The room carries on with ${this.players - 1} other player${this.players === 2 ? '' : 's'}.` : this.lastText());
     }
     this.onPlayers();
   }
@@ -267,7 +453,9 @@ export class Multiplayer {
   }
 
   lastText() {
-    return this.phase === 'hosting' ? `Room ${this.code} is open. Share the code; up to ${MAX_PLAYERS} players.` : `Joined room ${this.code}.`;
+    if (this.phase !== 'hosting' && !(this.phase === 'connecting' && this.isHost)) return `Joined room ${this.code}.`;
+    const n = this.trying.size;
+    return `Room ${this.code} is open. Share the code; up to ${MAX_PLAYERS} players.` + (n ? ` ${n === 1 ? 'A player is' : n + ' players are'} connecting...` : '');
   }
 
   // Our name changed: tell everyone.
@@ -289,13 +477,13 @@ export class Multiplayer {
   }
 
   teardown() {
-    clearTimeout(this.timer);
+    this.clearT(this.timer);
     const peer = this.peer;
     this.peer = null;
     for (const p of this.peers.values()) this.sendTo(p.ctl, { t: 'bye' });
     this.peers.clear();
     if (this.ghosts) this.ghosts.clear();
-    if (peer) setTimeout(() => { try { peer.destroy(); } catch (e) { /* gone */ } }, 200);    // after the goodbyes have left
+    if (peer) this.setT(() => { try { peer.destroy(); } catch (e) { /* gone */ } }, 200);    // after the goodbyes have left
   }
 
   leave() {

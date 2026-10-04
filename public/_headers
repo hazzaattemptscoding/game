@@ -18,3 +18,7 @@
 # sponsor boards and anything else in public/: cache for a day
 /sponsors/*
   Cache-Control: public, max-age=86400
+
+# online play settings, edited by hand: re-check often
+/multiplayer.json
+  Cache-Control: public, max-age=60, must-revalidate

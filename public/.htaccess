@@ -28,6 +28,10 @@ DirectoryIndex index.html
   <FilesMatch "\.html$">
     Header set Cache-Control "public, max-age=0, must-revalidate"
   </FilesMatch>
+  # multiplayer.json is edited by hand on the web space: never keep it for long
+  <FilesMatch "^multiplayer\.json$">
+    Header set Cache-Control "public, max-age=60, must-revalidate"
+  </FilesMatch>
   <FilesMatch "-[A-Za-z0-9_-]{8}\.(js|css)$">
     Header set Cache-Control "public, max-age=31536000, immutable"
   </FilesMatch>
@@ -35,6 +39,7 @@ DirectoryIndex index.html
 <IfModule mod_expires.c>
   ExpiresActive On
   ExpiresByType text/html "access plus 0 seconds"
+  ExpiresByType application/json "access plus 1 minute"
   ExpiresByType image/png "access plus 1 day"
   ExpiresByType image/jpeg "access plus 1 day"
   ExpiresByType image/webp "access plus 1 day"

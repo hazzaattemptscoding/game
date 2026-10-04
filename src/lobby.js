@@ -3,7 +3,7 @@
 // this file only joins them to the page. The game calls `solids()` in its step loop and `update()` once a frame.
 // With no room open every call is a no-op.
 
-import { Multiplayer, brokerFromSearch, cleanCode } from './multiplayer.js';
+import { Multiplayer, brokerFromSearch, loadConfig, cleanCode } from './multiplayer.js';
 import { Ghosts, PALETTE, threeFactory, makeProjector, stateFromCar, encodeState } from './ghosts.js';
 
 const SEND_MS = 50;           // 20 Hz
@@ -25,14 +25,17 @@ export function createLobby(ctx) {
 
   const ghosts = new Ghosts(threeFactory(ctx.scene, tagRoot));
   const el = { name: $('mp-name'), code: $('mp-code'), host: $('mp-host'), join: $('mp-join'), leave: $('mp-leave'), copy: $('mp-copy'), big: $('mp-big'),
-    start: $('mp-start'), joinrow: $('mp-joinrow'), room: $('mp-room'), status: $('mp-status'), who: $('mp-who'), stand: $('h-stand') };
+    start: $('mp-start'), joinrow: $('mp-joinrow'), room: $('mp-room'), status: $('mp-status'), who: $('mp-who'), hint: $('mp-hint'), diag: $('mp-diag'), details: $('mp-details'), stand: $('h-stand') };
   const search = ctx.search || '';
   const q = new URLSearchParams(search);
 
   const mp = new Multiplayer({
     ghosts,
     config: brokerFromSearch(search),
+    // multiplayer.json next to index.html is read each time someone hosts or joins, so the owner can edit it without a rebuild
+    loadConfig: () => loadConfig({ fetchFn: (u, o) => fetch(u, o), search, build: typeof __BUILD_COMMIT__ === 'undefined' ? '' : __BUILD_COMMIT__ }),
     onStatus: s => render(s),
+    onDiag: t => { el.diag.textContent = t; el.details.hidden = !t; },
     onPlayers: () => { renderWho(); lastStand = ''; },
   });
 
@@ -62,6 +65,9 @@ export function createLobby(ctx) {
     el.big.textContent = s.code;
     el.leave.textContent = s.phase === 'connecting' ? 'Cancel' : 'Leave';
     el.status.textContent = s.text;
+    el.hint.hidden = !(s.phase === 'hosting' && s.host);
+    el.diag.textContent = s.details || '';
+    el.details.hidden = !s.details || !(inRoom || s.phase === 'error');
     el.stand.hidden = !(s.phase === 'hosting' || s.phase === 'joined');
     if (s.phase === 'hosting' || s.phase === 'joined') ctx.car.contactGrace = 1.5;   // nobody is launched by a car that was already there
     renderWho();

@@ -86,9 +86,11 @@
       <div id="mp-room" hidden>
         <div class="mp-big" id="mp-big" aria-label="Room code"></div>
         <div class="row"><button id="mp-copy" type="button">Copy code</button><button id="mp-leave" type="button">Leave</button></div>
+        <p class="mp-status" id="mp-hint" hidden>Keep this tab in the foreground while friends join. Browsers slow down background tabs.</p>
       </div>
       <p class="mp-status" id="mp-status" role="status">Race other people online. Needs a real web host, not the claude.ai preview.</p>
       <p class="mp-status" id="mp-who"></p>
+      <details class="mp-details" id="mp-details" hidden><summary>Connection details</summary><p class="mp-status" id="mp-diag"></p></details>
     </div>
     <button id="close" class="main">Back to driving</button>
   </div>
