@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "laptest": "node tools/laptest.js",
     "trackmap": "node tools/trackmap.js",
-    "cornersheet": "node tools/cornersheet.js"
+    "cornersheet": "node tools/cornersheet.js",
+    "reports": "node tools/reports.js"
   },
   "dependencies": {
     "peerjs": "^1.5.5",
