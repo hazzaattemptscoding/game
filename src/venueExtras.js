@@ -4,25 +4,12 @@
 // other), then drawn into a handful of merged meshes (Kit) and instanced meshes.
 
 import * as THREE from 'three';
+import { bannerVideo } from './bannerVideo.js';
 import * as tex from './textures.js';
 import { Kit, metreUV, sponsorPanel, trackPoint, hash01 } from './meshKit.js';
 import { frame, checkStand, wallClearance, standDepth, GAP } from './grandstands.js';
 import { lampMaterial, flagMaterial, addFlag, onLampLevel } from './lamps.js';
 
-// A muted looping video as a texture, or null where there is no browser video (the headless tools).
-// Shared across structures to avoid multiple concurrent video instances on mobile Safari.
-function bannerVideo(url, onReady) {
-  if (typeof document === 'undefined' || typeof document.createElement('video').play !== 'function') return null;
-  const v = document.createElement('video');
-  v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
-  v.src = url.startsWith('data:') ? url : (import.meta.env?.BASE_URL ?? './') + url;
-  const t = new THREE.VideoTexture(v);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
-  v.addEventListener('loadeddata', () => { v.play().then(onReady, () => {}); });
-  v.addEventListener('error', () => {});
-  return t;
-}
 
 const wrapN = (i, n) => ((i % n) + n) % n;
 const PALETTE = [0xc8102e, 0xf2f2ee, 0x1d4e9e, 0xffd21f, 0x0e7c86, 0xff6a13, 0x2f3136, 0x3f9d4f, 0xd4145a, 0x8a5cd6];
@@ -322,7 +309,7 @@ function footbridge(kit, b, videoGroup) {
 
     // Overlay with video when ready
     const videoMat = new THREE.MeshBasicMaterial({ toneMapped: false });
-    const videoTex = bannerVideo('sponsors/powermedia-bridge-30x1-loop-1.mp4', () => {
+    const videoTex = bannerVideo(() => {
       video.visible = true;
       still.visible = false;
     });

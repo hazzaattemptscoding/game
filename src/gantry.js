@@ -9,6 +9,7 @@
 // The structure includes a deep truss, lighting rig, camera pods, and a catwalk along the top.
 
 import * as THREE from 'three';
+import { bannerVideo } from './bannerVideo.js';
 import * as tex from './textures.js';
 import { Kit, sponsorRow, trackPoint } from './meshKit.js';
 
@@ -19,20 +20,6 @@ export const GANTRY_LEG = 4.0;      // legs stand this far outside the white lin
 
 const DECAL = 0.006;
 
-// A muted looping video as a texture, or null where there is no browser video (the headless tools).
-// Reused from bridge.js to avoid multiple concurrent video instances on mobile Safari.
-function bannerVideo(url, onReady) {
-  if (typeof document === 'undefined' || typeof document.createElement('video').play !== 'function') return null;
-  const v = document.createElement('video');
-  v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
-  v.src = url.startsWith('data:') ? url : (import.meta.env?.BASE_URL ?? './') + url;
-  const t = new THREE.VideoTexture(v);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
-  v.addEventListener('loadeddata', () => { v.play().then(onReady, () => {}); });
-  v.addEventListener('error', () => {});
-  return t;
-}
 
 // Canvas texture with START / FINISH text in a bold condensed display font
 function gantryTextTexture() {
@@ -190,7 +177,7 @@ export function buildGantry(T, sponsorTex) {
   videoGeom.computeVertexNormals();
 
   const videoMat = new THREE.MeshBasicMaterial({ toneMapped: false });
-  const videoTex = bannerVideo('sponsors/powermedia-bridge-30x1-loop-1.mp4', () => {
+  const videoTex = bannerVideo(() => {
     videoMesh.visible = true;
   });
   videoMat.map = videoTex || null;

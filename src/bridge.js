@@ -6,6 +6,7 @@
 // with a hazard-striped collar. Piers never stand on a road.
 
 import * as THREE from 'three';
+import { bannerVideo } from './bannerVideo.js';
 import * as tex from './textures.js';
 import { Kit, trackPoint } from './meshKit.js';
 import { wallClearance } from './grandstands.js';
@@ -50,20 +51,6 @@ export function planPiers(T, ground, blocked) {
   return out;
 }
 
-// A muted looping video as a texture, or null where there is no browser video (the headless tools). onReady fires once a
-// frame is available.
-function bannerVideo(url, onReady) {
-  if (typeof document === 'undefined' || typeof document.createElement('video').play !== 'function') return null;
-  const v = document.createElement('video');
-  v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
-  v.src = url.startsWith('data:') ? url : (import.meta.env?.BASE_URL ?? './') + url;   // tools/artifact.mjs swaps the path for a data: URL
-  const t = new THREE.VideoTexture(v);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
-  v.addEventListener('loadeddata', () => { v.play().then(onReady, () => {}); });
-  v.addEventListener('error', () => {});
-  return t;
-}
 
 export function buildBridge(T, ground, mat, { Strips }) {
   const g = new THREE.Group();
@@ -119,7 +106,7 @@ export function buildBridge(T, ground, mat, { Strips }) {
     videoBanners.strip(mid, i => P(i, gg * (T.wall[sd][i] + 0.52), -GIRDER + 0.15), i => P(i, gg * (T.wall[sd][i] + 0.52), -0.1),
       (i, j) => (sd ? j / len : 1 - j / len), 0, 1);
   }
-  const videoTex = bannerVideo('sponsors/powermedia-bridge-30x1-loop-1.mp4', () => { ban.visible = false; videoMesh.visible = true; });
+  const videoTex = bannerVideo(() => { ban.visible = false; videoMesh.visible = true; });
   const videoMesh = new THREE.Mesh(videoBanners.geometry(), new THREE.MeshBasicMaterial({ map: videoTex || null, toneMapped: false }));
   videoMesh.visible = false;
   videoMesh.userData.debug = 'tyres';
