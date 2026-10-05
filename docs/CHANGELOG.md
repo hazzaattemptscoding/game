@@ -11,6 +11,16 @@ Things that are liked and must not change. `npm run check` does not test these; 
 - The Blockout setting.
 - Keyboard handling and the keyboard tuning from fix pass 2.
 
+## Performance and high refresh rates
+
+No physics change (same 120 Hz step, `tools/perf.js` shows identical results at 60 to 240 Hz). Numbers and details in `docs/perf.md`.
+
+- Frame loop on requestAnimationFrame at the display rate, frame time clamped, exponential easing for the camera and body vibration, HUD, map and audio updates throttled (`src/loop.js`).
+- Static world cut into pieces and small meshes merged (`src/cull.js`): about 25 to 55 percent fewer triangles in the heavy views, draw calls stay under 700.
+- Graphics quality setting (Auto, High, Medium, Low) in Settings, Display, with an adaptive render scale in Auto (`src/quality.js`); the sun shadow refreshes from the loop and snaps to shadow pixels.
+- FPS and frame time readout: F key, or Settings. Pressing H (HUD preset) resets it with the other HUD parts.
+- `npm run perf` (`tools/perf.js`, step 19 of `npm run check`): fixed timestep parity, loop and quality maths, source checks, draw call and triangle budget.
+
 ## HUD options and the track map
 
 - Track map (`src/miniMap.js`): a canvas in a corner of the HUD. The outline, the start/finish line (white) and the sector marks (yellow) are drawn once to an offscreen canvas and only redrawn when the size, zoom or pixel ratio changes; each frame is one `drawImage` plus the dots. Your car is a wedge with a white ring in your livery colour, online cars are livery coloured dots (read from `lobby.ghosts`), and corner numbers (lap order from `corners.js`) are optional. Options: size (small, medium, large), position (four corners), opacity (30 to 100%), north up or rotate with the car, whole circuit or local area (600 m across). `viewTransform` holds the view maths and is tested without a page.

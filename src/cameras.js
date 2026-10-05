@@ -2,6 +2,7 @@
 // Cockpit and broadcast cameras come later.
 
 import * as THREE from 'three';
+import { ease } from './loop.js';
 
 const CHASE_DISTANCE = 6.2;   // metres behind the car
 const CHASE_HEIGHT = 1.9;     // metres above it
@@ -31,9 +32,9 @@ export class CameraRig {
       let want = heading + 0.35 * Math.atan2(Math.sin(travel - heading), Math.cos(travel - heading));
       if (this.yaw === null) this.yaw = want;
       const d = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
-      this.yaw += d * Math.min(1, dt * CHASE_LAG);
+      this.yaw += d * ease(CHASE_LAG, dt);
       if (this.height === null) this.height = pos.y;
-      this.height += (pos.y - this.height) * Math.min(1, dt * 4);
+      this.height += (pos.y - this.height) * ease(4, dt);
 
       const cx = Math.cos(this.yaw), cz = Math.sin(this.yaw);
       const rise = Math.tan(pitch) * CHASE_DISTANCE;
@@ -49,6 +50,6 @@ export class CameraRig {
     }
 
     const fov = BASE_FOV + SPEED_FOV * Math.min(1, Math.max(0, car.fwdSpeed) / 75);
-    if (Math.abs(cam.fov - fov) > 0.05) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 3); cam.updateProjectionMatrix(); }
+    if (Math.abs(cam.fov - fov) > 0.05) { cam.fov += (fov - cam.fov) * ease(3, dt); cam.updateProjectionMatrix(); }
   }
 }

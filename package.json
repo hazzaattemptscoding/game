@@ -25,6 +25,7 @@
     "live": "node tools/live.js",
     "session": "node tools/session.js",
     "hudsettings": "node tools/hudsettings.js",
+    "perf": "node tools/perf.js",
     "check": "node tools/check.js",
     "racingline": "node tools/racingline.js",
     "racingline-test": "node tools/racingline-test.js",

@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { normaliseLivery, liveryEquals, DEFAULT_LIVERY } from './livery.js';
 import { light } from './lamps.js';
+import { ease } from './loop.js';
 import { acquireTextures, releaseTextures, SIDE_W, SIDE_H } from './liveryTex.js';
 
 const VIBRATION = 0.006;   // metres of body movement per unit of surface roughness (rumble is 1.2, gravel 0.6)
@@ -251,7 +252,7 @@ export class CarView {
     this.body.rotation.x = THREE.MathUtils.clamp(-ay * 0.0028, -0.05, 0.05);
     // vibration from the surface: a smooth wobble, pitched by speed over the bump spacing, a few mm tall
     const now = performance.now() / 1000, dt = Math.min(0.1, now - (this._t || now)); this._t = now;
-    this._amp = (this._amp || 0) + ((car.bump || 0) - (this._amp || 0)) * Math.min(1, dt / 0.12);
+    this._amp = (this._amp || 0) + ((car.bump || 0) - (this._amp || 0)) * ease(1 / 0.12, dt);
     const hz = Math.min(32, Math.max(4, Math.abs(car.fwdSpeed) / (car.bumpSpacing || 4)));
     this._ph = ((this._ph || 0) + hz * dt) % 1000;
     car.vibration = this._amp * VIBRATION * (0.65 * Math.sin(this._ph * Math.PI * 2) + 0.35 * Math.sin(this._ph * Math.PI * 2 * 2.31 + 1.3));

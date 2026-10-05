@@ -103,6 +103,7 @@ export function createDirector(g) {
     racingLineAllowed,
     applyAssists,
     applyLook: () => g.applyLook(),
+    qualityChanged: () => g.qualityChanged && g.qualityChanged(),
     getTopDown: () => g.getTopDown(),
     setTopDown: v => g.setTopDown(v),
     getAutopilot: () => g.getAutopilot(),

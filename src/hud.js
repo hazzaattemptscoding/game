@@ -13,6 +13,11 @@ export function fmtTime(t) {
   return `${m}:${s.toFixed(3).padStart(6, '0')}`;
 }
 
+// DOM writes only when the value changed: at 120 Hz and up most frames repeat the last text, class or transform.
+const text = (el, v) => { v = String(v); if (el._t !== v) { el._t = v; el.textContent = v; } };
+const cls = (el, v) => { if (el._c !== v) { el._c = v; el.className = v; } };
+const style = (el, v) => { if (el._s !== v) { el._s = v; el.style.transform = v; } };
+
 const fmtDelta = d => (d < 0 ? '-' : '+') + Math.abs(d).toFixed(3);
 
 export class Hud {
@@ -52,7 +57,7 @@ export class Hud {
     this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr') };
     this.root = root;
     this._layout = '';
-    this._fpsAt = performance.now(); this._frames = 0;
+    this.perf = 'FPS';    // the FPS readout text, set from the loop (src/main.js)
     this.flashUntil = 0;
     this.warnUntil = 0;
     this.warnLap = -1;   // the lap the counter was last drawn for
@@ -91,35 +96,31 @@ export class Hud {
   update(car, timer, track, simTime, input) {
     const e = this.el, s = this.settings;
     this.applyLayout();
-    if (s.hud.fps) {
-      this._frames++;
-      const t = performance.now();
-      if (t - this._fpsAt >= 500) { e.fps.textContent = 'FPS ' + Math.round(this._frames * 1000 / (t - this._fpsAt)); this._frames = 0; this._fpsAt = t; }
-    }
+    if (s.hud.fps) text(e.fps, this.perf);
     if (input && (s.hud.pedals || s.hud.inputOverlay)) {
-      e.thr.style.transform = `scaleY(${Math.max(0, Math.min(1, input.throttle)).toFixed(2)})`;
-      e.brk.style.transform = `scaleY(${Math.max(0, Math.min(1, input.brake)).toFixed(2)})`;
-      e.ku.className = input.throttle > 0.05 ? 'on' : ''; e.kd.className = input.brake > 0.05 ? 'on' : '';
-      e.kl.className = input.steer < -0.05 ? 'on' : ''; e.kr.className = input.steer > 0.05 ? 'on' : '';
+      style(e.thr, `scaleY(${Math.max(0, Math.min(1, input.throttle)).toFixed(2)})`);
+      style(e.brk, `scaleY(${Math.max(0, Math.min(1, input.brake)).toFixed(2)})`);
+      cls(e.ku, input.throttle > 0.05 ? 'on' : ''); cls(e.kd, input.brake > 0.05 ? 'on' : '');
+      cls(e.kl, input.steer < -0.05 ? 'on' : ''); cls(e.kr, input.steer > 0.05 ? 'on' : '');
     }
     const mph = s.units === 'mph';
-    e.speed.textContent = Math.round(Math.abs(car.fwdSpeed) * (mph ? 2.23694 : 3.6));
-    e.unit.textContent = mph ? 'mph' : 'km/h';
-    e.gear.textContent = car.gear < 0 ? 'R' : car.gear;
+    text(e.speed, Math.round(Math.abs(car.fwdSpeed) * (mph ? 2.23694 : 3.6)));
+    text(e.unit, mph ? 'mph' : 'km/h');
+    text(e.gear, car.gear < 0 ? 'R' : car.gear);
     const rev = Math.max(0, (car.rpm - car.cfg.idleRpm) / (car.cfg.redline - car.cfg.idleRpm));
-    e.rev.style.transform = `scaleX(${Math.min(1, rev).toFixed(3)})`;
-    e.rev.className = car.rpm > car.cfg.upshiftRpm - 300 ? 'hot' : '';
+    style(e.rev, `scaleX(${Math.min(1, rev).toFixed(3)})`);
+    cls(e.rev, car.rpm > car.cfg.upshiftRpm - 300 ? 'hot' : '');
 
-    e.drs.className = car.drs ? 'on' : track.inDRS(car.loc.s) ? 'zone' : '';
-    e.pit.className = car.pitLimiter ? 'on' : '';
+    cls(e.drs, car.drs ? 'on' : track.inDRS(car.loc.s) ? 'zone' : '');
+    cls(e.pit, car.pitLimiter ? 'on' : '');
     // each assist chip: struck through and dim when that assist is switched off, lit when it is working, grey when it is ready
-    e.tc.className = car.assistTc ? (car.tc ? 'act' : 'arm') : 'off';
-    e.abs.className = car.assistAbs ? (car.abs ? 'act' : 'arm') : 'off';
-    e.esc.className = car.assistEsc ? (car.esc ? 'act' : 'arm') : 'off';
+    cls(e.tc, car.assistTc ? (car.tc ? 'act' : 'arm') : 'off');
+    cls(e.abs, car.assistAbs ? (car.abs ? 'act' : 'arm') : 'off');
+    cls(e.esc, car.assistEsc ? (car.esc ? 'act' : 'arm') : 'off');
 
-    e.lap.textContent = fmtTime(timer.running(simTime));
-    e.last.textContent = fmtTime(timer.last);
-    e.best.textContent = fmtTime(timer.best);
+    text(e.lap, fmtTime(timer.running(simTime)));
+    text(e.last, fmtTime(timer.last));
+    text(e.best, fmtTime(timer.best));
 
     // sector splits for the current lap, coloured against your best
     const cells = [];

@@ -5,9 +5,10 @@ import { normaliseControllerSettings } from './gamepad.js';
 import { normaliseLivery } from './livery.js';
 import { cleanWeather, cleanTime } from './weather.js';
 import { normaliseHudSettings } from './hudSettings.js';
+import { cleanQuality, isPhone } from './quality.js';
 
 const KEY = 'lakeside-settings';
-const DEFAULTS = { units: 'mph', assistTc: true, assistAbs: true, assistEsc: true, steering: 'keyboard', steerSens: 1, debug: false, blockout: false, racingLine: false, sound: true, volume: 0.7, livery: null, weather: 'clear', timeOfDay: 'midday', lightning: true };   // hud, hudScale and trackMap are filled in by migrateSettings (src/hudSettings.js)
+const DEFAULTS = { units: 'mph', assistTc: true, assistAbs: true, assistEsc: true, steering: 'keyboard', steerSens: 1, debug: false, blockout: false, racingLine: false, sound: true, volume: 0.7, livery: null, weather: 'clear', timeOfDay: 'midday', lightning: true, quality: 'auto' };   // hud, hudScale and trackMap are filled in by migrateSettings (src/hudSettings.js)
 
 // Older saves had one `assists` switch for all three. If that is all there is, it sets the three; then it goes.
 export function migrateSettings(saved) {
@@ -21,6 +22,7 @@ export function migrateSettings(saved) {
   if ('weather' in s) s.weather = cleanWeather(s.weather);   // visual only (src/weather.js)
   if ('timeOfDay' in s) s.timeOfDay = cleanTime(s.timeOfDay);
   if ('lightning' in s) s.lightning = s.lightning !== false;   // cosmetic flashes and thunder in heavy rain; anything but false is on
+  if ('quality' in s) s.quality = cleanQuality(s.quality);   // graphics: auto, high, medium or low (src/quality.js)
   if (s.steering !== 'keyboard' && s.steering !== 'cursor') delete s.steering;
   if (typeof s.steerSens !== 'number' || !(s.steerSens >= 0.5 && s.steerSens <= 2)) delete s.steerSens;
   return normaliseHudSettings(s);   // the HUD switches, scale and track map options: missing or invalid parts take the defaults
@@ -29,7 +31,9 @@ export function migrateSettings(saved) {
 export function loadSettings() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { /* private mode */ }
-  return { ...DEFAULTS, ...migrateSettings(saved) };
+  const m = migrateSettings(saved), out = { ...DEFAULTS, ...m };
+  if (!('quality' in m) && isPhone()) out.quality = 'medium';   // a phone that has not chosen starts on Medium
+  return out;
 }
 
 export function saveSettings(s) {

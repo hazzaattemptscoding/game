@@ -1,12 +1,17 @@
 // Lakeside, phase 1: drive feel on the test track.
 //
 // Physics runs at a fixed 120 steps per second, separate from the frame
-// rate. Rendering blends between the last two physics steps so motion stays
-// smooth on any screen.
+// rate. Rendering runs on requestAnimationFrame at the display's rate (60,
+// 120, 144, 240 Hz) and blends between the last two physics steps so motion
+// stays smooth on any screen (src/loop.js). Graphics quality, the render
+// scale that Auto adjusts and the shadow refresh are in src/quality.js.
 
 import * as THREE from 'three';
 import { buildTrack } from './track.js';
 import { Car, STEP } from './physics.js';
+import { FixedStep, FrameStats, frameTime } from './loop.js';
+import { createQuality, isPhone, snapShadowCentre, QUALITY_LABELS } from './quality.js';
+import { optimiseWorld, freezeWorld, propCuller } from './cull.js';
 import { GT } from './cars.js';
 import { LapTimer } from './timing.js';
 import { Autopilot } from './autopilot.js';
@@ -43,8 +48,10 @@ let autopilot = params.has('autopilot') ? new Autopilot(track, GT, { skill: 0.9 
 
 // --- rendering ---
 const canvas = document.getElementById('view');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+const phone = isPhone();
+// multisampling costs a lot at a phone's pixel density and shows little there
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !phone, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+renderer.shadowMap.autoUpdate = false;   // refreshed from the loop, at the rate the graphics quality allows
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -66,9 +73,13 @@ sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
 const SUN_DIR = new THREE.Vector3(-0.5, 0.75, 0.42).normalize();   // the environment (src/environment.js) moves it with the time of day
 
-const ground = createGround(track), terrain = ground.mesh();
+const ground = createGround(track);
+const terrain = ground.mesh();
 const world = new THREE.Group();
 world.add(terrain, buildTrackScene(track, ground), buildScenery(track, ground));
+const optimised = optimiseWorld(world);   // long ribbons in pieces and small meshes merged (src/cull.js); the report tool swaps the real objects back
+freezeWorld(world);
+const props = propCuller(world);
 scene.add(world);
 const env = createEnvironment({ renderer, scene, sun, hemi, sunDir: SUN_DIR, onLightning: (delay, k) => audio.thunder(delay, k) });   // sky, light, fog, weather, wet road, lamps
 const urlEnv = envFromParams(params);   // ?weather=rain&time=dusk wins over the settings and the room, for testing
@@ -111,7 +122,7 @@ const history = { inputs: [], telemetry: [] };
 let restoreTopDown = false;
 const reportTool = new ReportTool({
   canvas, renderer, camera: rig.camera, scene, world, terrain, car, track, input, settings, history,
-  onClose: () => { topDown = restoreTopDown; applyLook(); if (dir.phase === 'paused') dir.menu.open('pause', 'pause'); },   // a report started from the pause menu goes back to it
+  onClose: () => { optimised.set(true); topDown = restoreTopDown; applyLook(); if (dir.phase === 'paused') dir.menu.open('pause', 'pause'); },   // a report started from the pause menu goes back to it
 });
 
 function resize() {
@@ -119,8 +130,10 @@ function resize() {
   rig.camera.aspect = innerWidth / innerHeight;
   rig.camera.updateProjectionMatrix();
 }
-addEventListener('resize', resize);
-resize();
+let quality = null, lastDpr = devicePixelRatio;
+addEventListener('resize', () => { resize(); if (quality && devicePixelRatio !== lastDpr) { lastDpr = devicePixelRatio; quality.refresh(); } });
+// the sun shadow, the pixel ratio and Auto's render scale follow settings.quality (src/quality.js)
+quality = createQuality({ renderer, sun, settings, phone, onResize: resize, ready: tier => { limitAnisotropy(scene, tier.aniso); props.update(rig.camera, tier.propDist); } });
 
 // --- menu, sessions and the start sequence (src/director.js) ---
 function openReport() {
@@ -128,6 +141,7 @@ function openReport() {
   renderer.render(scene, rig.camera);
   const shot = canvas.toDataURL('image/png');
   const pose = { position: rig.camera.position.toArray(), quaternion: rig.camera.quaternion.toArray(), fov: rig.camera.fov };
+  optimised.set(false);   // the report picks and measures the real objects, not the merged pieces
   topDown = true; applyLook(); reportTool.open(shot, pose);
 }
 const save = () => saveSettings(settings);
@@ -136,16 +150,24 @@ const dir = createDirector({
   simTime: () => simTime,
   applyLook: () => { applyLook(); view.setFlat(settings.blockout); },
   getTopDown: () => topDown, setTopDown: v => { topDown = v; applyLook(); },
+  qualityChanged: () => quality.refresh(),
   getAutopilot: () => !!autopilot, setAutopilot: v => { autopilot = v ? new Autopilot(track, GT, { skill: 0.9 }) : null; },
   liveryChanged: () => { view.setLivery(myLivery()); lobby.liveryChanged(); },
 });
 
 // --- loop ---
-let simTime = 0, acc = 0, last = performance.now();
+const loop = new FixedStep(STEP);
+const stats = new FrameStats();
+let simTime = 0, last = performance.now(), hudDue = Infinity, audioDue = 0, frameNo = 0;
+document.addEventListener('visibilitychange', () => { last = performance.now(); });   // no frame time spans the time the tab was hidden
 
 function frame(now) {
-  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));   // the first frame can carry a time stamp from before `last`
+  const raw = (now - last) / 1000;     // the first frame can carry a time stamp from before `last`, then this is negative and counts as 0
   last = now;
+  const dt = frameTime(raw);
+  if (raw < 0.25 && stats.push(raw) && settings.hud.fps) hud.perf = perfText();   // a longer one is a pause, not a slow frame
+  if (raw < 0.25) quality.frame(raw * 1000);
+  frameNo++;
 
   const actions = input.takeActions();
   const menuToggled = dir.menuToggledSinceLastFrame();   // Esc that just closed the menu is also in the list: ignore it
@@ -161,6 +183,7 @@ function frame(now) {
     if (a === 'line') { settings.racingLine = !settings.racingLine; saveSettings(settings); hud.flash(settings.racingLine ? 'Racing line on' : 'Racing line off', simTime); }
     if (a === 'map') { settings.trackMap.on = !settings.trackMap.on; saveSettings(settings); hud.flash(settings.trackMap.on ? 'Track map on' : 'Track map off', simTime, 'force'); }
     if (a === 'hud') { const name = cyclePreset(settings); saveSettings(settings); hud.flash('HUD ' + PRESET_NAMES[name].toLowerCase(), simTime, 'force'); }
+    if (a === 'fps') { settings.hud.fps = !settings.hud.fps; saveSettings(settings); hud.flash(settings.hud.fps ? 'FPS readout on' : 'FPS readout off', simTime, 'force'); }
     if (a === 'debug') { settings.debug = !settings.debug; saveSettings(settings); }
     if (a === 'report' && !reportTool.opened && dir.phase !== 'menu') openReport();
   }
@@ -171,24 +194,25 @@ function frame(now) {
   const paused = dir.inMenu || (dir.menuOpen && !lobby.active) || reportTool.opened;     // in a room the car keeps rolling behind the menu
   const drive = autopilot && !dir.hold ? () => autopilot.drive(car) : () => (dir.hold ? HOLD : dir.menuOpen ? IDLE : playerInput);
   if (!paused) {
-    acc += dt;
-    while (acc >= STEP) {
-      if (lobby.active) car.collideCars(lobby.solids(now - (acc - STEP) * 1000));
+    loop.add(dt);
+    let keysNow = null;
+    while (loop.due()) {
+      if (lobby.active) car.collideCars(lobby.solids(now - loop.acc * 1000));
       car.step(drive());
       audio.latch(car);
       simTime += STEP;
       timer.update(car.loc.s, simTime);
       timer.checkLimits(car, simTime);
-      history.inputs.push({ t: simTime, device: input.device, keys: input.pressedKeys(), steer: playerInput.steer, throttle: playerInput.throttle, brake: playerInput.brake, drs: playerInput.drs });
+      keysNow = keysNow || input.pressedKeys();
+      history.inputs.push({ t: simTime, device: input.device, keys: keysNow, steer: playerInput.steer, throttle: playerInput.throttle, brake: playerInput.brake, drs: playerInput.drs });
       history.telemetry.push({ t: simTime, x: car.x, y: car.y, z: car.z, s: car.loc.s, d: car.loc.d, speed: car.speed });
       while (history.inputs.length && history.inputs[0].t < simTime - 10) history.inputs.shift();
       while (history.telemetry.length && history.telemetry[0].t < simTime - 10) history.telemetry.shift();
-      acc -= STEP;
     }
   }
 
   env.set(urlEnv || dir.api.environment());
-  view.update(car, acc / STEP);
+  view.update(car, loop.alpha);
   if (reportTool.opened) reportTool.update();
   else if (topDown && fixedView) {
     // ?viewat with ?topdown: looking straight down at that track position, the lookahead point up the screen
@@ -205,16 +229,23 @@ function frame(now) {
   } else if (fixedView) { rig.camera.position.set(fixedView[0], fixedView[1], fixedView[2]); rig.camera.lookAt(fixedView[3], fixedView[4], fixedView[5]); }
   else { rig.camera.up.set(0, 1, 0); rig.update(view, car, dt); }
 
-  // keep the shadow map centred on the car
-  const p = view.root.position;
-  sun.target.position.copy(p);
-  sun.position.copy(p).addScaledVector(SUN_DIR, 150);
+  // keep the shadow map centred on the car, on whole shadow map pixels so the edges do not shimmer
+  snapShadowCentre(view.root.position, SUN_DIR, sun.shadow.mapSize.x, 80, shadowAt);
+  sun.target.position.set(shadowAt.x, shadowAt.y, shadowAt.z);
+  sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 150);
+  renderer.shadowMap.needsUpdate = quality.shadowDue(now);
+  if (frameNo % 8 === 0) props.update(rig.camera, reportTool.opened ? Infinity : quality.tier.propDist);
 
   env.update(dt, rig.camera, { speed: car.speed, lightning: settings.lightning });
-  audio.update(car, dt, paused);
+  audioDue += dt;
+  if (audioDue >= 1 / 62) { audio.update(car, audioDue, paused); audioDue = 0; }   // the sound parameters need no more than 60 updates a second
   lobby.update(now);
-  hud.update(car, timer, track, simTime, playerInput);
-  miniMap.update();
+  hudDue += dt;
+  if (hudDue >= 1 / quality.tier.hudHz - 0.002) {
+    hud.update(car, timer, track, simTime, playerInput);
+    miniMap.update();
+    hudDue = 0;
+  }
   dir.after(now, simTime);
   racingLine.setVisible(settings.racingLine && dir.api.racingLineAllowed());   // a race can forbid it
   racingLine.update(car.loc.s);
@@ -229,7 +260,29 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 // for quick checks from the browser console
-window.lakeside = { car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx };
+window.lakeside = { THREE, optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx };
+
+const shadowAt = { x: 0, y: 0, z: 0 };
+// the FPS readout: frame rate and time, the slowest frame, the render scale and what the last frame cost
+function perfText() {
+  const i = renderer.info.render;
+  return stats.text(`${Math.round(quality.ratio * 100) / 100}x ${QUALITY_LABELS[quality.setting]}${quality.setting === 'auto' ? ' ' + quality.tierName : ''}  ${i.calls} calls  ${Math.round(i.triangles / 1000)}k tris`);
+}
+
+// Caps texture anisotropy at what the graphics tier allows; a texture built with less keeps it. Only changes (and re-uploads) what differs.
+function limitAnisotropy(root, cap) {
+  const max = renderer.capabilities.getMaxAnisotropy(), seen = new Set();
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!m || !m.map || seen.has(m.map)) continue;
+      const t = m.map; seen.add(t);
+      t.userData.baseAniso ??= t.anisotropy;
+      const want = Math.min(t.userData.baseAniso, cap, max);
+      if (t.anisotropy !== want) { t.anisotropy = want; t.needsUpdate = true; }
+    }
+  });
+}
 
 function skyTexture(top, bottom) {
   const c = document.createElement('canvas');

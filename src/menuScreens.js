@@ -3,6 +3,7 @@
 
 import { LAP_CHOICES } from './session.js';
 import { weatherRows, lightningRows } from './weatherMenu.js';
+import { QUALITY_SETTINGS, QUALITY_LABELS } from './quality.js';
 import { HUD_ELEMENTS, MAP_SIZES, MAP_POSITIONS, PRESET_ORDER, PRESET_NAMES, SCALE_MIN, SCALE_MAX, MAP_OPACITY_MIN, detectPreset, applyPreset } from './hudSettings.js';
 
 export const h = (tag, cls, ...kids) => {
@@ -189,6 +190,9 @@ function settingsScreen() {
         Display(p) {
           p.append(segRow('View', [[false, 'Driving'], [true, 'Top-down debug']], () => api.getTopDown(), v => api.setTopDown(v)));
           p.append(segRow('Detail', [[false, 'Full'], [true, 'Blockout']], () => !!settings.blockout, v => { settings.blockout = v; persist(); api.applyLook(); }));
+          p.append(segRow('Graphics quality', QUALITY_SETTINGS.map(k => [k, QUALITY_LABELS[k]]), () => settings.quality, v => { settings.quality = v; persist(); api.qualityChanged(); },
+            { note: 'Auto keeps the frame rate up by lowering the render scale when the screen is too demanding. High is the full look; Medium and Low use a smaller shadow map and a lower pixel density.' }));
+          p.append(segRow('FPS readout', [[false, 'Hide'], [true, 'Show']], () => !!settings.hud.fps, v => { settings.hud.fps = v; persist(); }, { note: 'Frame rate and frame time in the top corner. The F key switches it too.' }));
           p.append(segRow('Handling readout', [[false, 'Hide'], [true, 'Show']], () => !!settings.debug, v => { settings.debug = v; persist(); }));
           p.append(segRow('Autopilot demo lap', [[false, 'Off'], [true, 'On']], () => api.getAutopilot(), v => api.setAutopilot(v)));
         },
