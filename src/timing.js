@@ -10,6 +10,7 @@ export class LapTimer {
   }
 
   reset() {
+    this.reverse ??= false;  // the lap driven the other way round: distances and sectors are mirrored, the line stays put
     this.lap = 0;            // completed laps
     this.lapStart = null;    // sim time the current lap started, null before the first crossing
     this.sector = 0;
@@ -33,6 +34,8 @@ export class LapTimer {
 
   update(s, time) {
     const T = this.track, L = T.length;
+    if (this.reverse) s = (L - s) % L;
+    const sectors = this.reverse ? [0, L - T.sectors[2], L - T.sectors[1]] : T.sectors;
     if (this.prevS === null) { this.prevS = s; return; }
     let ds = s - this.prevS;
     if (ds < -L / 2) ds += L;
@@ -41,7 +44,7 @@ export class LapTimer {
     const crossedLine = this.prevS > L - 200 && s < 200;
     if (crossedLine && ds > 0) this.finishLap(time);
     else if (this.lapStart !== null && this.sector < 2) {
-      const next = T.sectors[this.sector + 1];
+      const next = sectors[this.sector + 1];
       if (this.prevS < next && s >= next && ds > 0) this.finishSector(time);
     }
     this.prevS = s;

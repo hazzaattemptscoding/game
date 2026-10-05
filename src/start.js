@@ -84,23 +84,25 @@ export class StartSequence {
 
 // Slot k on the start straight: staggered pairs, 8 m apart, left and right alternating (the painted slots in trackMesh.js).
 // The car sits 2 m behind the painted line. Returns the place for Car.placeAt.
-export function gridSlot(track, slot = 0) {
+// reverse: the same distances on the other side of the start line, for the lap driven the other way round.
+export function gridSlot(track, slot = 0, reverse = false) {
   const k = Math.max(0, Math.floor(slot) || 0);
   const L = track.length;
-  const line = L - 10 - k * 8;
-  return { s: (((line - 2) % L) + L) % L, d: (k % 2 ? 1 : -1) * 3 };
+  const back = 12 + k * 8;
+  return { s: ((((reverse ? back : -back)) % L) + L) % L, d: (k % 2 ? 1 : -1) * 3 };
 }
 
 // A place in the pit lane just after the garages, where the limiter ends: for the time trial and free practice.
-export function pitSlot(track) {
-  const L = track.length, end = track.pitRange ? track.pitRange[1] : 0;
+// reverse: the other end of the limiter, for driving out of the pits the other way round (out through the entry road).
+export function pitSlot(track, reverse = false) {
+  const L = track.length, end = track.pitRange ? track.pitRange[reverse ? 0 : 1] : 0, g = reverse ? -1 : 1;
   let s = end, n = 0;
   while (n++ < 400) {                              // walk back from the exit to the last sample with the pit limiter on, then 6 m on
-    const i = Math.floor((((s - 1) % L) + L) % L / track.ds) % track.N;
+    const i = Math.floor((((s - g) % L) + L) % L / track.ds) % track.N;
     if (track.pitLimiter[i]) break;
-    s -= 1;
+    s -= g;
   }
-  s += 6;
+  s += 6 * g;
   const i = Math.floor((((s) % L) + L) % L / track.ds) % track.N;
   return { s: ((s % L) + L) % L, d: -(track.pitIn[i] + track.pitOut[i]) / 2 };
 }

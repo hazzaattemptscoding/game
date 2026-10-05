@@ -118,7 +118,8 @@ function setupScreen() {
       if (mode === 'practice') {
         c.append(h('p', 'm-sub', 'Drive as long as you like. Reset puts you back on the track anywhere.'));
         c.append(segRow('Start from', [['pit', 'Pit lane'], ['standing', 'Starting grid']], () => settings.practiceStart || 'pit', v => { settings.practiceStart = v; save(settings); }));
-        const go = btn('Start practice', 'm-btn primary', () => api.startPractice({ start: settings.practiceStart === 'standing' ? 'standing' : 'pit' }));
+        c.append(segRow('Direction', [[false, 'Normal'], [true, 'Reverse']], () => settings.practiceReverse === true, v => { settings.practiceReverse = v; save(settings); }));
+        const go = btn('Start practice', 'm-btn primary', () => api.startPractice({ start: settings.practiceStart === 'standing' ? 'standing' : 'pit', reverse: settings.practiceReverse === true }));
         go.dataset.first = '1';
         c.append(h('div', 'm-actions', go));
         return null;

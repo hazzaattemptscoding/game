@@ -55,8 +55,9 @@ export function createDirector(g) {
   function launch(s, o = {}) {
     const now = performance.now();
     session = s;
-    if (!o.keepPlacement) { const spot = s.start === 'standing' ? gridSlot(track, s.slot) : pitSlot(track); car.placeAt(spot.s, spot.d); }
+    if (!o.keepPlacement) { const spot = s.start === 'standing' ? gridSlot(track, s.slot, s.reverse) : pitSlot(track, s.reverse); car.placeAt(spot.s, spot.d, !!s.reverse); }
     car.contactGrace = 1.5;
+    timer.reverse = !!s.reverse;
     timer.reset();
     g.history.inputs.length = 0; g.history.telemetry.length = 0;
     g.rig.yaw = null; g.rig.height = null;
@@ -115,7 +116,7 @@ export function createDirector(g) {
       else if (id === 'race') menu.push('setup', { mode: 'race' });
       else menu.push(id);
     },
-    startPractice: (o = {}) => launch(makeSession('practice', { start: o.start, ...ownEnv() })),
+    startPractice: (o = {}) => launch(makeSession('practice', { start: o.start, reverse: o.reverse === true, ...ownEnv() })),
     startTimeTrial: () => launch(makeSession('timetrial', ownEnv())),
     startRace: o => launch(makeSession('race', { ...ownEnv(), ...o })),
     hostStartRace(o) {
@@ -249,7 +250,7 @@ export function createDirector(g) {
     if (!s || ph === PHASE.MENU) return { show: false };
     const v = { show: true, chip: null, lights: null, lightsOut: false, banner: null, laps: null };
     const lap = timer.currentLap();
-    if (s.mode === 'practice') v.chip = 'Free practice';
+    if (s.mode === 'practice') v.chip = s.reverse ? 'Free practice, reverse' : 'Free practice';
     else if (s.mode === 'timetrial') { v.chip = `Time trial${lap ? `  Lap ${lap}` : ''}`; v.laps = timeTrialRows(timer.history, 6); }
     else {
       const total = pos ? pos.total : 1;

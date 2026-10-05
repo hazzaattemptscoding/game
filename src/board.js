@@ -70,15 +70,18 @@ const cleanEntry = e => e && typeof e === 'object' && Number.isFinite(e.time) &&
   ? { time: e.time, sectors: Array.isArray(e.sectors) ? e.sectors.slice(0, 3).map(v => (Number.isFinite(v) ? v : null)) : [], date: String(e.date || '').slice(0, 10), warn: Math.max(0, +e.warn || 0) } : null;
 
 // the saved list, or [] (private mode, nothing saved, or damaged data)
-export function loadBest(storage = globalThis.localStorage) {
+// reverse laps are kept in their own list
+export const bestKey = (reverse = false) => (reverse ? BEST_KEY + '.reverse' : BEST_KEY);
+
+export function loadBest(storage = globalThis.localStorage, key = BEST_KEY) {
   try {
-    const list = JSON.parse(storage.getItem(BEST_KEY) || '[]');
+    const list = JSON.parse(storage.getItem(key) || '[]');
     return Array.isArray(list) ? list.map(cleanEntry).filter(Boolean).sort((a, b) => a.time - b.time).slice(0, TOP_N) : [];
   } catch (e) { return []; }
 }
 
-export function saveBest(list, storage = globalThis.localStorage) {
-  try { storage.setItem(BEST_KEY, JSON.stringify(list)); } catch (e) { /* private mode: the list lasts until the page closes */ }
+export function saveBest(list, storage = globalThis.localStorage, key = BEST_KEY) {
+  try { storage.setItem(key, JSON.stringify(list)); } catch (e) { /* private mode: the list lasts until the page closes */ }
 }
 
 // your best time for each sector over a saved list
@@ -96,8 +99,8 @@ const cell = c => `<td class="${c.cls}">${sec(c.time)}</td>`;
 // ctx: { timer, lobby, storage }. `lobby.active` and `lobby.board(own)` come from lobby.js. Returns { show, hide, toggle, update }.
 export function createBoard(root, ctx) {
   const storage = ctx.storage || (() => { try { return localStorage; } catch (e) { return null; } })();
-  let best = loadBest(storage);
-  const personal = personalSectors(best);     // from before this session: it is not updated as you drive
+  let key = bestKey(!!ctx.timer.reverse), best = loadBest(storage, key);
+  let personal = personalSectors(best);     // from before this session: it is not updated as you drive
   let seen = ctx.timer.history.length, fresh = null, shown = false, lastDraw = -1;
 
   const draw = simTime => {
@@ -117,7 +120,7 @@ export function createBoard(root, ctx) {
       html += `<section><h3>Room</h3><table><thead><tr><th></th><th>Driver</th><th>Laps</th><th>Best</th><th>Last</th><th>Gap</th></tr></thead><tbody>${players.map((p, i) =>
         `<tr class="${p.me ? 'me' : ''}"><td>${i + 1}</td><td class="name">${esc(p.name)}${p.me ? ' <em>you</em>' : ''}</td><td>${p.laps}</td><td>${p.best ? fmtTime(p.best) : '-'}</td><td>${p.last ? fmtTime(p.last) : '-'}</td><td>${p.gap ? '+' + p.gap.toFixed(3) : ''}</td></tr>`).join('')}</tbody></table></section>`;
     } else {
-      html += `<section><h3>Your best laps</h3>${best.length ? `<table><thead><tr><th></th><th>Time</th><th>S1</th><th>S2</th><th>S3</th><th>Date</th></tr></thead><tbody>${best.map((e, i) =>
+      html += `<section><h3>Your best laps${key === BEST_KEY ? '' : ', reverse'}</h3>${best.length ? `<table><thead><tr><th></th><th>Time</th><th>S1</th><th>S2</th><th>S3</th><th>Date</th></tr></thead><tbody>${best.map((e, i) =>
         `<tr class="${e === fresh ? 'me' : ''}"><td>${i + 1}</td><td>${fmtTime(e.time)}</td>${[0, 1, 2].map(k => `<td>${sec(e.sectors[k])}</td>`).join('')}<td>${esc(e.date)}${e.warn ? ' <b class="amber">invalid</b>' : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="bd-none">Finish a lap to start your list. It is kept in this browser.</p>'}</section>`;
     }
     root.innerHTML = html;
@@ -132,11 +135,14 @@ export function createBoard(root, ctx) {
     update(simTime, now) {
       const h = ctx.timer.history;
       if (h.length < seen) seen = h.length;       // the timer was reset
+      if (bestKey(!!ctx.timer.reverse) !== key) {  // the direction changed: switch to that direction's list
+        key = bestKey(!!ctx.timer.reverse); best = loadBest(storage, key); personal = personalSectors(best); fresh = null; lastDraw = -1;
+      }
       for (; seen < h.length; seen++) {
         const l = h[seen];
         fresh = { time: l.time, sectors: l.sectors.slice(), date: today(), warn: l.warnings };
         best = addBest(best, fresh);
-        saveBest(best, storage);
+        saveBest(best, storage, key);
         if (!best.includes(fresh)) fresh = null;
       }
       if (shown && (lastDraw < 0 || now - lastDraw > 250)) { lastDraw = now; draw(simTime); }

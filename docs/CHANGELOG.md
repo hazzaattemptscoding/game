@@ -1,5 +1,15 @@
 # Changelog
 
+## Reverse direction in free practice
+
+Free practice setup has a Direction row: Normal or Reverse. Reverse drives the same circuit the other way round.
+
+- The car starts facing the other way: from the grid, the same slots mirrored onto the other side of the start line; from the pits, at the entry end of the limiter, driving out through the pit entry road. Reset (R) keeps the direction.
+- Timing mirrors the distance along the lap: the start/finish line stays where it is, and the sectors run S1 to S3 in the reverse order of the boundaries (`LapTimer.reverse`).
+- No racing line and no DRS in reverse (both were laid out for the normal direction). Track limit warnings work as before.
+- Reverse best laps are kept in their own local list (`lakeside.best.reverse`), so they never mix with normal laps; the Times board says which list it shows.
+- Not in time trial, races or online rooms yet.
+
 ## LED screen on the start gantry
 
 A 22.5 m by 5 m LED screen now hangs on both faces of the gantry truss, centred over the track: one face for the cars arriving, one for the cars leaving. It loops a Lakeside ident, PowerMedia, a trophy advert with the track outline, DeltaDash and a track day advert, and shows a lap board when the car crosses the line. The screen is drawn in src/gantryScreen.js and redrawn about 30 times a second while the camera is within 900 m. Its foot is at 7.65 m so the start light pods stay fully visible below it. The 30 m LED video ribbons on the truss are gone, the sponsor panels now run in to the edges of the screen, and the LAKESIDE and FINISH crown boards sit above the screen. Adds the @fontsource/barlow-condensed package and two logo images.

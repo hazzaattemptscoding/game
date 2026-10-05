@@ -11,13 +11,15 @@ export const LAP_CHOICES = [3, 5, 10, 20];
 
 // A session description. laps 0 = unlimited. start: 'standing' (grid, lights) or 'pit'. assists: 'any' (the player's own settings)
 // or 'off' (all three off for this session). racingLine: whether the racing line may be shown. ai: opponents (0 until they exist).
-// slot: grid slot (0 offline, join order online).
+// slot: grid slot (0 offline, join order online). reverse: the lap driven the other way round (free practice only for now;
+// no racing line, it was recorded the normal way).
 export function makeSession(mode = 'practice', o = {}) {
   if (!MODES.includes(mode)) mode = 'practice';
-  const s = { mode, laps: 0, start: 'pit', assists: 'any', racingLine: true, trackLimits: 'warn', ai: 0, slot: 0, weather: 'clear', time: 'midday' };
+  const s = { mode, laps: 0, start: 'pit', assists: 'any', racingLine: true, trackLimits: 'warn', ai: 0, slot: 0, weather: 'clear', time: 'midday', reverse: false };
   if (mode === 'timetrial') s.start = 'pit';
   if (mode === 'race' || mode === 'online') { s.laps = 5; s.start = 'standing'; }
   if (mode === 'practice' && o.start === 'standing') s.start = 'standing';
+  if (mode === 'practice' && o.reverse === true) { s.reverse = true; s.racingLine = false; }
   if (mode !== 'practice' && mode !== 'timetrial') {
     if (Number.isFinite(o.laps)) s.laps = Math.max(1, Math.min(99, Math.round(o.laps)));
     if (o.assists === 'off' || o.assists === 'any') s.assists = o.assists;

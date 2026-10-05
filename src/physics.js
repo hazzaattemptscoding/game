@@ -72,13 +72,14 @@ export class Car {
   get assists() { return { tc: this.assistTc, abs: this.assistAbs, esc: this.assistEsc }; }
   set assists(v) { this.setAssists(v); }   // old code that sets car.assists = true|false keeps working
 
-  // Put the car on the track at distance s, offset d to the side, stationary.
-  placeAt(s, d) {
+  // Put the car on the track at distance s, offset d to the side, stationary. reverse: facing the other way round the lap.
+  placeAt(s, d, reverse = false) {
     const T = this.track, i = Math.floor(((s % T.length) + T.length) % T.length / T.ds) % T.N;
     this.x = T.x[i] + T.nx[i] * d;
     this.z = T.z[i] + T.nz[i] * d;
     this.y = T.h[i];
-    this.heading = Math.atan2(T.tz[i], T.tx[i]);
+    this.heading = Math.atan2(T.tz[i], T.tx[i]) + (reverse ? Math.PI : 0);
+    this.reversed = reverse;
     this.vx = 0; this.vz = 0; this.yawRate = 0;
     this.steer = 0; this.gear = 1; this.rpm = this.cfg.idleRpm; this.shiftTimer = 0;
     this.ax = 0; this.ay = 0; this.speed = 0; this.fwdSpeed = 0;
@@ -95,7 +96,7 @@ export class Car {
   }
 
   // Back onto the centreline facing the right way (the R key).
-  resetToTrack() { this.placeAt(this.loc.s, 0); }
+  resetToTrack() { this.placeAt(this.loc.s, 0, this.reversed); }
 
   savePrev() {
     const p = this.prev;
@@ -139,7 +140,7 @@ export class Car {
     this.bumpSpacing = spacing;
 
     // --- DRS: opens in a zone when asked, shuts on the brakes or leaving the zone ---
-    const inZone = T.inDRS(loc.s);
+    const inZone = !this.reversed && T.inDRS(loc.s);   // the DRS zones are laid out for the normal direction
     if (inZone && inp.drs && inp.brake < 0.05 && this.gear > 0) this.drs = true;
     if (!inZone || inp.brake > 0.05) this.drs = false;
 
