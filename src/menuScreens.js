@@ -87,6 +87,7 @@ function pauseScreen() {
         ['Resume', 'primary', () => ctx.api.resume()],
         ['Restart session', '', () => ctx.api.restart()],
         ['Settings', '', () => ctx.menu.push('settings')],
+        ...(ctx.api.screen && ctx.api.screen.canControl() ? [['Screen control', '', () => ctx.menu.push('screen')]] : []),
         ['Report a problem', '', () => ctx.api.report()],
         ['Back to main menu', 'danger', () => confirmLeave()],
       ];
@@ -353,7 +354,59 @@ function garageScreen() {
   };
 }
 
+// --- the gantry screen's control panel (src/screenControl.js) ---------------------------------------------------------
+
+const AD_NAMES = { lakeside: 'Lakeside', powermedia: 'PowerMedia', ad1: 'Trophy advert', deltadash: 'DeltaDash', ad2: 'Track day advert' };
+const FLAG_NAMES = [['yellow', 'Yellow'], ['red', 'Red'], ['green', 'Track clear'], ['final', 'Final lap'], ['chequered', 'Chequered']];
+
+function screenPanel() {
+  return {
+    title: 'Screen control',
+    mount(c, ctx) {
+      const sc = ctx.api.screen;
+      if (!sc || !sc.canControl()) {
+        c.append(h('p', 'm-sub', 'The host has not given you the screen. Ask them to tick your name in their Screen control.'));
+        return null;
+      }
+      const send = cmd => sc.command(cmd);
+      const group = (title, ...kids) => { const g = h('div', 'm-group'); g.append(h('div', 'm-gtitle', title), ...kids); return g; };
+      const row = (...kids) => { const r = h('div', 'm-seg'); r.append(...kids); return r; };
+
+      const lights = row(...[1, 2, 3, 4, 5].map(n => btn(String(n), 'm-opt', () => send({ c: 'lights', n }))), btn('GO', 'm-opt', () => send({ c: 'go' })));
+      lights.firstChild.dataset.first = '1';
+      c.append(group('Start lights', lights, h('p', 'm-note', 'Light the lamps one by one, then GO. The cars are not held: this is the screen only.')));
+
+      c.append(group('Flags', row(...FLAG_NAMES.map(([name, label]) => btn(label, 'm-opt', () => send({ c: 'flag', name })))), row(btn('Clear', 'm-opt', () => send({ c: 'clear' })))));
+
+      const input = h('input', 'm-text');
+      input.type = 'text'; input.maxLength = 40; input.placeholder = 'Up to 40 characters'; input.setAttribute('aria-label', 'Message');
+      input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') send({ c: 'msg', text: input.value }); });
+      c.append(group('Message', input, row(btn('Show', 'm-opt', () => send({ c: 'msg', text: input.value })), btn('Clear', 'm-opt', () => send({ c: 'clear' })))));
+
+      const held = sc.state.scene;
+      const ads = h('div', 'm-list');
+      for (const name of sc.scenes) {
+        const on = sc.adOn(name);
+        ads.append(row(h('span', 'm-label', AD_NAMES[name] || name), btn(held === name ? 'Showing' : 'Show now', 'm-opt' + (held === name ? ' sel' : ''), () => send({ c: 'scene', name })),
+          btn(on ? 'In the loop' : 'Off', 'm-opt' + (on ? ' sel' : ''), () => send({ c: 'ad', name, on: !on }))));
+      }
+      c.append(group('Adverts', row(btn('Resume the loop', 'm-opt', () => send({ c: 'loop' })), btn('Next', 'm-opt', () => send({ c: 'next' }))), ads,
+        h('p', 'm-note', 'Show now holds one advert until you resume the loop. At least one advert always stays in the loop.')));
+
+      if (ctx.api.inRoom && ctx.api.inRoom() && sc.isHost()) {
+        const people = sc.players();
+        const list = h('div', 'm-list');
+        if (!people.length) list.append(h('p', 'm-note', 'Nobody else is in the room yet.'));
+        for (const p of people) list.append(row(h('span', 'm-label', p.name), btn(p.access ? 'Has access' : 'No access', 'm-opt' + (p.access ? ' sel' : ''), () => { sc.setAccess(p.id, !p.access); ctx.menu.refresh(); })));
+        c.append(group('Who can use it', list, h('p', 'm-note', 'You always can. Players you give access see this panel in their pause menu. Everyone in the room sees the same screen.')));
+      }
+      return null;
+    },
+  };
+}
+
 export function registerScreens(menu) {
+  menu.addScreen('screen', screenPanel());
   menu.addScreen('main', homeScreen());
   menu.addScreen('pause', pauseScreen());
   menu.addScreen('setup', setupScreen());

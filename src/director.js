@@ -11,6 +11,7 @@ import { resultsScreen } from './results.js';
 import { createSessionHud } from './sessionHud.js';
 import { Flow, PHASE, makeSession, timeTrialRows, raceDistance, MODE_NAMES } from './session.js';
 import { START, gridSlot, pitSlot, orbitPose, cinematicPose } from './start.js';
+import { createScreenControl } from './screenControl.js';
 import { createRaceControl } from './raceControl.js';
 import { cleanEnv } from './weather.js';
 
@@ -32,7 +33,9 @@ export function createDirector(g) {
     if (late) { api.startPractice({ start: 'pit' }); return; }
     launch(makeSession('online', { laps: msg.laps, assists: msg.assists, racingLine: msg.racingLine, weather: msg.weather, time: msg.time, slot }), { seq });
   } });
-  mp.onControl = (m, id) => rc.handle(m, id);
+  // the gantry screen's control panel (src/screenControl.js): the host's in a room, handed to others by the host
+  const sc = createScreenControl({ screen: g.gantryScreen, mp, inRoom: () => !!lobby.active, onChange: () => { const top = menu.current && menu.current(); if (top && (top.id === 'screen' || top.id === 'pause')) menu.refresh(); } });
+  mp.onControl = (m, id) => { rc.handle(m, id); sc.handle(m, id); };
 
   // --- the menu ---
   const api = {};      // filled in below; the menu screens reach the game through it
@@ -102,6 +105,7 @@ export function createDirector(g) {
     lobby,
     hasRacingLine: () => true,
     racingLineAllowed,
+    screen: sc,
     applyAssists,
     applyLook: () => g.applyLook(),
     qualityChanged: () => g.qualityChanged && g.qualityChanged(),
@@ -194,6 +198,7 @@ export function createDirector(g) {
       const mpPhase = mp.phase;
       if (mpPhase !== lastMpPhase) { lastMpPhase = mpPhase; if (mpPhase === 'joined' && !mp.isHost) rc.syncClock(); }
       rc.tick();
+      sc.tick();
       if (lobby.active && mp.isHost) rc.hostSetEnv(ownEnv()); else if (!lobby.active) rc.clearEnv();
       if (session && lobby.active) lobby.setMeta({ mode: MODE_NAMES[session.mode] || 'Free practice', laps: session.laps || 0, started: flow.phase === PHASE.RUN || flow.phase === PHASE.START ? session.mode === 'online' || session.mode === 'race' : false });
       if (flow.phase === PHASE.START) {

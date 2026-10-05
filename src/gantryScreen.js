@@ -12,6 +12,9 @@
 //                               delta in seconds to the best lap; `of` is the race length
 //   screen.flag('yellow' | 'red' | 'green' | 'final' | 'chequered', { text })
 //   screen.clear()              drop any flag or board and go back to the loop
+//   screen.message(text)        a line of text on a plain board, held until clear() (the control panel's custom message)
+//   screen.setAd(name, on)      take one loop scene out of (or back into) the loop; at least one always stays in
+//   screen.next()               skip to the next scene in the loop
 //   screen.draw(seconds)        call once per rendered frame
 //
 // Edit COPY to change the adverts. Edit LOOP to change the order and timings.
@@ -323,6 +326,18 @@ export function createGantryScreen({ canvas, logos = {}, trackPath = [], facts =
       x.restore();
     },
 
+    message(t, d) {
+      x.fillStyle = C.ink; x.fillRect(0, 0, W, H);
+      bars(t, C.purple, 0.12);
+      const p = outCubic(t / 0.45);
+      slab(-100, -100 + 190 * p, C.purple);
+      slab(120 * p - 20, 120 * p + 6, C.white);
+      const label = String(d.text || '').toUpperCase(), size = fit(label, 800, 190, 1160, 5);
+      x.globalAlpha = p;
+      text(label, W / 2 + 70, H / 2 + size * 0.34, font(800, size), C.white, 'center', 5);
+      x.globalAlpha = 1;
+    },
+
     chequered(t) {
       const cell = 64, rows = Math.ceil(H / cell) + 2;
       x.fillStyle = C.white; x.fillRect(0, 0, W, H);
@@ -341,6 +356,7 @@ export function createGantryScreen({ canvas, logos = {}, trackPath = [], facts =
   // ---- what is on screen ---------------------------------------------------
   // `cur` is the layer showing, `prev` the one it is wiping over.
   let now = 0, cur = null, prev = null, wipeAt = -9, wipeFor = 0.55, loopAt = -1, pinned = false;
+  const off = new Set();   // loop scenes switched off from the control panel
 
   function show(kind, name, data, { hold = Infinity, wipe = 0.55 } = {}) {
     prev = cur;
@@ -348,7 +364,7 @@ export function createGantryScreen({ canvas, logos = {}, trackPath = [], facts =
     wipeAt = now; wipeFor = prev ? wipe : 0;
   }
   function nextLoop() {
-    loopAt = (loopAt + 1) % LOOP.length;
+    for (let k = 0; k < LOOP.length; k++) { loopAt = (loopAt + 1) % LOOP.length; if (!off.has(LOOP[loopAt][0])) break; }
     show('scene', LOOP[loopAt][0], null, { hold: LOOP[loopAt][1] });
   }
   const paint = l => (l.kind === 'scene' ? scenes : boards)[l.name](now - l.t0, l.data || {});
@@ -382,14 +398,28 @@ export function createGantryScreen({ canvas, logos = {}, trackPath = [], facts =
       else show('board', 'lights', { n }, { wipe: 0.3 });
     },
     go() { show('board', 'go', null, { hold: 1.8, wipe: 0 }); },
-    lap(d) { if (!cur || !['lights', 'go', 'red', 'chequered'].includes(cur.name)) show('board', 'lap', d, { hold: 5, wipe: 0.35 }); },
+    lap(d) { if (!cur || !['lights', 'go', 'red', 'chequered', 'message'].includes(cur.name)) show('board', 'lap', d, { hold: 5, wipe: 0.35 }); },
     flag(name, d = {}) {
       if (!name) return api.clear();
-      if (!boards[name] || name === 'lights' || name === 'go' || name === 'lap') return;
+      if (!boards[name] || name === 'lights' || name === 'go' || name === 'lap' || name === 'message') return;
       const hold = name === 'green' ? 3 : name === 'final' ? 5 : Infinity;
       show('board', name, d, { hold, wipe: 0.25 });
     },
     clear() { pinned = false; if (cur && cur.kind === 'board') nextLoop(); },
+    message(str) {
+      const t = String(str || '').trim().slice(0, 40);
+      if (!t) return api.clear();
+      show('board', 'message', { text: t }, { wipe: 0.35 });
+    },
+    setAd(name, on) {
+      if (!LOOP.some(l => l[0] === name)) return;
+      if (on) off.delete(name);
+      else if (LOOP.filter(l => !off.has(l[0])).length > 1) off.add(name);
+      if (!on && cur && cur.kind === 'scene' && cur.name === name && !pinned) nextLoop();
+    },
+    adOn: name => !off.has(name),
+    next() { pinned = false; nextLoop(); },
+    get showing() { return cur ? { kind: cur.kind, name: cur.name } : null; },
 
     // hold one loop scene on screen (for previews); showScene() with no name resumes the loop
     showScene(name) {

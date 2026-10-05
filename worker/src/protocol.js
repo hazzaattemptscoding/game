@@ -144,6 +144,7 @@ export function onMessage(room, conn, data, now) {
   if (isSpec(conn)) return 'ignored';
   if (m.t === 'meta') return metaFromHost(room, conn, m, now);
   if (m.t === 'env' && !conn.att.host) return 'ignored';       // the room's weather is the host's to set; a guest's env frame is not forwarded
+  if ((m.t === 'scr' || m.t === 'scrs' || m.t === 'scrg') && !conn.att.host) return 'ignored';   // the gantry screen is the host's too (a guest with access sends scrc)
   if (RESERVED.has(m.t)) return 'ignored';
   const st = store(room), from = conn.att.id;
   if (m.t === 'lv' && typeof m.l === 'string') st.lv[from] = m.l.slice(0, 80);

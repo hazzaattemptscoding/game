@@ -169,6 +169,7 @@ function openReport() {
 }
 const save = () => saveSettings(settings);
 const dir = createDirector({
+  gantryScreen,
   car, timer, track, view, lobby, settings, params, rig, hud, history, save, openReport,
   simTime: () => simTime,
   applyLook: () => { applyLook(); view.setFlat(settings.blockout); },

@@ -331,3 +331,6 @@ body.touch #trackmap.pos-br { bottom: calc(250px + env(safe-area-inset-bottom, 0
 body.touch #trackmap.pos-bl { bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
 body.touch #trackmap.pos-tr { top: calc(112px + env(safe-area-inset-top, 0px)); }
 body.touch #trackmap.pos-tl { top: calc(150px + env(safe-area-inset-top, 0px)); }
+
+/* screen control panel: a name at the start of a row of buttons */
+.m-seg > .m-label{flex:0 0 140px;align-self:center;margin:0}

@@ -169,6 +169,8 @@ export function makeCode(random = Math.random) {
 }
 export const cleanCode = s => String(s || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
 export const hostId = code => `lakeside-${code}`;
+// one-off JSON control messages handed to onControl
+export const CONTROL_TYPES = new Set(['clk', 'clkr', 'race', 'env', 'scr', 'scrc', 'scrs', 'scrg']);
 const ID = /^lakeside-[A-Z]{5}(-[a-z0-9]{6})?$/;
 const randomSuffix = random => { let s = ''; for (let i = 0; i < 6; i++) s += 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(random() * 36)]; return s; };
 
@@ -536,8 +538,8 @@ export class Multiplayer {
       this.changed();
     } else if (data.t === 'lv') {
       if (p.hello && typeof data.l === 'string' && this.ghosts) this.ghosts.setLivery(id, data.l);
-    } else if (data.t === 'clk' || data.t === 'clkr' || data.t === 'race' || data.t === 'env') {
-      if (p.hello && this.onControl) this.onControl(data, id);      // clock samples and race starts (src/raceControl.js)
+    } else if (CONTROL_TYPES.has(data.t)) {
+      if (p.hello && this.onControl) this.onControl(data, id);      // clock samples and race starts (src/raceControl.js), the gantry screen (src/screenControl.js)
     } else if (data.t === 'name') {
       p.name = cleanName(data.n) || p.name;
       this.ghosts && this.ghosts.setName(id, p.name);
@@ -585,6 +587,8 @@ export class Multiplayer {
 
   // --- control messages: one-off JSON that is not car state (clock samples, the host's race start). onControl(msg, fromId) is set by
   // the game (src/raceControl.js). Ids are the same on every machine: the peer id, or 'r<n>' over the relay. ---
+  // the host's id as the room sees it: PeerJS rooms are named after the host; on the relay the host is the first to join, id 0
+  get hostPeerId() { return this.relayRoom ? 'r0' : hostId(this.code); }
   get selfId() { return this.relayRoom ? (this.relayRoom.me == null ? '' : 'r' + this.relayRoom.me) : (this.peer ? this.peer.id : ''); }
   // to everybody in the room (toId undefined) or one player; returns false when there is nobody to send to
   sendControl(obj, toId) {

@@ -26,6 +26,7 @@
     "session": "node tools/session.js",
     "hudsettings": "node tools/hudsettings.js",
     "perf": "node tools/perf.js",
+    "screencontrol": "node tools/screencontrol.js",
     "check": "node tools/check.js",
     "racingline": "node tools/racingline.js",
     "racingline-test": "node tools/racingline-test.js",
