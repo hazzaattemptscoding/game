@@ -89,6 +89,20 @@ const types = c => c.out.map(m => m.t || 'bin');
   const late = r.join('Late', 'l1');
   eq(types(late), ['nohost'], 'after the host left a new guest gets nohost');
 }
+{ // the room's weather (env) is the host's alone
+  const r = makeRoom();
+  const h = r.join('Host', 'h', true), g1 = r.join('G1', 'g1'), g2 = r.join('G2', 'g2');
+  const n = [h.out.length, g1.out.length, g2.out.length];
+  eq(r.say(h, { t: 'env', weather: 'rain', time: 'night' }), 'forwarded', 'the host env message is forwarded');
+  eq(g1.out.at(-1), { t: 'env', weather: 'rain', time: 'night', from: 0 }, 'a guest gets the host env message tagged with the host id');
+  eq(g2.out.at(-1), { t: 'env', weather: 'rain', time: 'night', from: 0 }, 'every guest gets it');
+  check(h.out.length === n[0], 'the host does not get its own env back');
+  r.say(h, { t: 'env', weather: 'fog', time: 'dusk', to: 2 });
+  check(g2.out.at(-1).weather === 'fog' && g1.out.at(-1).weather === 'rain', 'env sent to one newcomer reaches only that guest');
+  const m = [h.out.length, g1.out.length, g2.out.length];
+  eq(r.say(g1, { t: 'env', weather: 'heavyrain', time: 'night' }), 'ignored', 'an env message from a guest is ignored');
+  eq([h.out.length, g1.out.length, g2.out.length], m, 'and reaches nobody');
+}
 { // full room
   const r = makeRoom();
   const cs = [r.join('P0', 't0', true)];

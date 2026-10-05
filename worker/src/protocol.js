@@ -143,6 +143,7 @@ export function onMessage(room, conn, data, now) {
   if (m.t === 'ping') { sendJSON(conn, { t: 'pong', n: m.n }); return 'pong'; }
   if (isSpec(conn)) return 'ignored';
   if (m.t === 'meta') return metaFromHost(room, conn, m, now);
+  if (m.t === 'env' && !conn.att.host) return 'ignored';       // the room's weather is the host's to set; a guest's env frame is not forwarded
   if (RESERVED.has(m.t)) return 'ignored';
   const st = store(room), from = conn.att.id;
   if (m.t === 'lv' && typeof m.l === 'string') st.lv[from] = m.l.slice(0, 80);

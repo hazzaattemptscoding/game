@@ -323,6 +323,17 @@ console.log('RELAY ROOM DETAILS');
   g.mp.leave(); await wait(30);
   const late = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'L'); await late.mp.join(roomCode, 'L'); await wait(100);
   check(late.mp.phase === 'error' && /No room with the code/.test(late.last().text), 'after the host has left a new guest gets "no such room": ' + late.mp.phase + ' ' + late.last().text);
+  // the room's weather: the host's env message reaches the guests, a guest's does not
+  const eh = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'EH'), e1 = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'E1'), e2 = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'E2');
+  const gotEnv = { eh: [], e1: [], e2: [] };
+  eh.mp.onControl = m => { if (m.t === 'env') gotEnv.eh.push(m); }; e1.mp.onControl = m => { if (m.t === 'env') gotEnv.e1.push(m); }; e2.mp.onControl = m => { if (m.t === 'env') gotEnv.e2.push(m); };
+  await eh.mp.host('EH'); await wait(30); await e1.mp.join(eh.mp.code, 'E1'); await e2.mp.join(eh.mp.code, 'E2'); await wait(80);
+  eh.mp.sendControl({ t: 'env', weather: 'rain', time: 'night' }); await wait(40);
+  check(gotEnv.e1.length === 1 && gotEnv.e2.length === 1 && gotEnv.e1[0].weather === 'rain' && gotEnv.e2[0].time === 'night', 'the relay forwards the host env message to every guest');
+  check(gotEnv.eh.length === 0, 'the host does not get its own env message back');
+  e1.mp.sendControl({ t: 'env', weather: 'heavyrain', time: 'dusk' }); await wait(40);
+  check(gotEnv.eh.length === 0 && gotEnv.e2.length === 1, 'an env message from a guest goes nowhere');
+  eh.mp.leave(); e1.mp.leave(); e2.mp.leave(); await wait(50);
   // leave while connecting
   const k = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'K'); const jp = k.mp.host('K'); k.mp.leave(); await jp; await wait(50);
   check(k.mp.phase === 'idle', 'leave during start cancels it');
