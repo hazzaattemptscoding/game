@@ -10,7 +10,7 @@ const server = spawn('npx', ['vite', '--port', '5198', '--strictPort'], { stdio:
 await new Promise(r => setTimeout(r, 3500));
 const browser = await chromium.launch({ executablePath: chromePath, args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
 const errors = [];
-for (const q of ['', '?topdown', '?viewat=3800,-8,1.8,40', '?mute']) {
+for (const q of ['?menu=0', '?menu=0&topdown', '?viewat=3800,-8,1.8,40&menu=0', '?menu=0&mute', '', '?menu=race', '?menu=settings', '?menu=garage', '?menu=online', '?start=race&mute', '?start=timetrial&mute']) {
   const page = await browser.newPage({ viewport: { width: 960, height: 480 } });
   page.on('pageerror', e => errors.push(`${q || '/'}: ${e.message}`));
   await page.goto('http://localhost:5198/' + q);
@@ -20,5 +20,5 @@ for (const q of ['', '?topdown', '?viewat=3800,-8,1.8,40', '?mute']) {
   await page.close();
 }
 await browser.close(); server.kill();
-console.log(errors.length ? 'smoke FAILED:\n  ' + errors.join('\n  ') : 'smoke: no page errors in 4 views (sound on, then ?mute)');
+console.log(errors.length ? 'smoke FAILED:\n  ' + errors.join('\n  ') : 'smoke: no page errors in 11 views (drive, top-down, fixed view, menus, race start)');
 process.exitCode = errors.length ? 1 : 0;

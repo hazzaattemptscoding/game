@@ -50,7 +50,9 @@ console.log('SETTINGS');
   check(mixed.assistTc === false && mixed.assistAbs === true && mixed.assistEsc === false, 'a new setting wins over the old switch');
   const fresh = migrateSettings({ assistTc: false });
   check(fresh.assistTc === false && !('assistAbs' in fresh), 'new settings pass through, the rest stays at its default');
-  check(Object.keys(migrateSettings(null)).length === 0 && Object.keys(migrateSettings('x')).length === 0, 'damaged data gives nothing');
+  // damaged data gives no saved choices; the controller block is always filled in with its defaults
+  const onlyController = o => Object.keys(o).every(k => k === 'controller');
+  check(onlyController(migrateSettings(null)) && onlyController(migrateSettings('x')), 'damaged data gives nothing but the controller defaults');
   const bad = migrateSettings({ steering: 'mouse', steerSens: 9 });
   check(!('steering' in bad) && !('steerSens' in bad), 'unknown steering and silly sensitivity are dropped');
   const ok = migrateSettings({ steering: 'cursor', steerSens: 1.5 });
