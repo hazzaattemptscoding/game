@@ -217,7 +217,6 @@ function settingsScreen() {
           mrow(segRow('Corner numbers', [['off', 'Off'], ['numbers', 'On']], () => tm.labels, v => set('labels', v)));
           p.append(mg);
         },
-        Weather(p) { p.append(...weatherRows(ctx, segRow, h)); },
         Sound(p) {
           p.append(segRow('Sound', [[true, 'On'], [false, 'Off']], () => settings.sound !== false, v => { settings.sound = v; persist(); }));
           p.append(sliderRow('Volume', { min: 0, max: 100, step: 1, get: () => Math.round(settings.volume * 100), set: v => { settings.volume = Math.max(0, Math.min(1, v / 100)); persist(); }, fmt: v => `${Math.round(v)}%` }));
