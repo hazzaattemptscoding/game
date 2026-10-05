@@ -227,14 +227,14 @@ export function garageTexture() {
 // Sponsor sheet: one board per row, 1024 x 128 each. PowerMedia is the
 // title partner; the rest are the invented brands from the reference pack.
 // Rows 6 and 7 are 1950s and 60s brands, faded, for the old circuit.
-export const SPONSORS = ['powermedia', 'veyra', 'norrland', 'merrow', 'quillon', 'tarnwick', 'pennant', 'brannocks',
+export const SPONSORS = ['powermedia', 'veyra', 'norrland', 'merrow', 'quillon', 'tarnwick', 'deltadash', 'pennant', 'brannocks',
   'zephra', 'corvane', 'lumenor', 'oxley', 'brightfold', 'kingsbury', 'aldershaw', 'powermedia-yellow'];
 // Row numbers of the brands that appear on today's circuit (everything but PowerMedia, which has its
 // own share of the boards, and the faded 1950s and 60s boards kept for the old circuit)
-export const MODERN_SPONSORS = [1, 2, 3, 4, 5, 8, 9, 10, 11, 12];
-export const PERIOD_SPONSORS = [6, 7, 13, 14];
+export const MODERN_SPONSORS = [1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13];
+export const PERIOD_SPONSORS = [7, 8, 14, 15];
 const BRAND_BG = { powermedia: '#111111', veyra: '#0e7c86', norrland: '#101214', merrow: '#1d2e5c', quillon: '#d4145a', tarnwick: '#0B6B4F',
-  zephra: '#FF6A13', corvane: '#D3202B', lumenor: '#FFC93C', oxley: '#1F4E9E', brightfold: '#19B5C9', 'powermedia-yellow': '#ffd21f' };
+  deltadash: '#1a1a2e', zephra: '#FF6A13', corvane: '#D3202B', lumenor: '#FFC93C', oxley: '#1F4E9E', brightfold: '#19B5C9', 'powermedia-yellow': '#ffd21f' };
 
 // A logo file at public/sponsors/<id>.png replaces the generated board for that brand, scaled to fit on the
 // brand colour. public/sponsors/manifest.json lists the ids that have a file (so nothing 404s).

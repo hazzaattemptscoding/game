@@ -16,9 +16,9 @@ export const ACCENT_COLOURS = ['#f4f4f0', '#111111', '#d3202b', '#ffd21f', '#1f6
 
 // Sponsors a player can carry: the modern brands from the sponsor sheet in src/textures.js (not the faded 1950s and 60s ones).
 // The wire carries the position in this list, so only ever append to it.
-export const LIVERY_SPONSORS = ['powermedia', 'veyra', 'norrland', 'merrow', 'quillon', 'tarnwick', 'zephra', 'corvane', 'lumenor', 'oxley', 'brightfold', 'powermedia-yellow'];
+export const LIVERY_SPONSORS = ['powermedia', 'veyra', 'norrland', 'merrow', 'quillon', 'tarnwick', 'zephra', 'corvane', 'lumenor', 'oxley', 'brightfold', 'powermedia-yellow', 'deltadash'];
 export const SPONSOR_NAMES = { powermedia: 'PowerMedia', veyra: 'Veyra Tyres', norrland: 'Norrland Energy', merrow: 'Merrow Mutual', quillon: 'Quillon Mobile', tarnwick: 'Tarnwick Bank',
-  zephra: 'Zephra Sportswear', corvane: 'Corvane Fuels', lumenor: 'Lumenor Lighting', oxley: 'Oxley Freight', brightfold: 'Brightfold Energy', 'powermedia-yellow': 'PowerMedia Yellow' };
+  zephra: 'Zephra Sportswear', corvane: 'Corvane Fuels', lumenor: 'Lumenor Lighting', oxley: 'Oxley Freight', brightfold: 'Brightfold Energy', 'powermedia-yellow': 'PowerMedia Yellow', deltadash: 'DeltaDash' };
 
 export const DEFAULT_LIVERY = Object.freeze({ body: '#ffd21f', stripe: '#111111', wing: '#1b1d20', style: 0, number: -1, sponsor: '', name: '' });
 

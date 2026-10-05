@@ -1,5 +1,13 @@
 # Changelog
 
+## Sponsors: PowerMedia logo and DeltaDash brand
+
+Real sponsor logos replace generated boards on trackside hoardings, in the garage livery selector, and on car bodies during online races.
+
+- PowerMedia: the real white logo (1024x304) replaces the generated black board with yellow text and bars (existing boards in hoardings, gantry, bridge fallback, garage sponsor choice, livery sponsor on car body). Background colour is dark grey (#111111) for legibility.
+- DeltaDash: new brand with purple chevron logo (1024x92). Added to sponsors on trackside hoardings and as an option in the garage livery selector. Background colour is dark navy (#1a1a2e) to complement the purple logo. DeltaDash is encoded in the livery wire format, so other players in online rooms see the sponsor on your car; old saved liveries still load correctly because the new sponsor is appended to the livery sponsors list.
+- Sponsor file size check (`tools/sponsor-check.js`, step 18 of `npm run check`): verifies all sponsor ids in manifest.json have files under 300 KB.
+
 ## Keep list
 
 Things that are liked and must not change. `npm run check` does not test these; look at them by eye
