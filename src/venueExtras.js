@@ -144,6 +144,8 @@ export function planSmall(T, ground, blockers, obstacles) {
     const c = trackPoint(T, s, 0), i = c.i;
     if (T.isBridge[i]) continue;
     const p = trackPoint(T, s, T.wall[1][i] + 8);
+    // not in front of the media tower: a banner there hides the cabins from the track
+    if (obstacles.some(o => o.kind === 'tower' && Math.abs((p.x - o.x) * o.ex[0] + (p.z - o.z) * o.ex[1]) < o.len / 2 + 3 && (p.x - o.x) * o.ez[0] + (p.z - o.z) * o.ez[1] > -30)) continue;
     if (free(p.x, p.z, SMALL_RULES.flag)) out.flags.push({ x: p.x, z: p.z, tx: c.tx, tz: c.tz, s });
   }
   // perimeter fence: far behind the wall, in 6 m panels, broken wherever the line meets something
@@ -240,9 +242,9 @@ function fanZone(kit, st, spots) {
 function bigScreen(kit, st) {
   const { len } = st, low = st.low - 0.7 - st.y0, W = len, Hs = 7.6, y0 = 4.2;
   kit.box('concrete', 5, -low, 4, 0, low / 2, 2.5, 0, 4);
-  for (const sx of [-W / 2 + 2, W / 2 - 2]) { kit.box('steel', 0.6, y0 + 0.5, 0.6, sx, (y0 + 0.5) / 2, 3.2); beam(kit, 'steel', [sx, 0.2, 3.2], [sx * 0.55, y0 + Hs * 0.8, 5.6], 0.25); }
+  for (const sx of [-W / 2 + 2, W / 2 - 2]) { kit.box('steel', 0.6, y0 + 1.5, 0.6, sx, (y0 - 0.5) / 2, 3.2); beam(kit, 'steel', [sx, -0.4, 3.2], [sx * 0.55, y0 + Hs * 0.8, 5.6], 0.25); }   // the legs run a metre into the ground, so a slope never leaves them hanging
   kit.box('steel', W + 0.6, Hs + 0.6, 0.4, 0, y0 + Hs / 2, 3.9);                               // the frame
-  kit.quad('screen', [W / 2, y0, 3.65], [-W / 2, y0, 3.65], [-W / 2, y0 + Hs, 3.65], [W / 2, y0 + Hs, 3.65], [[1, 0], [0, 0], [0, 1], [1, 1]]);   // the picture faces the track
+  kit.quad('screen', [W / 2, y0, 3.65], [-W / 2, y0, 3.65], [-W / 2, y0 + Hs, 3.65], [W / 2, y0 + Hs, 3.65], [[0, 0], [1, 0], [1, 1], [0, 1]]);   // the picture faces the track; seen from the track +x is on the left, so u runs 0 to 1 from +x to -x
   kit.box('steel', W + 0.6, 0.15, 0.7, 0, y0 + Hs + 0.35, 3.9);
   kit.box('lamp', W - 1, 0.1, 0.25, 0, y0 - 0.25, 3.5);
 }
