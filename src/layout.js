@@ -55,7 +55,7 @@ export const LAYOUT = {
   pit: {
     entry: 60.5,
     exit: 4.6,
-    exitRun: 95,        // the exit road carries on alongside the track this far past `exit` before it has fully merged
+    exitRun: 155,       // the exit road carries on this far past `exit`: alongside, merged, then the lane closes over its last 60 m
     offset: 15.5,       // distance from the track centreline to the pit lane centreline, metres
     width: 12,          // pit lane width: 4 m fast lane plus 8 m working lane
     blend: 110,         // length of the entry and exit roads, metres

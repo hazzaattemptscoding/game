@@ -168,7 +168,7 @@ for (const [key, n] of templates) if (n > 2) errors.push(`the same barrier secti
 {
   const SURF_OK = new Set([0, 1, 4, 7]);             // tarmac, edge line, paved run-off, pit
   const bad = [];
-  const [a, b] = T.pitRange, hw = T.halfWidth;
+  const [a, end] = T.pitRange, b = end - (T.pitExitClose || 0), hw = T.halfWidth;   // b: where the exit road has merged, before its lane closes
   const at = s => Math.round(((s % T.length) + T.length) % T.length / T.ds) % T.N;
   const lanePath = s => -(Math.max(T.pitIn[at(s)], hw) + 1.2);   // inner wheel 0.35 m inside the lane edge
   const cosine = t => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, t)));
@@ -201,8 +201,8 @@ for (let n = 0; n < 2000; n++) {
 let narrowPit = Infinity, pitWidthAt = 0, pitWallClear = Infinity;
 for (let i = 0; i < T.N; i++) if (T.pitOut[i] > 0) {
   const width = T.pitOut[i] - T.pitIn[i];
-  if (width < narrowPit) { narrowPit = width; pitWidthAt = i; }
-  if (width < (T.pitLimiter[i] ? 10 : 6.5)) errors.push(`pit road ${width.toFixed(2)} m wide at s=${T.s[i].toFixed(1)} (${T.x[i].toFixed(1)}, ${T.z[i].toFixed(1)})`);
+  if (!T.pitMouth[i] && width < narrowPit) { narrowPit = width; pitWidthAt = i; }
+  if (!T.pitMouth[i] && width < (T.pitLimiter[i] ? 10 : 6.5)) errors.push(`pit road ${width.toFixed(2)} m wide at s=${T.s[i].toFixed(1)} (${T.x[i].toFixed(1)}, ${T.z[i].toFixed(1)})`);
   if (T.pitWall[i]) {
     const clear = T.pitIn[i] - 0.6 - T.hw[i];
     pitWallClear = Math.min(pitWallClear, clear);

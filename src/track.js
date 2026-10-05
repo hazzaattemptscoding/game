@@ -79,6 +79,7 @@ const EXIT_SEP = 2.6;       // gap from the track edge to the exit road while al
 const EXIT_ALONGSIDE = 60;  // metres the exit road runs alongside at EXIT_SEP
 const EXIT_MERGE = 70;      // metres of hatched merge, the gap easing from EXIT_SEP to nothing
 const EXIT_WIDTH = 7;       // exit road width once clear of the garages, metres
+const EXIT_CLOSE = 60;      // metres after the merge over which the merged exit lane's outer edge eases in to the track edge
 
 export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   const nPts = layout.points.length;
@@ -711,14 +712,16 @@ function buildPit(T) {
   const ease = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
   // gap between the track edge and the exit road, by distance v before the end of the merge
   const exitGap = v => v < EXIT_MERGE ? EXIT_SEP * ease(v / EXIT_MERGE) : EXIT_SEP + tOut * Math.max(0, v - EXIT_MERGE - EXIT_ALONGSIDE);
+  T.pitExitClose = EXIT_CLOSE;
   for (let u = 0; u <= len; u += T.ds) {
-    const i = wrap(Math.round((a + u) / T.ds), N), v = len - u;
+    const i = wrap(Math.round((a + u) / T.ds), N), w = len - u, v = Math.max(0, w - EXIT_CLOSE);   // w: to the very end, v: to the end of the merge
     const hw = T.hw[i], full = hw + PIT_WALL_CLEAR + PIT_WALL + 0.6;   // full: pit road inner edge once fully separated (a little spare for the eased curve)
     const inner = Math.max(hw, smin(smin(hw + tIn * u, full, 1.5), hw + exitGap(v), 1.5));
     // the exit road narrows to EXIT_WIDTH as it comes down from beside the garages
     const narrow = u > len / 2 ? 1 - ease((inner - hw - EXIT_SEP) / (full - hw - EXIT_SEP - 0.3)) : 0;
     T.pitIn[i] = inner;
-    T.pitOut[i] = inner + P.width - (P.width - EXIT_WIDTH) * narrow;
+    // once merged, the lane closes: its outer edge eases in to the track edge over EXIT_CLOSE
+    T.pitOut[i] = inner + (P.width - (P.width - EXIT_WIDTH) * narrow) * (w < EXIT_CLOSE ? ease(w / EXIT_CLOSE) : 1);
     if (u < PIT_MOUTH_CLEAR || v < PIT_MOUTH_CLEAR) T.pitMouth[i] = 1;
     if (u >= PIT_MOUTH_CLEAR && v > EXIT_MERGE && inner - PIT_WALL >= hw + PIT_WALL_CLEAR) T.pitWall[i] = 1;
     // the painted gore between the two roads: after the mouth at the entry, the whole hatched merge at the exit
