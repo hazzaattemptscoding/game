@@ -1,4 +1,5 @@
 # IONOS web hosting (Apache). `npm run build` copies this file into dist/; upload it with the rest of dist/.
+# Upload order: assets/ and sponsors/ first, index.html last, so the page never asks for files that are not there yet.
 # Every block is wrapped in <IfModule> so a module the host leaves out is skipped instead of causing a 500 error.
 
 Options -Indexes
@@ -32,8 +33,11 @@ DirectoryIndex index.html
   <FilesMatch "^multiplayer\.json$">
     Header set Cache-Control "public, max-age=60, must-revalidate"
   </FilesMatch>
+  # Only a real script or stylesheet is kept for a year. If one is asked for before the upload has finished, the host answers
+  # with its HTML "not found" page; that must not be cached under the script's name, or the browser keeps the broken copy.
   <FilesMatch "-[A-Za-z0-9_-]{8}\.(js|css)$">
-    Header set Cache-Control "public, max-age=31536000, immutable"
+    Header set Cache-Control "public, max-age=31536000, immutable" "expr=%{CONTENT_TYPE} =~ m#(javascript|css)#"
+    Header set Cache-Control "no-store" "expr=%{CONTENT_TYPE} =~ m#text/html#"
   </FilesMatch>
 </IfModule>
 <IfModule mod_expires.c>
