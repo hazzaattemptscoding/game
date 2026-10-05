@@ -133,6 +133,7 @@ export function createLobby(ctx) {
     get active() { return mp.active; },
     get joined() { return ghosts.size > 0; },
     ghosts,       // for tests and the console
+    mp,           // the Multiplayer: the director reads its phase and sends the race start through it
     name,         // our name in the room
     board(own) { return ghosts.board({ ...own, livery: liveryNow() }); },
     // the player changed their livery: tell the room now (the standings follow on their next redraw)

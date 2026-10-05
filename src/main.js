@@ -23,6 +23,7 @@ import { ownLivery, localPlayerId } from './livery.js';
 import { createBoard } from './board.js';
 import { CarAudio } from './audio.js';
 import { createRacingLine } from './racingLine.js';
+import { createDirector, HOLD } from './director.js';
 
 const params = new URLSearchParams(location.search);
 const settings = loadSettings();
@@ -84,7 +85,7 @@ if (params.has('viewat')) {
   const i = Math.round(((s % track.length) + track.length) % track.length) % track.N, j = (i + Math.round(ahead)) % track.N;
   fixedView = [track.x[i] + track.nx[i] * d, track.h[i] + hgt, track.z[i] + track.nz[i] * d, track.x[j], track.h[j], track.z[j]];
 }
-const input = createInput(settings, { boardAllowed: () => panel.hidden && !reportTool.opened });   // Tab is the times board, except while a panel needs it for moving between buttons
+const input = createInput(settings, { boardAllowed: () => !dir.menuOpen && !reportTool.opened });   // Tab is the times board, except while a panel needs it for moving between buttons
 const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthesised sound, starts at the first key press or touch
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
@@ -96,7 +97,7 @@ const history = { inputs: [], telemetry: [] };
 let restoreTopDown = false;
 const reportTool = new ReportTool({
   canvas, renderer, camera: rig.camera, scene, world, terrain, car, track, input, settings, history,
-  onClose: () => { topDown = restoreTopDown; applyLook(); },
+  onClose: () => { topDown = restoreTopDown; applyLook(); if (dir.phase === 'paused') dir.menu.open('pause', 'pause'); },   // a report started from the pause menu goes back to it
 });
 
 function resize() {
@@ -107,81 +108,57 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-// --- settings panel ---
-const panel = document.getElementById('settings');
-function syncPanel() {
-  panel.querySelectorAll('[data-units]').forEach(b => b.classList.toggle('sel', b.dataset.units === settings.units));
-  const assistKey = { tc: 'assistTc', abs: 'assistAbs', esc: 'assistEsc' };
-  panel.querySelectorAll('[data-assist]').forEach(b => b.classList.toggle('sel', String(settings[assistKey[b.dataset.assist]]) === b.dataset.on));
-  panel.querySelectorAll('[data-steering]').forEach(b => b.classList.toggle('sel', settings.steering === b.dataset.steering));
-  const sens = panel.querySelector('#steersens'); if (sens) { sens.value = Math.round(settings.steerSens * 100); sens.disabled = settings.steering !== 'cursor'; }
-  panel.querySelectorAll('[data-debug]').forEach(b => b.classList.toggle('sel', String(settings.debug) === b.dataset.debug));
-  panel.querySelectorAll('[data-topdown]').forEach(b => b.classList.toggle('sel', String(topDown) === b.dataset.topdown));
-  panel.querySelectorAll('[data-blockout]').forEach(b => b.classList.toggle('sel', String(!!settings.blockout) === b.dataset.blockout));
-  panel.querySelectorAll('[data-sound]').forEach(b => b.classList.toggle('sel', String(settings.sound !== false) === b.dataset.sound));
-  const vol = panel.querySelector('#volume'); if (vol) vol.value = Math.round(settings.volume * 100);
-  panel.querySelectorAll('[data-auto]').forEach(b => b.classList.toggle('sel', String(!!autopilot) === b.dataset.auto));
+// --- menu, sessions and the start sequence (src/director.js) ---
+function openReport() {
+  restoreTopDown = topDown;
+  renderer.render(scene, rig.camera);
+  const shot = canvas.toDataURL('image/png');
+  const pose = { position: rig.camera.position.toArray(), quaternion: rig.camera.quaternion.toArray(), fov: rig.camera.fov };
+  topDown = true; applyLook(); reportTool.open(shot, pose);
 }
-panel.addEventListener('click', e => {
-  const b = e.target.closest('button');
-  if (!b) return;
-  if (b.dataset.units) settings.units = b.dataset.units;
-  if (b.dataset.assist) {
-    settings[{ tc: 'assistTc', abs: 'assistAbs', esc: 'assistEsc' }[b.dataset.assist]] = b.dataset.on === 'true';
-    car.setAssists({ tc: settings.assistTc, abs: settings.assistAbs, esc: settings.assistEsc });
-  }
-  if (b.dataset.steering) settings.steering = b.dataset.steering;
-  if (b.dataset.debug) settings.debug = b.dataset.debug === 'true';
-  if (b.dataset.blockout) { settings.blockout = b.dataset.blockout === 'true'; applyLook(); view.setFlat(settings.blockout); }
-  if (b.dataset.topdown) { topDown = b.dataset.topdown === 'true'; applyLook(); }
-  if (b.dataset.sound) settings.sound = b.dataset.sound === 'true';
-  if (b.dataset.auto) autopilot = b.dataset.auto === 'true' ? new Autopilot(track, GT, { skill: 0.9 }) : null;
-  if (b.id === 'close') togglePanel(false);
-  saveSettings(settings);
-  syncPanel();
+const save = () => saveSettings(settings);
+const dir = createDirector({
+  car, timer, track, view, lobby, settings, params, rig, hud, history, save, openReport,
+  simTime: () => simTime,
+  applyLook: () => { applyLook(); view.setFlat(settings.blockout); },
+  getTopDown: () => topDown, setTopDown: v => { topDown = v; applyLook(); },
+  getAutopilot: () => !!autopilot, setAutopilot: v => { autopilot = v ? new Autopilot(track, GT, { skill: 0.9 }) : null; },
+  liveryChanged: () => { view.setLivery(myLivery()); lobby.liveryChanged(); },
 });
-panel.addEventListener('input', e => {
-  if (e.target.id === 'steersens') { settings.steerSens = Math.max(0.5, Math.min(2, +e.target.value / 100)); saveSettings(settings); return; }
-  if (e.target.id !== 'volume') return;
-  settings.volume = Math.max(0, Math.min(1, +e.target.value / 100));
-  saveSettings(settings);
-});
-function togglePanel(open = panel.hidden) { panel.hidden = !open; if (open) board.hide(); syncPanel(); }
-syncPanel();
 
 // --- loop ---
 let simTime = 0, acc = 0, last = performance.now();
 
 function frame(now) {
-  const dt = Math.min(0.1, (now - last) / 1000);
+  const dt = Math.max(0, Math.min(0.1, (now - last) / 1000));   // the first frame can carry a time stamp from before `last`
   last = now;
 
-  for (const a of input.takeActions()) {
+  const actions = input.takeActions();
+  const menuToggled = dir.menuToggledSinceLastFrame();   // Esc that just closed the menu is also in the list: ignore it
+  for (const a of actions) {
     if (reportTool.opened && a !== 'report') continue;      // the report screen owns the keyboard while it is open
-    if (a === 'reset') { car.resetToTrack(); car.contactGrace = 1.5; }
+    if (a === 'settings') { if (!menuToggled) dir.escape(); continue; }
+    if (dir.menuOpen) continue;                              // the menu has the keyboard
+    if (a === 'reset' && dir.phase !== 'start') { car.resetToTrack(); car.contactGrace = 1.5; }
     if (a === 'camera') rig.next();
-    if (a === 'settings') togglePanel();
-    if (a === 'board-on' && panel.hidden) board.show();     // hold Tab
+    if (a === 'board-on') board.show();     // hold Tab
     if (a === 'board-off') board.hide();
-    if (a === 'board' && panel.hidden) board.toggle();      // the Times button on a touch screen
+    if (a === 'board') board.toggle();      // the Times button on a touch screen
     if (a === 'line') { settings.racingLine = !settings.racingLine; saveSettings(settings); hud.flash(settings.racingLine ? 'Racing line on' : 'Racing line off', simTime); }
-    if (a === 'debug') { settings.debug = !settings.debug; saveSettings(settings); syncPanel(); }
-    if (a === 'report' && !reportTool.opened) {
-      restoreTopDown = topDown;
-      renderer.render(scene, rig.camera);
-      const shot = canvas.toDataURL('image/png');
-      const pose = { position: rig.camera.position.toArray(), quaternion: rig.camera.quaternion.toArray(), fov: rig.camera.fov };
-      topDown = true; applyLook(); reportTool.open(shot, pose);
-    }
+    if (a === 'debug') { settings.debug = !settings.debug; saveSettings(settings); }
+    if (a === 'report' && !reportTool.opened && dir.phase !== 'menu') openReport();
   }
+  if (dir.menuOpen) board.hide();
 
-  const paused = (!panel.hidden && !lobby.active) || reportTool.opened;     // in a room the car keeps rolling behind the panel
   const playerInput = input.read(dt, car.speed);
+  dir.frame(now, dt, playerInput);
+  const paused = dir.inMenu || (dir.menuOpen && !lobby.active) || reportTool.opened;     // in a room the car keeps rolling behind the menu
+  const drive = autopilot && !dir.hold ? () => autopilot.drive(car) : () => (dir.hold ? HOLD : dir.menuOpen ? IDLE : playerInput);
   if (!paused) {
     acc += dt;
     while (acc >= STEP) {
       if (lobby.active) car.collideCars(lobby.solids(now - (acc - STEP) * 1000));
-      car.step(autopilot ? autopilot.drive(car) : panel.hidden ? playerInput : IDLE);
+      car.step(drive());
       audio.latch(car);
       simTime += STEP;
       timer.update(car.loc.s, simTime);
@@ -219,7 +196,8 @@ function frame(now) {
   audio.update(car, dt, paused);
   lobby.update(now);
   hud.update(car, timer, track, simTime);
-  racingLine.setVisible(settings.racingLine && window.lakeside?.session?.racingLine !== false);   // a race can forbid it
+  dir.after(now, simTime);
+  racingLine.setVisible(settings.racingLine && dir.api.racingLineAllowed());   // a race can forbid it
   racingLine.update(car.loc.s);
   board.update(simTime, now);
   const cursorOn = settings.steering === 'cursor';
@@ -231,15 +209,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // for quick checks from the browser console
-window.lakeside = { car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene };
-
-// ?garage opens the garage as an overlay (the main menu will host it later; this entry point is only for testing)
-if (params.has('garage')) {
-  const box = document.createElement('div');
-  box.style.cssText = 'position:fixed;inset:0;z-index:20;overflow:auto;background:rgb(14,17,20)';
-  document.body.appendChild(box);
-  import('./garage.js').then(({ mountGarage }) => mountGarage(box, { settings, save: () => saveSettings(settings), onChange: l => { view.setLivery(myLivery()); lobby.liveryChanged(); } }));
-}
+window.lakeside = { car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir };
 
 function skyTexture(top, bottom) {
   const c = document.createElement('canvas');

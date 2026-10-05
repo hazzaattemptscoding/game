@@ -41,7 +41,7 @@ export class Hud {
         </div>
       </div>
       <pre class="hud-debug" id="h-debug"></pre>
-      <div class="hud-help" id="h-help">Arrows or WASD to drive · Space for DRS · R reset · C camera · Esc settings</div>`;
+      <div class="hud-help" id="h-help">Arrows or WASD to drive · Space for DRS · R reset · C camera · L racing line · Esc menu</div>`;
     const $ = id => root.querySelector('#' + id);
     this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help') };
     this.flashUntil = 0;
