@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 
 const quiet = process.argv.includes('--quiet');
-const steps = [['laptest', 'tools/laptest.js'], ['audit', 'tools/audit.js'], ['bumps', 'tools/bumps.js'], ['surfaces', 'tools/surfaces.js'], ['venue', 'tools/venue.js'], ['smoke', 'tools/smoke.mjs'], ['limits', 'tools/limits.js'], ['audio', 'tools/audio.js'], ['assists', 'tools/assists.js'], ['cursor', 'tools/cursor.js'], ['board', 'tools/board.js'], ['multiplayer', 'tools/multiplayer.js'], ['relay', 'tools/relay.js'], ['relay-client', 'tools/relay-client.js'], ['session', 'tools/session.js'], ['racingline', 'tools/racingline-test.js']];
+const steps = [['laptest', 'tools/laptest.js'], ['audit', 'tools/audit.js'], ['bumps', 'tools/bumps.js'], ['surfaces', 'tools/surfaces.js'], ['venue', 'tools/venue.js'], ['smoke', 'tools/smoke.mjs'], ['limits', 'tools/limits.js'], ['audio', 'tools/audio.js'], ['assists', 'tools/assists.js'], ['cursor', 'tools/cursor.js'], ['board', 'tools/board.js'], ['multiplayer', 'tools/multiplayer.js'], ['relay', 'tools/relay.js'], ['live', 'tools/live.js'], ['relay-client', 'tools/relay-client.js'], ['session', 'tools/session.js'], ['racingline', 'tools/racingline-test.js']];
 const results = [];
 for (const [name, file] of steps) {
   const r = spawnSync(process.execPath, [file], { encoding: 'utf8' });

@@ -92,6 +92,31 @@ node worker/dev-relay.mjs 8787
 starts a stand-in server with the same rules. Open the game with `?relay=ws://localhost:8787/`. The relay tests are
 `node tools/relay.js` (they also run in `npm run check`).
 
+## Live timing: spectators and the lobby list
+
+The page `live.html` (next to `index.html` on the game's website) lists every open online lobby and lets anybody watch one:
+timing tower, telemetry, track map, TV director and free cameras. It needs this Worker and nothing else.
+
+* `GET /lobbies` answers a JSON list of the open rooms: `code, host, players [{name}], count, max, mode, laps, started, spectators, createdAt`.
+  `GET /lobbies/<CODE>` answers one. Every room with a player in it is listed; there are no private rooms. A room is dropped from the
+  list when it empties, or 90 seconds after its last heartbeat. The list is kept by one extra Durable Object (`Directory`).
+* A spectator connects to `wss://HOST/room/<CODE>?spectator=1` and sends `{"t":"join","spectator":true,"name":"..."}`. It never takes one
+  of the 8 player seats, up to 50 watch one room (`MAX_SPECTATORS`), it cannot send anything but a ping, and it receives the room's
+  cars at 10 Hz (`SPECTATOR_STATE_DIVIDER` = 2 of the players' 20 Hz), liveries, names, who joins and leaves, the race details and the
+  telemetry frames. Telemetry is sent by the game only while somebody is watching.
+* The host's game tells the relay what the room is doing with `{"t":"meta","mode":"Online race","laps":5,"started":true}` (cleaned and
+  bounded by the relay; ignored from anybody but the host). The full wire description is at the top of `src/protocol.js`.
+
+Deploying: the Worker redeploys by itself when this folder changes on `main` (Cloudflare Workers Builds). The change adds one
+Durable Object class, `Directory`, which `wrangler.toml` already declares in migration `v2`, so no manual step is needed. If you deploy
+by hand: `cd worker && npx wrangler deploy`. Check it with `https://<worker>/lobbies` (must answer `[]` or a list) and open
+`https://<game site>/live.html`. Old game versions keep working: they never send `meta` or telemetry, so their lobbies are listed as
+"Free practice" with the player names, and the live view shows cars and gaps but no throttle, brake or gear.
+
+Free plan cost: every spectator connection is one request plus one per 20 messages it SENDS (only pings), and the messages the Worker
+sends out are free, so watching is cheap. The lobby list is cached for 3 seconds per Worker instance and the directory is updated
+at most every 5 seconds per room.
+
 ## How it works (for developers)
 
 One WebSocket per player to `wss://HOST/room/<CODE>`, CODE = 5 letters A to Z. The code is the room name: the first player

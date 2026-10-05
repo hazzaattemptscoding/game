@@ -21,11 +21,11 @@
 //  Player ids are slot numbers 0 to 7 and are reused after a player leaves (always preceded by its {t:'bye'}).
 //
 // Spectators (the live timing page, live.html): {t:'join', spectator:true, name?} or ?spectator=1 on the socket URL. They never count
-// toward the 8 players, at most 100 per room, can send only ping, and receive everything the players broadcast plus telemetry:
+// toward the 8 players, at most 50 per room, can send only ping, and receive everything the players broadcast plus telemetry:
 //    relay -> spectator   {t:'welcome', you:-1, spectator:true, host, players:[{id,name,host}], spectators, meta?}  followed at once by a
 //                         snapshot: the stored lv/name messages and the last events as JSON frames (with `from`), the last state and
 //                         telemetry frame of each player as binary frames (with the sender id byte), so the view fills immediately.
-//                         A room with no players answers {t:'nohost'} (close 4002), a 101st spectator {t:'full', spectator:true} (4001).
+//                         A room with no players answers {t:'nohost'} (close 4002), a 51st spectator {t:'full', spectator:true} (4001).
 //    binary frames        a player's state frame (first byte TAG_STATE = 1) goes to the other players and, every 2nd frame, to spectators
 //                         (SPECTATOR_DIVIDER, 10 Hz); a telemetry frame (first byte TAG_TELEMETRY = 2, 14 bytes, src/shared/telemetry.js)
 //                         goes to SPECTATORS ONLY, never to other players.
@@ -46,7 +46,7 @@ export const MAX_PLAYERS = 8;
 export const MAX_BYTES = 2048;
 export const RATE = 40;            // frames per second (20 Hz state + 10 Hz telemetry + pings and messages stay well under)
 export const BURST = 40;
-export const MAX_SPECTATORS = 100;
+export const MAX_SPECTATORS = 50;
 export const SPECTATOR_DIVIDER = 2;   // spectators get every 2nd state frame (10 Hz). Override with room.cfg.specDivider (env SPECTATOR_STATE_DIVIDER).
 export const TAG_STATE = 1;           // first byte of a car state frame (src/ghosts.js BIN_STATE)
 export const TAG_TELEMETRY = 2;       // first byte of a telemetry frame (src/shared/telemetry.js TAG_TELEMETRY; tools/live.js checks both)
@@ -277,9 +277,9 @@ export function sweep(room, now, idleMs = IDLE_MS) {
 export function lobbyEntry(room) {
   const players = joined(room);
   if (!players.length) return null;
-  const meta = store(room).meta;
+  const meta = store(room).meta, hostConn = players.find(c => c.att.host);
   return {
-    players: players.sort((a, b) => a.att.id - b.att.id).map(c => ({ name: c.att.name })), count: players.length, max: MAX_PLAYERS,
+    host: hostConn ? hostConn.att.name : '', players: players.sort((a, b) => a.att.id - b.att.id).map(c => ({ name: c.att.name })), count: players.length, max: MAX_PLAYERS,
     mode: meta.mode || 'Free practice', laps: meta.laps || 0, started: meta.started === true, spectators: spectators(room).length,
   };
 }
@@ -290,7 +290,7 @@ const cleanEntryIn = e => {
   if (!players.length) return null;
   const meta = cleanMeta(e, {});
   return {
-    players, count: players.length, max: MAX_PLAYERS, mode: meta.mode || 'Free practice', laps: meta.laps || 0, started: meta.started === true,
+    host: cleanName(e.host), players, count: players.length, max: MAX_PLAYERS, mode: meta.mode || 'Free practice', laps: meta.laps || 0, started: meta.started === true,
     spectators: Math.max(0, Math.min(MAX_SPECTATORS, Math.round(+e.spectators || 0))),
   };
 };
@@ -320,7 +320,7 @@ export class Directory {
   dump() { return Object.fromEntries(this.rooms); }
   load(o) { this.rooms = new Map(Object.entries(o && typeof o === 'object' ? o : {}).filter(([k, v]) => CODE_RE.test(k) && v && Array.isArray(v.players))); }
 }
-const publicEntry = (code, v) => ({ code, players: v.players, count: v.count, max: v.max, mode: v.mode, laps: v.laps, started: v.started, createdAt: v.createdAt, spectators: v.spectators });
+const publicEntry = (code, v) => ({ code, host: v.host || '', players: v.players, count: v.count, max: v.max, mode: v.mode, laps: v.laps, started: v.started, createdAt: v.createdAt, spectators: v.spectators });
 
 // Decides when a room tells the directory. poke(urgent, now): urgent ones (a player joined or left, the race started) go at once, others
 // at most one per minMs (the rest wait for tick). tick(now): sends a waiting update, or a heartbeat when beatMs passed. send(entryOrNull)

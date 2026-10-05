@@ -13,7 +13,7 @@ export class Room {
     this.env = env;
     this.wrapped = new WeakMap();
     this.code = null;
-    // optional settings (Worker variables): MAX_SPECTATORS (default 100) and SPECTATOR_STATE_DIVIDER (default 2: spectators get every 2nd state frame)
+    // optional settings (Worker variables): MAX_SPECTATORS (default 50) and SPECTATOR_STATE_DIVIDER (default 2: spectators get every 2nd state frame)
     const cfg = {};
     const maxSpec = intVar(env && env.MAX_SPECTATORS, 0, MAX_SPECTATORS), div = intVar(env && env.SPECTATOR_STATE_DIVIDER, 1, 20);
     if (maxSpec !== undefined) cfg.maxSpectators = maxSpec;

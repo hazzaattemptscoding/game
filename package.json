@@ -22,6 +22,7 @@
     "multiplayer": "node tools/multiplayer.js",
     "multiplayer-live": "node tools/multiplayer-live.mjs",
     "relay-live": "node tools/relay-live.mjs",
+    "live": "node tools/live.js",
     "session": "node tools/session.js",
     "check": "node tools/check.js",
     "racingline": "node tools/racingline.js",

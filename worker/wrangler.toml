@@ -7,7 +7,7 @@ compatibility_date = "2026-09-01"
 # (https://your-domain.example). Use * only for testing. Change this before you deploy.
 [vars]
 ALLOWED_ORIGINS = "https://beta.powerrmediaa.com,http://beta.powerrmediaa.com"
-# Optional: MAX_SPECTATORS = "100" (spectators per room, 0 to 100) and SPECTATOR_STATE_DIVIDER = "2" (spectators get every 2nd car
+# Optional: MAX_SPECTATORS = "50" (spectators per room, 0 to 50) and SPECTATOR_STATE_DIVIDER = "2" (spectators get every 2nd car
 # update; 1 = every update, 4 = a quarter) trade the smoothness of the live view against the free plan's request count, see README.
 
 [[durable_objects.bindings]]
