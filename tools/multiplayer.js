@@ -8,7 +8,8 @@ import { buildTrack } from '../src/track.js';
 import { Car, STEP } from '../src/physics.js';
 import { GT } from '../src/cars.js';
 import { carContact } from '../src/carContact.js';
-import { encodeState, decodeState, stateFromCar, StateBuffer, Ghosts, cleanName, FIELDS, DELAY, MAX_EXTRAP, TIMEOUT, PALETTE } from '../src/ghosts.js';
+import { encodeState, decodeState, stateFromCar, StateBuffer, Ghosts, cleanName, FIELDS, DELAY, MAX_EXTRAP, TIMEOUT } from '../src/ghosts.js';
+import { defaultLivery, liveryEquals } from '../src/livery.js';
 import { fakeNetwork } from './lib/fakepeer.js';
 import { Multiplayer, makeCode, cleanCode, parseBroker, brokerFromSearch, BROKER, hostId, DEFAULT_ICE_SERVERS, applyConfigFile, cleanIceServers, fetchConfigFile, resolveConfig, loadConfig, hasTurn, rtcConfig, newDiag, diagText, failureReason, NO_OUTSIDE, NEEDS_RELAY } from '../src/multiplayer.js';
 
@@ -129,9 +130,9 @@ console.log('SILENCE AND REMOVAL');
   const factory = { create: info => { made.push(info.id); return { setPose() {}, setOpacity() {}, setLabel() {}, dispose() { gone.push(info.id); } }; } };
   const g = new Ghosts(factory);
   for (let t = 0; t <= 1000; t += 50) g.receive('p1', mkState(t, { col: 2 }), t);
-  g.receive('p2', mkState(900, { col: 2, name: 'B' }), 900);   // same colour asked for: gets another
+  g.receive('p2', mkState(900, { col: 2, name: 'B' }), 900);   // legacy colour index is ignored
   check(made.length === 2 && g.size === 2, 'two cars created');
-  check(g.map.get('p1').col !== g.map.get('p2').col && g.map.get('p2').col !== 0, 'colours do not clash');
+  check(g.map.get('p1').livery && g.map.get('p2').livery && liveryEquals(g.map.get('p1').livery, defaultLivery('p1')), 'cars are painted from their livery, the same on every screen');
   let s = g.solids(1100);
   check(s.length === 2 && s.find(o => o.id === 'p2').age > 0, 'solids list the cars');
   check(s.find(o => o.id === 'p1').age > 1 && s.find(o => o.id === 'p1').silent < 0.2, 'age and silence reported');
