@@ -1,5 +1,9 @@
 # Changelog
 
+## Footbridge video the right way up
+
+The PowerMedia loop under each footbridge deck was one plane turned by an Euler rotation that only lay flat for a bridge square to the X axis; on Footbridge East it stood near vertical and faced away. It is now two upright screens hung under the deck edge (30:1, in a dark housing), one facing the cars coming towards the bridge and one facing the way they go, both reading left to right.
+
 ## Pit exit: alongside the track, then a long hatched merge
 
 From the owner's sketch (`docs/pit-exit-sketch.webp`). The exit road no longer cuts onto the track at the apex of Scramble.

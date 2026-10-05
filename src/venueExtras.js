@@ -294,35 +294,27 @@ function footbridge(kit, b, videoGroup) {
   for (let k = 0; k <= n; k += 2) beam(kit, 'steel', P(uL + k * step, -hw, deckY + H), P(uL + k * step, hw, deckY + H), 0.1);   // cross ties
   kit.box('roof', span, 0.08, DECK_W + 0.6, mp[0], deckY + H + 0.2, mp[2], yaw);                              // a light roof
 
-  // PowerMedia video banner on the underside of the deck
+  // PowerMedia video fascia hung under the deck edge, one facing the cars coming towards the bridge and one facing the
+  // way they go. rotation.y = yaw turns a plane to face back along the track (c.tx, c.tz from trackPoint is the driving
+  // direction), towards the cars at -t; yaw + PI faces the cars that have gone under, at +t.
   if (videoGroup) {
-    const vw = span - 0.4, vh = 0.8, vy0 = deckY - 0.32, vy1 = vy0 - vh;
+    const vw = span - 0.4, vh = vw / 30, vy = deckY - 0.38 - vh / 2;
     const stillMat = new THREE.MeshStandardMaterial({ map: tex.gantryBannerTexture(), roughness: 0.4, toneMapped: false });
-    const still = new THREE.Mesh(
-      new THREE.PlaneGeometry(vw, vh),
-      stillMat
-    );
-    still.position.set(mp[0], (vy0 + vy1) / 2, mp[2]);
-    still.rotation.set(Math.PI / 2, yaw + Math.PI, 0);
-    still.userData.debug = 'building';
-    videoGroup.add(still);
-
-    // Overlay with video when ready
     const videoMat = new THREE.MeshBasicMaterial({ toneMapped: false });
-    const videoTex = bannerVideo(() => {
-      video.visible = true;
-      still.visible = false;
-    });
-    videoMat.map = videoTex || null;
-    const video = new THREE.Mesh(
-      new THREE.PlaneGeometry(vw, vh),
-      videoMat
-    );
-    video.position.set(mp[0], (vy0 + vy1) / 2, mp[2]);
-    video.rotation.set(Math.PI / 2, yaw + Math.PI, 0);
-    video.visible = false;
-    video.userData.debug = 'building';
-    videoGroup.add(video);
+    const geo = new THREE.PlaneGeometry(vw, vh), stills = [], videos = [];
+    for (const sg of [-1, 1]) {
+      const p = P(mid, sg * (hw + 0.06), vy);
+      for (const [list, m] of [[stills, stillMat], [videos, videoMat]]) {
+        const mesh = new THREE.Mesh(geo, m);
+        mesh.position.set(p[0], vy, p[2]);
+        mesh.rotation.y = yaw + (sg > 0 ? Math.PI : 0);
+        mesh.userData.debug = 'building';
+        list.push(mesh); videoGroup.add(mesh);
+      }
+      kit.box('steel', vw + 0.3, vh + 0.2, 0.1, p[0] - c.tx * sg * 0.06, vy, p[2] - c.tz * sg * 0.06, yaw);   // the screen housing
+    }
+    for (const v of videos) v.visible = false;
+    videoMat.map = bannerVideo(() => { for (const v of videos) v.visible = true; for (const st of stills) st.visible = false; }) || null;
   }
 
   // sponsor banners on the truss sides
