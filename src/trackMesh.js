@@ -13,6 +13,7 @@ import { buildGroundRibbon } from './groundRibbon.js';
 import { buildGantry, buildStartPaint } from './gantry.js';
 import { buildBridge } from './bridge.js';
 import { meadowMaterial } from './scenery.js';
+import { garageBay } from './pitBuilding.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
 const DECAL = 0.006;          // paint sits this far above the surface, drawn with polygonOffset so it never fights
@@ -207,16 +208,8 @@ export function buildTrackScene(T, ground) {
   mat.armcoSingle = mat.armco; mat.parapet = mat.wallConcrete; mat.pitOuter = mat.wallConcrete;
 
   // pit garages: rough block for now, rebuilt in part 2
-  const garageRun = runs(T.N, i => T.pitGarage[i] > 0)[0];
-  if (garageRun) {
-    const mid = Math.floor(garageRun.length / 2);
-    let bay = garageRun.slice(Math.max(0, mid - 63), mid + 64);
-    // the building stops short of the bridge: its roof is level with the deck, so nothing of it may stand under or beside the deck
-    const deck = [];
-    for (let i = 0; i < T.N; i++) if (T.isBridge[i]) deck.push(i);
-    const hitsDeck = i => [T.pitOut[i] + 2, T.pitOut[i] + 16].some(d => deck.some(j => Math.hypot(T.x[i] - T.nx[i] * d - T.x[j], T.z[i] - T.nz[i] * d - T.z[j]) < T.wall[0][j] + 14));
-    const cut = bay.findIndex(hitsDeck);
-    if (cut >= 0) bay = bay.slice(0, Math.max(0, cut));
+  if (T.pitGarage.some(v => v > 0)) {
+    const bay = garageBay(T);
     const front = i => -(T.pitOut[i] + 2), back = i => front(i) - 14, H = 9.5;
     strips('garage').strip(bay, i => P(i, front(i), 0), i => P(i, front(i), 5.5), (i, j) => sOf(i, j, bay) / 14, 0, 1);
     strips('glass').strip(bay, i => P(i, front(i) + 1.2, 6.6), i => P(i, front(i) + 1.2, H), (i, j) => sOf(i, j, bay) / 28, 0, 1);

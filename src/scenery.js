@@ -9,7 +9,9 @@
 import * as THREE from 'three';
 import { wrap } from './track.js';
 import * as tex from './textures.js';
-import { buildGrandstands } from './grandstands.js';
+import { buildGrandstands, trackBlockers } from './grandstands.js';
+import { buildProps } from './props.js';
+import { buildPitDetail } from './pitBuilding.js';
 
 // Longer, rougher grass for everything beyond the containment wall: one texture, one tint, shared by the ground ribbon's
 // outer band and the terrain mesh, so the two meet without a seam. A second look at the same texture at another scale
@@ -371,7 +373,10 @@ export function buildScenery(T, ground) {
     g.add(waterTower(M, { x: w.x, z: w.z, y: ground.height(w.x, w.z) }, ground));
   }
 
-  g.add(buildGrandstands(T, ground, sceneryFootprints(T)));
+  // grandstands, then everything small that has to keep clear of them and of the buildings
+  const blockers = sceneryFootprints(T);
+  const stands = buildGrandstands(T, ground, blockers);
+  g.add(stands, buildProps(T, ground, [...trackBlockers(T), ...blockers], stands.userData.stands), buildPitDetail(T, ground));
 
   return g;
 }

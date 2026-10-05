@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import * as tex from './textures.js';
 import { Kit, trackPoint } from './meshKit.js';
+import { wallClearance } from './grandstands.js';
 
 const GIRDER = 2.4;       // depth of the edge girders below the deck surface
 const SOFFIT = 1.3;       // underside of the slab below the deck surface
@@ -17,6 +18,7 @@ const TYRE_R = 0.36, TYRE_H = 0.26;
 
 // A pier needs 6 m of room beyond the containment wall of every part of the circuit and the pit lane.
 export const pierBlocked = T => (x, z) => {
+  if (wallClearance(T, x, z, true) < 6) return true;
   for (let j = 0; j < T.N; j++) {
     if (T.isBridge[j]) continue;
     const dx = x - T.x[j], dz = z - T.z[j];

@@ -64,9 +64,10 @@ const local = (f, a, b) => [f.x + f.ex[0] * a + f.ez[0] * b, f.z + f.ex[1] * a +
 
 // Signed distance from a point to the nearest containment wall (or the pit lane's outer edge) of any part of the circuit:
 // positive behind the wall, negative between the wall and the track.
-export function wallClearance(T, x, z) {
+export function wallClearance(T, x, z, ignoreBridge = false) {
   let nearest = -1, nq = Infinity, best = Infinity;
   for (let j = 0; j < T.N; j++) {
+    if (ignoreBridge && T.isBridge[j]) continue;
     const dx = x - T.x[j], dz = z - T.z[j], q = dx * dx + dz * dz;
     if (q < nq) { nq = q; nearest = j; }
     if (q > 200 * 200) continue;
