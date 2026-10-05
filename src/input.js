@@ -18,7 +18,7 @@ const TOUCH_STEER_RATE = 8;   // smoothing on touch steering, per second
 export function createInput(settings = {}, hooks = {}) {
   const keys = new Set();
   const actions = [];
-  const state = { steer: 0, throttle: 0, brake: 0, drs: false };
+  const state = { steer: 0, throttle: 0, brake: 0, drs: false, look: [0, 0] };
   let usingPad = false;
   const padSel = { index: -1 }, rumbler = createRumbler();
   let padState = newPadState(), padName = '', padKey = '';
@@ -95,6 +95,7 @@ export function createInput(settings = {}, hooks = {}) {
       padState.speed = speed;
       const r = readPad(pad, cfg, padState, dt);
       if (r.active && !padCapture.active) usingPad = true;
+      state.look = [r.axes[2], r.axes[3]];        // the right stick, for free look
       if (usingPad) {
         steer = r.steer; throttle = r.throttle; brake = r.brake;
         drs = drs || r.drs;
@@ -106,7 +107,7 @@ export function createInput(settings = {}, hooks = {}) {
       const car = hooks.car || (globalThis.lakeside && globalThis.lakeside.car);
       if (usingPad && car && !document.hidden && !(hooks.paused && hooks.paused())) rumbler.update(pad, cfg, car, performance.now());
       else rumbler.stop(pad);
-    } else { padName = ''; padKey = ''; }
+    } else { padName = ''; padKey = ''; state.look = [0, 0]; }
 
     if (touch.active) {
       steer = toward(prev.steer, touch.steer, TOUCH_STEER_RATE, dt);

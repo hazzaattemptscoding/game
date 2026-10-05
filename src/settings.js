@@ -8,7 +8,7 @@ import { normaliseHudSettings } from './hudSettings.js';
 import { cleanQuality, isPhone } from './quality.js';
 
 const KEY = 'lakeside-settings';
-const DEFAULTS = { units: 'mph', assistTc: true, assistAbs: true, assistEsc: true, steering: 'keyboard', steerSens: 1, debug: false, blockout: false, racingLine: false, sound: true, volume: 0.7, livery: null, weather: 'clear', timeOfDay: 'midday', lightning: true, quality: 'auto' };   // hud, hudScale and trackMap are filled in by migrateSettings (src/hudSettings.js)
+const DEFAULTS = { units: 'mph', assistTc: true, assistAbs: true, assistEsc: true, steering: 'keyboard', steerSens: 1, debug: false, blockout: false, racingLine: false, sound: true, volume: 0.7, livery: null, weather: 'clear', timeOfDay: 'midday', lightning: true, quality: 'auto', freeLook: true };   // hud, hudScale and trackMap are filled in by migrateSettings (src/hudSettings.js)
 
 // Older saves had one `assists` switch for all three. If that is all there is, it sets the three; then it goes.
 export function migrateSettings(saved) {

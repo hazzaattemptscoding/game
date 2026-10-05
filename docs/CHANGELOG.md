@@ -1,5 +1,9 @@
 # Changelog
 
+## Free look
+
+Settings > Display > Free look (on by default). Hold a mouse button and drag on the view, or push the right stick, to look round the car: the chase camera orbits it, the bonnet camera turns the driver's head. Let go and it settles back behind the car. With cursor steering only the right mouse button looks round (the mouse is steering). No free look by touch, where the screen is the steering and the pedals.
+
 ## Screen control panel for the gantry LED screen
 
 Pause menu > Screen control (shown to whoever may use it).

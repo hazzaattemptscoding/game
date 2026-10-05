@@ -133,6 +133,25 @@ if (params.has('viewat')) {
   fixedView = [track.x[i] + track.nx[i] * d, track.h[i] + hgt, track.z[i] + track.nz[i] * d, track.x[j], track.h[j], track.z[j]];
 }
 const input = createInput(settings, { boardAllowed: () => !dir.menuOpen && !reportTool.opened });   // Tab is the times board, except while a panel needs it for moving between buttons
+
+// free look with the mouse: hold a button and drag on the view (only the right button with cursor steering, where the mouse steers).
+// Touch screens steer with the left half and pedal with the right, so there is no free look by touch.
+{
+  let dragId = null, lastX = 0, lastY = 0;
+  const lookButton = e => (settings.steering === 'cursor' ? e.button === 2 : e.button === 0 || e.button === 2);
+  canvas.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'touch' || settings.freeLook === false || dir.menuOpen || reportTool.opened || !lookButton(e)) return;
+    dragId = e.pointerId; lastX = e.clientX; lastY = e.clientY; rig.dragging = true;
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* not capturable */ }
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (e.pointerId !== dragId) return;
+    rig.drag(e.clientX - lastX, e.clientY - lastY); lastX = e.clientX; lastY = e.clientY;
+  });
+  const end = e => { if (e.pointerId === dragId) { dragId = null; rig.dragging = false; } };
+  canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+  canvas.addEventListener('contextmenu', e => { if (settings.freeLook !== false) e.preventDefault(); });   // right-drag must not open the browser menu
+}
 const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthesised sound, starts at the first key press or touch
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
@@ -251,7 +270,11 @@ function frame(now) {
     rig.camera.up.set(Math.cos(hd), 0, Math.sin(hd));
     rig.camera.lookAt(p.x, p.y, p.z);
   } else if (fixedView) { rig.camera.position.set(fixedView[0], fixedView[1], fixedView[2]); rig.camera.lookAt(fixedView[3], fixedView[4], fixedView[5]); }
-  else { rig.camera.up.set(0, 1, 0); rig.update(view, car, dt); }
+  else {
+    // free look (Settings > Display): the right stick here, mouse drags in the listeners below
+    if (settings.freeLook !== false && !dir.menuOpen) rig.setStick(playerInput.look[0], playerInput.look[1]); else rig.setStick(0, 0);
+    rig.camera.up.set(0, 1, 0); rig.update(view, car, dt);
+  }
 
   // keep the shadow map centred on the car, on whole shadow map pixels so the edges do not shimmer
   snapShadowCentre(view.root.position, SUN_DIR, sun.shadow.mapSize.x, 80, shadowAt);

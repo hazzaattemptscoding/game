@@ -187,6 +187,8 @@ function settingsScreen() {
         },
         Display(p) {
           p.append(segRow('View', [[false, 'Driving'], [true, 'Top-down debug']], () => api.getTopDown(), v => api.setTopDown(v)));
+          p.append(segRow('Free look', [[true, 'On'], [false, 'Off']], () => settings.freeLook !== false, v => { settings.freeLook = v; persist(); },
+            { note: 'Drag with the mouse (right button with cursor steering) or push the right stick to look round the car. Let go and the camera settles back.' }));
           p.append(segRow('Detail', [[false, 'Full'], [true, 'Blockout']], () => !!settings.blockout, v => { settings.blockout = v; persist(); api.applyLook(); }));
           p.append(segRow('Graphics quality', QUALITY_SETTINGS.map(k => [k, QUALITY_LABELS[k]]), () => settings.quality, v => { settings.quality = v; persist(); api.qualityChanged(); },
             { note: 'Auto keeps the frame rate up by lowering the render scale when the screen is too demanding. High is the full look; Medium and Low use a smaller shadow map and a lower pixel density.' }));
