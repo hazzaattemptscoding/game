@@ -1,5 +1,16 @@
 # Changelog
 
+## Pit exit: alongside the track, then a long hatched merge
+
+From the owner's sketch (`docs/pit-exit-sketch.webp`). The exit road no longer cuts onto the track at the apex of Scramble.
+
+- After the pit wall the exit road narrows from 12 m to 7 m and comes down beside the track at the old 5 degree angle.
+- It then runs alongside for 60 m (through the apex of Scramble), 2.6 m from the track edge: the track's flat kerb, a raised yellow and black kerb (sausage), and white and orange bollards every 5 m between the two roads.
+- Then a 70 m chevron-hatched merge, the gap easing to nothing, with bollards down its middle while it is wider than a car. The road is fully merged at about s=512, on the outside of Hurricane Sweep where the racing line is on the far side (layout `pit.exitRun`, 95 m past the old exit).
+- Solid white lines down both edges of the pit entry and exit roads.
+- The bollards are visual only, like the ones at the chicanes. The Hurricane Sweep outside run-off and gravel now start after the merge and ease back to full width by s=570.
+- Audit: the 10 m minimum pit road width now applies to the pit lane itself (speed limiter stretch); the exit road must be at least 6.5 m. Lap times change by under 0.02 s; racing line regenerated.
+
 ## Floodlight and car headlamp pools: visibility in map view and daylight
 
 Floodlight light pools (34 masts, 9x9 grid each) and car headlamp light pools are now hidden in top-down/map view and during daylight hours, keeping the map clean and making the pools night-only visual effects.

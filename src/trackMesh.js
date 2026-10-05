@@ -137,6 +137,12 @@ export function buildTrackScene(T, ground) {
     }
   }
 
+  // solid white lines down both edges of the pit entry and exit roads (the merge gore is hatched in the ground ribbon)
+  for (const run of runs(T.N, i => T.pitOut[i] > 0 && !T.pitLimiter[i] && !T.pitMouth[i])) {
+    strips('line').strip(run, i => P(i, -(T.pitIn[i] + 0.2), DECAL), i => P(i, -(T.pitIn[i] + 0.4), DECAL), () => 0, 0, 1);
+    strips('line').strip(run, i => P(i, -(T.pitOut[i] - 0.4), DECAL), i => P(i, -(T.pitOut[i] - 0.2), DECAL), () => 0, 0, 1);
+  }
+
   // start line, grid slots, sector and DRS lines, pit limiter lines
   // (the chequered start line and the grid boxes are painted by gantry.js)
   for (const s of T.sectors.slice(1)) crossLine(strips('line'), T, s, 0.3, -HW[Math.round(s / T.ds) % T.N], HW[Math.round(s / T.ds) % T.N]);

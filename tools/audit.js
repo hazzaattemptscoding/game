@@ -202,7 +202,7 @@ let narrowPit = Infinity, pitWidthAt = 0, pitWallClear = Infinity;
 for (let i = 0; i < T.N; i++) if (T.pitOut[i] > 0) {
   const width = T.pitOut[i] - T.pitIn[i];
   if (width < narrowPit) { narrowPit = width; pitWidthAt = i; }
-  if (width < 10) errors.push(`pit road ${width.toFixed(2)} m wide at s=${T.s[i].toFixed(1)} (${T.x[i].toFixed(1)}, ${T.z[i].toFixed(1)})`);
+  if (width < (T.pitLimiter[i] ? 10 : 6.5)) errors.push(`pit road ${width.toFixed(2)} m wide at s=${T.s[i].toFixed(1)} (${T.x[i].toFixed(1)}, ${T.z[i].toFixed(1)})`);
   if (T.pitWall[i]) {
     const clear = T.pitIn[i] - 0.6 - T.hw[i];
     pitWallClear = Math.min(pitWallClear, clear);

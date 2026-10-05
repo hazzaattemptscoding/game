@@ -72,6 +72,13 @@ const PIT_WALL_CLEAR = 6;   // pit wall face at least this far from the track ed
 const PIT_ISLAND = 25;      // painted chevron island at the entry, metres long
 const PIT_APRON = 2;        // apron between the pit lane and the garage doors, metres
 const PIT_MOUTH_CLEAR = 15; // shared asphalt before either pit-lane island
+// Pit exit road (the owner's sketch, docs/pit-exit-sketch.webp): after the pit wall the exit road narrows and
+// comes down beside the track, runs alongside it behind a raised kerb with bollards, then joins over a long
+// hatched merge where the racing line is on the far side of the track.
+const EXIT_SEP = 2.6;       // gap from the track edge to the exit road while alongside: kerb, raised kerb, bollards
+const EXIT_ALONGSIDE = 60;  // metres the exit road runs alongside at EXIT_SEP
+const EXIT_MERGE = 70;      // metres of hatched merge, the gap easing from EXIT_SEP to nothing
+const EXIT_WIDTH = 7;       // exit road width once clear of the garages, metres
 
 export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   const nPts = layout.points.length;
@@ -481,6 +488,8 @@ function buildSides(T, corners) {
     T.sausage[sd][i] = SAUSAGE_WIDTH;
     if (!T.kerb[sd][i]) T.kerb[sd][i] = KERB_WIDTH;
   });
+  // the exit road's raised kerb: a flat kerb at the track edge, then the sausage the bollards stand behind
+  for (let i = 0; i < N; i++) if (T.pitSep[i]) { T.kerb[0][i] = KERB_WIDTH; T.sausage[0][i] = SAUSAGE_WIDTH; }
   for (const [a, b, code, width] of layout.gravel || []) forZone(a, b, code, 30, (sd, i, w) => {
     gravelW[sd][i] = Math.max(gravelW[sd][i], width * w);
   });
@@ -693,22 +702,29 @@ function buildPit(T) {
   T.pitGarage = new Uint8Array(N);    // full-width stretch where the garages can go
   T.pitWidth = P.width;
   T.pitSpeed = P.speedLimit / 3.6;
-  const a = T.sAtPointRaw(P.entry), b = T.sAtPointRaw(P.exit);
+  const a = T.sAtPointRaw(P.entry), b = (T.sAtPointRaw(P.exit) + (P.exitRun || 0)) % T.length;
   const len = ((b - a) % T.length + T.length) % T.length;
   T.pitRange = [a, b];
+  T.pitSep = new Uint8Array(N);       // exit road alongside the track: raised kerb and bollards between them
   const tIn = Math.tan(PIT_ENTRY_ANGLE * Math.PI / 180), tOut = Math.tan(PIT_EXIT_ANGLE * Math.PI / 180);
   const smin = (p, q, k = 6) => -k * Math.log(Math.exp(-p / k) + Math.exp(-q / k));   // smooth minimum
+  const ease = t => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+  // gap between the track edge and the exit road, by distance v before the end of the merge
+  const exitGap = v => v < EXIT_MERGE ? EXIT_SEP * ease(v / EXIT_MERGE) : EXIT_SEP + tOut * Math.max(0, v - EXIT_MERGE - EXIT_ALONGSIDE);
   for (let u = 0; u <= len; u += T.ds) {
-    const i = wrap(Math.round((a + u) / T.ds), N);
+    const i = wrap(Math.round((a + u) / T.ds), N), v = len - u;
     const hw = T.hw[i], full = hw + PIT_WALL_CLEAR + PIT_WALL + 0.6;   // full: pit road inner edge once fully separated (a little spare for the eased curve)
-    const inner = Math.max(hw, smin(smin(hw + tIn * u, full, 1.5), hw + tOut * (len - u), 1.5));
+    const inner = Math.max(hw, smin(smin(hw + tIn * u, full, 1.5), hw + exitGap(v), 1.5));
+    // the exit road narrows to EXIT_WIDTH as it comes down from beside the garages
+    const narrow = u > len / 2 ? 1 - ease((inner - hw - EXIT_SEP) / (full - hw - EXIT_SEP - 0.3)) : 0;
     T.pitIn[i] = inner;
-    T.pitOut[i] = inner + P.width;
-    if (u < PIT_MOUTH_CLEAR || len - u < PIT_MOUTH_CLEAR) T.pitMouth[i] = 1;
-    if (u >= PIT_MOUTH_CLEAR && u <= len - 20 && inner - PIT_WALL >= hw + PIT_WALL_CLEAR) T.pitWall[i] = 1;
-    // the painted gore between the two roads, after the mouth at both the entry and the exit
+    T.pitOut[i] = inner + P.width - (P.width - EXIT_WIDTH) * narrow;
+    if (u < PIT_MOUTH_CLEAR || v < PIT_MOUTH_CLEAR) T.pitMouth[i] = 1;
+    if (u >= PIT_MOUTH_CLEAR && v > EXIT_MERGE && inner - PIT_WALL >= hw + PIT_WALL_CLEAR) T.pitWall[i] = 1;
+    // the painted gore between the two roads: after the mouth at the entry, the whole hatched merge at the exit
     if (u >= PIT_MOUTH_CLEAR && u < PIT_MOUTH_CLEAR + PIT_ISLAND && inner > hw + 0.3) T.pitIsland[i] = 1;
-    if (len - u >= PIT_MOUTH_CLEAR && len - u < PIT_MOUTH_CLEAR + PIT_ISLAND && inner > hw + 0.3) T.pitIsland[i] = 1;
+    if (v >= PIT_MOUTH_CLEAR && v < EXIT_MERGE && inner > hw + 0.3) T.pitIsland[i] = 1;
+    if (v >= EXIT_MERGE && !T.pitWall[i] && inner - hw <= EXIT_SEP + 1.5) T.pitSep[i] = 1;
     if (T.pitWall[i]) T.pitLimiter[i] = 1;
     if (T.pitLimiter[i]) T.pitGarage[i] = 1;
   }
@@ -934,6 +950,17 @@ function buildFurniture(T, corners) {
     const x = T.x[i] + T.nx[i] * d, z = T.z[i] + T.nz[i] * d;
     return { type, value, i, s: T.s[i], d, x, z, y: T.groundAt(x, z, i), ...extra };
   };
+  // bollards between the pit exit road and the track: behind the raised kerb while alongside, then down the
+  // middle of the hatched merge while it is still wider than a car's wheel track, every 5 m
+  if (T.pitRange) {
+    const [a, b] = T.pitRange, len = ((b - a) % T.length + T.length) % T.length;
+    for (let u = len / 2, last = -1e9; u <= len; u += T.ds) {
+      const i = wrap(Math.round((a + u) / T.ds), N), gap = T.pitIn[i] - HW[i];
+      if (T.pitWall[i] || u - last < 5) continue;
+      if (T.pitSep[i]) { const back = HW[i] + T.kerb[0][i] + T.sausage[0][i]; T.furniture.push(place('bollard', 0, i, -(back + (T.pitIn[i] - back) / 2), { pit: true })); last = u; }
+      else if (T.pitIsland[i] && gap >= 1.2) { T.furniture.push(place('bollard', 0, i, -(HW[i] + gap / 2), { pit: true })); last = u; }
+    }
+  }
   // bollards on the inside kerb at the apex of the esses and chicanes, every 6 m for 24 m
   for (const c of corners) {
     if (!BOLLARD_CORNERS.includes(c.name)) continue;
