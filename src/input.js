@@ -41,6 +41,8 @@ export function createInput(settings = {}, hooks = {}) {
       if (e.code === 'F3' || e.code === 'KeyI') actions.push('debug');
       if (e.code === 'F2') actions.push('report');
       if (e.code === 'KeyL') actions.push('line');
+      if (e.code === 'KeyM') actions.push('map');      // track map on or off
+      if (e.code === 'KeyH') actions.push('hud');      // HUD preset: full, minimal, off
     }
     if (e.code === 'Tab' && (!hooks.boardAllowed || hooks.boardAllowed())) {
       e.preventDefault();       // the browser must not move focus: Tab is the times board

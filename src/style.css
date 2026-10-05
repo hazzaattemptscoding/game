@@ -288,3 +288,46 @@ body.report-mode #touch { display: none !important; }
 #menu .mp button { flex: 1; font: inherit; font-size: 16px; font-weight: 700; padding: 10px 14px; min-height: 44px; border: 0; cursor: pointer; background: #3a3f46; color: var(--paper); }
 #menu .mp #mp-host { background: var(--yel); color: var(--ink); }
 #menu .mp #mp-join { flex: 0 0 120px; }
+
+/* HUD options (Settings, Interface): hx-no-<element> on the body hides one part, --hs on #hud is the HUD scale */
+.hud-times { transform: scale(var(--hs, 1)); transform-origin: 0 0; }
+.hud-dash { transform: scale(var(--hs, 1)); transform-origin: 100% 100%; }
+.hud-flash, .hud-warn { transform: translateX(-50%) scale(var(--hs, 1)); transform-origin: 50% 0; }
+body.touch .hud-dash { transform: translateX(-50%) scale(var(--hs, 1)); transform-origin: 50% 0; }
+body.hx-no-speed .hud-rev, body.hx-no-speed .hud-main, body.hx-no-speed #h-pit, body.hx-no-speed #h-drs { display: none; }
+body.hx-no-lapTimer .hud-lap, body.hx-no-lapTimer .hud-rows { display: none; }
+body.hx-no-sectors .hud-sectors { display: none; }
+body.hx-no-limits .hud-limits, body.hx-no-limits .hud-warn { display: none !important; }
+body.hx-no-assists #h-tc, body.hx-no-assists #h-abs, body.hx-no-assists #h-esc { display: none; }
+body.hx-no-lights .hud-lights { display: none; }
+body.hx-no-flags .hud-flash:not(.force), body.hx-no-flags #sess-banner, body.hx-no-flags #sess-chip { display: none; }
+.hud-flash.force { background: rgba(20,24,29,.85); }
+body.hx-no-pedals .hud-pedals, body.hx-no-inputOverlay .hud-keys, body.hx-no-fps .hud-fps { display: none; }
+body.hx-no-pedals.hx-no-inputOverlay .hud-inputs { display: none; }
+.hud-fps { margin-top: 6px; font-size: 13px; opacity: .8; }
+.hud-inputs { position: absolute; left: 50%; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) scale(var(--hs, 1)); transform-origin: 50% 100%; display: flex; align-items: flex-end; gap: 14px; }
+body.touch .hud-inputs { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+.hud-pedals { display: flex; gap: 5px; }
+.hud-pedals span { display: block; width: 12px; height: 46px; background: rgba(20,24,29,.6); position: relative; overflow: hidden; }
+.hud-pedals i { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; transform: scaleY(0); transform-origin: bottom; background: var(--green); }
+.hud-pedals span:first-child i { background: var(--red); }
+.hud-keys { display: grid; grid-template-columns: repeat(3, 24px); grid-template-rows: repeat(2, 24px); gap: 3px; font-size: 13px; }
+.hud-keys b { display: grid; place-items: center; background: rgba(20,24,29,.6); color: #8a9097; }
+.hud-keys b.on { background: var(--paper); color: var(--ink); }
+.hud-keys #h-ku { grid-column: 2; grid-row: 1; }
+.hud-keys #h-kl { grid-column: 1; grid-row: 2; }
+.hud-keys #h-kd { grid-column: 2; grid-row: 2; }
+.hud-keys #h-kr { grid-column: 3; grid-row: 2; }
+
+/* the track map (src/miniMap.js) */
+#trackmap { position: absolute; pointer-events: none; overflow: hidden; border-radius: 6px; box-shadow: 0 0 0 1px rgba(242,239,230,.18); }
+#trackmap[hidden] { display: none; }
+#trackmap canvas { display: block; width: 100%; height: 100%; }
+#trackmap.pos-tr { right: 16px; top: calc(58px + env(safe-area-inset-top, 0px)); }
+#trackmap.pos-tl { left: 16px; top: calc(210px + env(safe-area-inset-top, 0px)); }
+#trackmap.pos-bl { left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+#trackmap.pos-br { right: 16px; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
+body.touch #trackmap.pos-br { bottom: calc(250px + env(safe-area-inset-bottom, 0px)); }
+body.touch #trackmap.pos-bl { bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+body.touch #trackmap.pos-tr { top: calc(112px + env(safe-area-inset-top, 0px)); }
+body.touch #trackmap.pos-tl { top: calc(150px + env(safe-area-inset-top, 0px)); }

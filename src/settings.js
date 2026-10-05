@@ -1,8 +1,9 @@
 // Player settings, saved in the browser: units, the three assists, steering
-// device, the handling readout and sound.
+// device, the handling readout, sound and which HUD parts show.
 
 import { normaliseControllerSettings } from './gamepad.js';
 import { normaliseLivery } from './livery.js';
+import { normaliseHudSettings } from './hudSettings.js';
 
 const KEY = 'lakeside-settings';
 const DEFAULTS = { units: 'mph', assistTc: true, assistAbs: true, assistEsc: true, steering: 'keyboard', steerSens: 1, debug: false, blockout: false, racingLine: false, sound: true, volume: 0.7, livery: null };
@@ -18,7 +19,7 @@ export function migrateSettings(saved) {
   if (s.livery && typeof s.livery === 'object') s.livery = normaliseLivery(s.livery); else delete s.livery;   // the player's own car paint (src/livery.js); null = the default for their id
   if (s.steering !== 'keyboard' && s.steering !== 'cursor') delete s.steering;
   if (typeof s.steerSens !== 'number' || !(s.steerSens >= 0.5 && s.steerSens <= 2)) delete s.steerSens;
-  return s;
+  return normaliseHudSettings(s);   // the HUD switches, scale and track map options: missing or invalid parts take the defaults
 }
 
 export function loadSettings() {

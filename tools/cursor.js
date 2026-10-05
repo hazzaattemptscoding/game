@@ -50,9 +50,9 @@ console.log('SETTINGS');
   check(mixed.assistTc === false && mixed.assistAbs === true && mixed.assistEsc === false, 'a new setting wins over the old switch');
   const fresh = migrateSettings({ assistTc: false });
   check(fresh.assistTc === false && !('assistAbs' in fresh), 'new settings pass through, the rest stays at its default');
-  // damaged data gives no saved choices; the controller block is always filled in with its defaults
-  const onlyController = o => Object.keys(o).every(k => k === 'controller');
-  check(onlyController(migrateSettings(null)) && onlyController(migrateSettings('x')), 'damaged data gives nothing but the controller defaults');
+  // damaged data gives no saved choices; the controller block and the HUD keys (src/hudSettings.js) are always filled in with their defaults
+  const onlyController = o => Object.keys(o).every(k => ['controller', 'hud', 'hudScale', 'trackMap'].includes(k));
+  check(onlyController(migrateSettings(null)) && onlyController(migrateSettings('x')), 'damaged data gives nothing but the controller and HUD defaults');
   const bad = migrateSettings({ steering: 'mouse', steerSens: 9 });
   check(!('steering' in bad) && !('steerSens' in bad), 'unknown steering and silly sensitivity are dropped');
   const ok = migrateSettings({ steering: 'cursor', steerSens: 1.5 });

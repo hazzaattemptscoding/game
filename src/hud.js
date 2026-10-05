@@ -3,6 +3,7 @@
 // with position, minimap and weather comes in phase 4.
 
 import { SURF, SURF_NAMES } from './track.js';
+import { hudClasses, HUD_KEYS } from './hudSettings.js';
 
 const SURF_NAME = SURF_NAMES;
 
@@ -27,6 +28,7 @@ export class Hud {
         <div class="hud-sectors" id="h-sec"></div>
         <div class="hud-limits" id="h-limits" hidden></div>
         <div class="hud-stand" id="h-stand" hidden></div>
+        <div class="hud-fps" id="h-fps">FPS 0</div>
       </div>
       <div class="hud-flash" id="h-flash"></div>
       <div class="hud-warn" id="h-warn"></div>
@@ -40,10 +42,17 @@ export class Hud {
           <span id="h-pit">PIT</span><span id="h-drs">DRS</span><span id="h-tc">TC</span><span id="h-abs">ABS</span><span id="h-esc">ESC</span>
         </div>
       </div>
+      <div class="hud-inputs">
+        <div class="hud-pedals"><span><i id="h-brk"></i></span><span><i id="h-thr"></i></span></div>
+        <div class="hud-keys"><b id="h-ku">W</b><b id="h-kl">A</b><b id="h-kd">S</b><b id="h-kr">D</b></div>
+      </div>
       <pre class="hud-debug" id="h-debug"></pre>
       <div class="hud-help" id="h-help">Arrows or WASD to drive · Space for DRS · R reset · C camera · L racing line · Esc menu</div>`;
     const $ = id => root.querySelector('#' + id);
-    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help') };
+    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr') };
+    this.root = root;
+    this._layout = '';
+    this._fpsAt = performance.now(); this._frames = 0;
     this.flashUntil = 0;
     this.warnUntil = 0;
     this.warnLap = -1;   // the lap the counter was last drawn for
@@ -67,8 +76,32 @@ export class Hud {
     this.warnUntil = now + 2.5;
   }
 
-  update(car, timer, track, simTime) {
+  // Which parts show: classes on the body (src/style.css) and the HUD scale. Cheap, so it runs every frame and the settings
+  // screen needs no hook into the HUD.
+  applyLayout() {
+    const s = this.settings, key = hudClasses(s).join(' ') + '|' + s.hudScale;
+    if (key === this._layout) return;
+    this._layout = key;
+    const body = document.body;
+    for (const k of [...HUD_KEYS, 'lights']) body.classList.remove('hx-no-' + k);
+    for (const c of hudClasses(s)) body.classList.add(c);
+    this.root.style.setProperty('--hs', (s.hudScale / 100).toFixed(2));
+  }
+
+  update(car, timer, track, simTime, input) {
     const e = this.el, s = this.settings;
+    this.applyLayout();
+    if (s.hud.fps) {
+      this._frames++;
+      const t = performance.now();
+      if (t - this._fpsAt >= 500) { e.fps.textContent = 'FPS ' + Math.round(this._frames * 1000 / (t - this._fpsAt)); this._frames = 0; this._fpsAt = t; }
+    }
+    if (input && (s.hud.pedals || s.hud.inputOverlay)) {
+      e.thr.style.transform = `scaleY(${Math.max(0, Math.min(1, input.throttle)).toFixed(2)})`;
+      e.brk.style.transform = `scaleY(${Math.max(0, Math.min(1, input.brake)).toFixed(2)})`;
+      e.ku.className = input.throttle > 0.05 ? 'on' : ''; e.kd.className = input.brake > 0.05 ? 'on' : '';
+      e.kl.className = input.steer < -0.05 ? 'on' : ''; e.kr.className = input.steer > 0.05 ? 'on' : '';
+    }
     const mph = s.units === 'mph';
     e.speed.textContent = Math.round(Math.abs(car.fwdSpeed) * (mph ? 2.23694 : 3.6));
     e.unit.textContent = mph ? 'mph' : 'km/h';
@@ -94,7 +127,7 @@ export class Hud {
       const t = timer.current[i], best = timer.bestSectors[i];
       if (t == null) { cells.push(`<i>S${i + 1}</i>`); continue; }
       const cls = best != null && t <= best + 1e-6 ? 'pb' : 'slow';
-      const d = timer.lastSectors && timer.lastSectors[i] != null ? ' ' + fmtDelta(t - timer.lastSectors[i]) : '';
+      const d = s.hud.delta && timer.lastSectors && timer.lastSectors[i] != null ? ' ' + fmtDelta(t - timer.lastSectors[i]) : '';
       cells.push(`<i class="${cls}">S${i + 1} ${t.toFixed(2)}${d}</i>`);
     }
     const html = cells.join('');

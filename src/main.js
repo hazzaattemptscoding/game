@@ -16,6 +16,8 @@ import { CarView } from './car.js';
 import { CameraRig } from './cameras.js';
 import { createInput } from './input.js';
 import { Hud } from './hud.js';
+import { createMiniMap } from './miniMap.js';
+import { hudOn, cyclePreset, PRESET_NAMES } from './hudSettings.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { ReportTool } from './report.js';
 import { createLobby } from './lobby.js';
@@ -90,6 +92,7 @@ const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthe
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
 const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search, getLivery: myLivery });   // multiplayer: idle until a room is opened
+const miniMap = createMiniMap(document.getElementById('hud'), { track, car, lobby, settings, ownColour: () => myLivery().body });
 const board = createBoard(document.getElementById('board'), { timer, lobby });
 const steerBar = document.getElementById('steer-bar'), steerMark = steerBar.firstElementChild;
 const IDLE = { steer: 0, throttle: 0, brake: 0.3, drs: false };
@@ -145,6 +148,8 @@ function frame(now) {
     if (a === 'board-off') board.hide();
     if (a === 'board') board.toggle();      // the Times button on a touch screen
     if (a === 'line') { settings.racingLine = !settings.racingLine; saveSettings(settings); hud.flash(settings.racingLine ? 'Racing line on' : 'Racing line off', simTime); }
+    if (a === 'map') { settings.trackMap.on = !settings.trackMap.on; saveSettings(settings); hud.flash(settings.trackMap.on ? 'Track map on' : 'Track map off', simTime, 'force'); }
+    if (a === 'hud') { const name = cyclePreset(settings); saveSettings(settings); hud.flash('HUD ' + PRESET_NAMES[name].toLowerCase(), simTime, 'force'); }
     if (a === 'debug') { settings.debug = !settings.debug; saveSettings(settings); }
     if (a === 'report' && !reportTool.opened && dir.phase !== 'menu') openReport();
   }
@@ -195,13 +200,14 @@ function frame(now) {
 
   audio.update(car, dt, paused);
   lobby.update(now);
-  hud.update(car, timer, track, simTime);
+  hud.update(car, timer, track, simTime, playerInput);
+  miniMap.update();
   dir.after(now, simTime);
   racingLine.setVisible(settings.racingLine && dir.api.racingLineAllowed());   // a race can forbid it
   racingLine.update(car.loc.s);
   board.update(simTime, now);
   const cursorOn = settings.steering === 'cursor';
-  steerBar.hidden = !cursorOn;
+  steerBar.hidden = !(cursorOn && hudOn(settings, 'steerBar'));
   if (cursorOn) steerMark.style.left = `${(50 + playerInput.steer * 44).toFixed(1)}%`;
   renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);

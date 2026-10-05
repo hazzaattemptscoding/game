@@ -2,6 +2,7 @@
 // Registered on the menu by registerScreens(menu). The game's side of each button is `ctx.api` (director.js).
 
 import { LAP_CHOICES } from './session.js';
+import { HUD_ELEMENTS, MAP_SIZES, MAP_POSITIONS, PRESET_ORDER, PRESET_NAMES, SCALE_MIN, SCALE_MAX, MAP_OPACITY_MIN, detectPreset, applyPreset } from './hudSettings.js';
 
 export const h = (tag, cls, ...kids) => {
   const e = document.createElement(tag);
@@ -153,7 +154,7 @@ function setupScreen() {
 // --- settings ---------------------------------------------------------------------------------------------------------
 
 function settingsScreen() {
-  const TABS = ['Driving', 'Display', 'Sound', 'Controls', 'Online'];
+  const TABS = ['Driving', 'Display', 'Interface', 'Sound', 'Controls', 'Online'];
   return {
     title: 'Settings',
     mount(c, ctx) {
@@ -189,6 +190,34 @@ function settingsScreen() {
           p.append(segRow('Handling readout', [[false, 'Hide'], [true, 'Show']], () => !!settings.debug, v => { settings.debug = v; persist(); }));
           p.append(segRow('Autopilot demo lap', [[false, 'Off'], [true, 'On']], () => api.getAutopilot(), v => api.setAutopilot(v)));
         },
+        Interface(p) {
+          // every switch writes into settings.hud / settings.trackMap; the HUD reads them each frame. `rows` are re-synced after any
+          // change because a preset changes many switches at once.
+          const rows = [], sync = () => rows.forEach(r => r.sync()), add = (parent, row) => { rows.push(row); parent.append(row); return row; };
+          const onOff = (label, get, set, note) => segRow(label, [[true, 'On'], [false, 'Off']], get, v => { set(v); persist(); sync(); }, { note });
+          add(p, segRow('HUD preset', PRESET_ORDER.map(k => [k, PRESET_NAMES[k]]), () => detectPreset(settings), v => { applyPreset(settings, v); persist(); sync(); }, { note: 'The H key steps through Full, Minimal and Off. Switching a single part below makes it Custom.' }));
+          add(p, sliderRow('HUD scale', { min: SCALE_MIN, max: SCALE_MAX, step: 5, get: () => settings.hudScale, set: v => { settings.hudScale = v; persist(); }, fmt: v => `${Math.round(v)}%` }));
+          add(p, segRow('Speed', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }));
+          const groups = [['Readouts', ['speed', 'lapTimer', 'sectors', 'delta']], ['Warnings and messages', ['limits', 'assists', 'flags']], ['Inputs', ['steerBar', 'pedals', 'inputOverlay']], ['Other', ['fps']]];
+          const info = Object.fromEntries(HUD_ELEMENTS.map(e => [e[0], e]));
+          for (const [title, keys] of groups) {
+            const grp = h('div', 'm-group', h('div', 'm-gtitle', title));
+            for (const k of keys) add(grp, onOff(info[k][1], () => settings.hud[k], v => { settings.hud[k] = v; }, info[k][2]));
+            p.append(grp);
+          }
+          const tm = settings.trackMap, mg = h('div', 'm-group', h('div', 'm-gtitle', 'Track map'));
+          const mrow = row => add(mg, row);
+          const set = (k, v) => { tm[k] = v; persist(); sync(); };
+          add(mg, onOff('Show the track map', () => tm.on, v => { tm.on = v; }, 'The M key switches it too.'));
+          mrow(segRow('Size', Object.keys(MAP_SIZES).map(k => [k, k[0].toUpperCase() + k.slice(1)]), () => tm.size, v => set('size', v)));
+          mrow(segRow('Position', Object.entries(MAP_POSITIONS), () => tm.position, v => set('position', v)));
+          mrow(sliderRow('Opacity', { min: Math.round(MAP_OPACITY_MIN * 100), max: 100, step: 5, get: () => Math.round(tm.opacity * 100), set: v => { tm.opacity = v / 100; persist(); }, fmt: v => `${Math.round(v)}%` }));
+          mrow(segRow('Orientation', [[false, 'North up'], [true, 'Rotate with car']], () => tm.rotate, v => set('rotate', v)));
+          mrow(segRow('Zoom', [['circuit', 'Whole circuit'], ['local', 'Local area']], () => tm.zoom, v => set('zoom', v)));
+          mrow(segRow('Corner numbers', [['off', 'Off'], ['numbers', 'On']], () => tm.labels, v => set('labels', v)));
+          p.append(mg);
+        },
+        Weather(p) { p.append(...weatherRows(ctx, segRow, h)); },
         Sound(p) {
           p.append(segRow('Sound', [[true, 'On'], [false, 'Off']], () => settings.sound !== false, v => { settings.sound = v; persist(); }));
           p.append(sliderRow('Volume', { min: 0, max: 100, step: 1, get: () => Math.round(settings.volume * 100), set: v => { settings.volume = Math.max(0, Math.min(1, v / 100)); persist(); }, fmt: v => `${Math.round(v)}%` }));
