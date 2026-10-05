@@ -5,12 +5,10 @@
 // the road is 6.25 m or more above it, so a car, a mirror or a roll hoop can never touch it.
 // Frame, in local axes: x along the direction of travel, y up from the road at the centre line, z to the right.
 //
-// Seen by the cars coming down the straight (the -x face): the start lights, a 30:1 LED ribbon with the PowerMedia loop
-// over the track and sponsor panels either side, and a LAKESIDE crown on top. The back (+x) face carries a second ribbon
-// and a START / FINISH crown, for the cars leaving and the stands.
+// Seen by the cars coming down the straight (the -x face): the start lights under a 22.5 m by 5 m LED screen hung on the truss, sponsor panels either side, and a LAKESIDE crown on top. The back (+x) face carries the
+// other face of the same screen and a START / FINISH crown, for the cars leaving and the stands.
 
 import * as THREE from 'three';
-import { bannerVideo } from './bannerVideo.js';
 import * as tex from './textures.js';
 import { Kit, sponsorRow, trackPoint, beam } from './meshKit.js';
 
@@ -22,7 +20,7 @@ const TOWER_BEHIND = 0.8;           // clear space between a wall and the tower,
 
 const DECAL = 0.006;
 const DEPTH = 2.6, TRUSS_H = 3.0;   // box truss: front to back, bottom chord to top chord
-const RIBBON_W = 30, RIBBON_H = 1.0; // the LED ribbon, the loop's own 30:1
+const SCREEN_W = 22.5, SCREEN_H = 5, SCREEN_Y0 = 7.65;   // the LED screen, 9:2; its foot clears the start light pods (top at 7.58 m)
 
 // Where the two towers stand (d of their centres, left negative): behind the pit lane's outer wall on the left and
 // behind the containment wall on the right.
@@ -149,17 +147,13 @@ export function buildGantry(T, sponsorTex) {
   for (let z = zA + 0.5; z <= zB - 0.4; z += 2.2) kit.column('steel', 0.05, 0.05, y1 + 0.2, y1 + 1.25, hx - 0.15, z);
   kit.box('steel', 0.06, 0.06, zB - zA - 1, hx - 0.15, y1 + 1.25, (zA + zB) / 2);
 
-  // --- fascia: dark cladding on both faces, the LED ribbon over the track, sponsor panels over the pit lane and run-off --
-  const fy0 = y0 + 0.35, fy1 = y1 - 0.35, ry0 = (fy0 + fy1) / 2 - RIBBON_H / 2, ry1 = ry0 + RIBBON_H;
-  const rz0 = -RIBBON_W / 2, rz1 = RIBBON_W / 2;
+  // --- fascia: dark cladding on both faces, sponsor panels either side of the LED screen -------------------------------
+  const fy0 = y0 + 0.35, fy1 = y1 - 0.35;
+  const rz0 = -SCREEN_W / 2, rz1 = SCREEN_W / 2;
   for (const dir of [-1, 1]) {
     const fx = dir * (hx + 0.17);
     kit.box('housing', 0.12, fy1 - fy0, zB - zA - 0.6, dir * (hx + 0.08), (fy0 + fy1) / 2, (zA + zB) / 2);
-    faceX(screens, 'ribbon', fx + dir * 0.02, ry0, ry1, rz0, rz1, dir);
-    // a lit frame round the ribbon
-    for (const [ya, yb] of [[ry1, ry1 + 0.08], [ry0 - 0.08, ry0]]) faceX(kit, 'trim', fx + dir * 0.01, ya, yb, rz0 - 0.08, rz1 + 0.08, dir);
-    for (const [za, zb] of [[rz0 - 0.08, rz0], [rz1, rz1 + 0.08]]) faceX(kit, 'trim', fx + dir * 0.01, ry0, ry1, za, zb, dir);
-    // sponsor panels beyond the ribbon, as many as fit at a 3:1 board shape
+    // sponsor panels out to the screen's edges, as many as fit at a 3:1 board shape
     let n = 0;
     for (const [za, zb] of [[zA + 0.8, rz0 - 0.6], [rz1 + 0.6, zB - 0.8]]) {
       const len = zb - za, h = fy1 - fy0 - 0.3, count = Math.max(1, Math.round(len / (h * 3.2))), w = len / count;
@@ -170,11 +164,21 @@ export function buildGantry(T, sponsorTex) {
     }
   }
 
-  // --- crowns on top: LAKESIDE to the cars arriving, START / FINISH to the cars leaving -------------------------------
-  const cw = 17, ch = cw * 320 / 2048, cy0 = y1 + 1.5, cy1 = cy0 + ch;
+  // --- LED screen hung on both faces of the truss, 22.5 m by 5 m, centred over the track. main.js draws onto
+  // screenMaterial (see gantryScreen.js); it stays dark until a map is assigned. A thin dark frame sits behind each face
+  // and a solid block carries the part that stands above the truss; the faces are 6 cm proud of the frame. ------------
+  const sy0 = SCREEN_Y0, sy1 = SCREEN_Y0 + SCREEN_H, slabTop = sy1 + 0.15, fw = SCREEN_W + 0.3, fxr = hx + 0.14;
+  for (const dir of [-1, 1]) {
+    kit.box('housing', 0.08, y1 - sy0 + 0.15, fw, dir * fxr, (y1 + sy0 - 0.15) / 2, 0);
+    faceX(screens, 'led', dir * (fxr + 0.06), sy0, sy1, -SCREEN_W / 2, SCREEN_W / 2, dir);
+  }
+  kit.box('housing', fxr * 2, slabTop - y1, fw, 0, (y1 + slabTop) / 2, 0);
+
+  // --- crowns on top: LAKESIDE to the cars arriving, START / FINISH to the cars leaving, above the screen ------------
+  const cw = 17, ch = cw * 320 / 2048, cy0 = slabTop + 0.35, cy1 = cy0 + ch;
   for (const z of [-cw / 2 + 1.5, -cw / 6, cw / 6, cw / 2 - 1.5]) {
-    kit.column('steel', 0.2, 0.2, y1, cy0 + 0.2, -0.35, z);
-    beam(kit, 'steel', [-0.35, y1, z], [0.6, y1 + 1.3, z], 0.1);
+    kit.column('steel', 0.2, 0.2, slabTop, cy0 + 0.2, -0.35, z);
+    beam(kit, 'steel', [-0.35, slabTop, z], [0.6, slabTop + 1.3, z], 0.1);
   }
   kit.box('housing', 0.4, ch + 0.3, cw + 0.3, -0.15, (cy0 + cy1) / 2, 0);
   kit.box('trim', 0.42, 0.08, cw + 0.34, -0.15, cy1 + 0.17, 0);
@@ -221,15 +225,14 @@ export function buildGantry(T, sponsorTex) {
   body.traverse(o => { if (o.isMesh) o.userData.debug = 'building'; });
   g.add(body);
 
-  // The ribbons show the still board until the shared video can play, then the same material switches to the video.
-  // One mesh per face and a texture swap, never two meshes in one place, so nothing can flicker however cull.js merges.
-  const ribbonMat = new THREE.MeshBasicMaterial({ map: tex.gantryBannerTexture(), toneMapped: false });
-  const videoTex = bannerVideo(() => { ribbonMat.map = videoTex; ribbonMat.needsUpdate = true; });
-  const ribbons = screens.build({ ribbon: ribbonMat });
+  // the LED screen: one mesh per face on one material, dark until main.js gives it the canvas
+  const screenMaterial = new THREE.MeshBasicMaterial({ color: 0x08090b, toneMapped: false });
+  const ribbons = screens.build({ led: screenMaterial });
   ribbons.traverse(o => { if (o.isMesh) o.userData.debug = 'building'; });
   g.add(ribbons);
 
   g.userData.lights = lights;
+  g.userData.screenMaterial = screenMaterial;
   g.userData.bounds = { s: GANTRY_S, span: Math.max(-zA, zB), legs: [zL, zR], clear: GANTRY_LOWEST };
   g.position.set(c.x, roadY, c.z);
   g.rotation.y = -Math.atan2(c.tz, c.tx);

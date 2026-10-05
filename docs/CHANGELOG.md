@@ -1,5 +1,9 @@
 # Changelog
 
+## LED screen on the start gantry
+
+A 22.5 m by 5 m LED screen now hangs on both faces of the gantry truss, centred over the track: one face for the cars arriving, one for the cars leaving. It loops a Lakeside ident, PowerMedia, a trophy advert with the track outline, DeltaDash and a track day advert, and shows a lap board when the car crosses the line. The screen is drawn in src/gantryScreen.js and redrawn about 30 times a second while the camera is within 900 m. Its foot is at 7.65 m so the start light pods stay fully visible below it. The 30 m LED video ribbons on the truss are gone, the sponsor panels now run in to the edges of the screen, and the LAKESIDE and FINISH crown boards sit above the screen. Adds the @fontsource/barlow-condensed package and two logo images.
+
 ## Boundary Loop infield and smoother barrier lines
 
 Reports at s=3110 ("barriers really wonky in the final sector") and s=3149 (grass for the nearer half of the inside, gravel kept on the far inside, squiggly inside barriers).

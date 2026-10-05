@@ -33,6 +33,11 @@ import { createRacingLine } from './racingLine.js';
 import { createDirector, HOLD } from './director.js';
 import { createEnvironment } from './environment.js';
 import { envFromParams } from './weather.js';
+import { createGantryScreen } from './gantryScreen.js';
+import powermediaLogo from './assets/powermedia-white.png';
+import deltadashLogo from './assets/deltadash.png';
+import '@fontsource/barlow-condensed/600.css';
+import '@fontsource/barlow-condensed/800-italic.css';
 
 import { createCarFx } from './carFx.js';
 const params = new URLSearchParams(location.search);
@@ -76,7 +81,8 @@ const SUN_DIR = new THREE.Vector3(-0.5, 0.75, 0.42).normalize();   // the enviro
 const ground = createGround(track);
 const terrain = ground.mesh();
 const world = new THREE.Group();
-world.add(terrain, buildTrackScene(track, ground), buildScenery(track, ground));
+const trackScene = buildTrackScene(track, ground);
+world.add(terrain, trackScene, buildScenery(track, ground));
 const optimised = optimiseWorld(world);   // long ribbons in pieces and small meshes merged (src/cull.js); the report tool swaps the real objects back
 freezeWorld(world);
 const props = propCuller(world);
@@ -90,6 +96,23 @@ scene.add(racingLine.group);
 const carFx = createCarFx(scene);     // headlamp and tail light glow, road pools and spray for the other cars
 const selfFx = { x: 0, y: 0, z: 0, h: 0, v: 0, brk: 0, o: 1, self: true };
 if (params.get('line') === '1') settings.racingLine = true;
+// LED screen on the start gantry (gantryScreen.js draws it, this puts it on the mesh)
+const loadImage = src => { const i = new Image(); i.src = src; return i; };
+const trackPath = [];
+for (let i = 0; i < track.N; i += 12) trackPath.push([track.x[i], track.z[i]]);
+const gantryScreen = createGantryScreen({
+  logos: { powermedia: loadImage(powermediaLogo), deltadash: loadImage(deltadashLogo) },
+  trackPath,
+  facts: { km: track.length / 1000, turns: track.corners.length, drs: track.drs.length },
+});
+const gantryTex = new THREE.CanvasTexture(gantryScreen.canvas);
+gantryTex.colorSpace = THREE.SRGBColorSpace;
+gantryTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+trackScene.userData.gantryScreenMaterial.map = gantryTex;
+trackScene.userData.gantryScreenMaterial.color.set(0xffffff);
+trackScene.userData.gantryScreenMaterial.needsUpdate = true;
+let gantryDrawn = -1;
+const lapsShown = new WeakSet();   // the hud empties timer.events on its own schedule, so remember which laps the screen has had
 const markers = debugMarkers(track);
 markers.visible = false;
 scene.add(markers);
@@ -240,6 +263,17 @@ function frame(now) {
   audioDue += dt;
   if (audioDue >= 1 / 62) { audio.update(car, audioDue, paused); audioDue = 0; }   // the sound parameters need no more than 60 updates a second
   lobby.update(now);
+  // gantry screen: lap board on crossing the line, redrawn 30 times a second while it is close enough to read
+  for (const ev of timer.events) {
+    if (ev.type !== 'lap' || lapsShown.has(ev)) continue;
+    lapsShown.add(ev);
+    gantryScreen.lap({ lap: timer.lap, time: ev.time, kind: ev.best ? 'pb' : null, delta: ev.best ? null : ev.time - timer.best });
+  }
+  if (now - gantryDrawn > 33 && rig.camera.position.distanceTo(trackScene.userData.gantryPosition) < 900) {
+    gantryScreen.draw(now / 1000);
+    gantryTex.needsUpdate = true;
+    gantryDrawn = now;
+  }
   hudDue += dt;
   if (hudDue >= 1 / quality.tier.hudHz - 0.002) {
     hud.update(car, timer, track, simTime, playerInput);
@@ -260,7 +294,7 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 // for quick checks from the browser console
-window.lakeside = { THREE, optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx };
+window.lakeside = { THREE, optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen };
 
 const shadowAt = { x: 0, y: 0, z: 0 };
 // the FPS readout: frame rate and time, the slowest frame, the render scale and what the last frame cost

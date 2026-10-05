@@ -156,6 +156,7 @@ src/
   trackMesh.js  the circuit: surfaces, kerbs, barriers, fences, pit lane, bridge, gantry, boards
   scenery.js    terrain and the RAF Stanmere remnants
   textures.js   all textures and sponsor boards, drawn in code
+  gantryScreen.js  the LED screen on the start gantry: sponsor loop, circuit adverts, start lights, lap board, flags
   car.js        car model
   cameras.js    chase and bonnet cameras
   input.js      keyboard and gamepad

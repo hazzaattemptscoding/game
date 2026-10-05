@@ -259,6 +259,8 @@ export function buildTrackScene(T, ground) {
   group.add(gantryGroup, buildStartPaint(T));
   group.add(furniture(T));
   group.userData.startLights = gantryGroup.userData.lights;
+  group.userData.gantryScreenMaterial = gantryGroup.userData.screenMaterial;
+  group.userData.gantryPosition = gantryGroup.position;
   return group;
 }
 
