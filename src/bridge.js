@@ -95,6 +95,7 @@ export function buildBridge(T, ground, mat, { Strips }) {
   }
   const ban = new THREE.Mesh(banners.geometry(), mat.sponsor);
   ban.userData.debug = 'tyres';
+  ban.frustumCulled = false;   // cull.js leaves it whole: it is hidden when the video plays, and a chunked copy would stay on show
   g.add(ban);
 
   // The PowerMedia loop (3840 x 128, 30:1) replaces the still board once the video can play. It is a looping muted
@@ -110,6 +111,7 @@ export function buildBridge(T, ground, mat, { Strips }) {
   const videoMesh = new THREE.Mesh(videoBanners.geometry(), new THREE.MeshBasicMaterial({ map: videoTex || null, toneMapped: false }));
   videoMesh.visible = false;
   videoMesh.userData.debug = 'tyres';
+  videoMesh.frustumCulled = false;
   g.add(videoMesh);
 
   // roundel painted under the deck over the main straight
