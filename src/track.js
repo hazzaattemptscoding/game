@@ -58,6 +58,10 @@ const MIN_BARRIER = 5;     // working clearance margin beyond the 4 m minimum (s
 // The start of a track limits system (they are only markers for now; nothing is penalised yet).
 const BOLLARD_CORNERS = ['Aileron', 'Rudder', 'Guardroom Chicane', 'Boundary Loop'];
 const TALL_RAMP = 6;        // the tall stretch of the containment wall tapers in height over this many metres at each end
+const BRIDGE_SLOPE = 1 / 3;  // the embankment under the ends of the deck falls (and rises) at 1:3
+const BRIDGE_ZONE_NEAR = 100, BRIDGE_ZONE_FAR = 170;   // the ground near the deck is blended by hand out to this distance, then fades to the plain terrain
+const BRIDGE_END_EASE = 4;   // metres over which the ground drops from the road to the cutting below at each end of the deck
+const BRIDGE_BLEND = 36;   // softening (m^2) of the inverse-distance blend that gives the ground its heights there
 const SEPARATION = 70;     // single armco goes in only where another part of the track is closer than this
 
 // Pit lane design (reference/LAKESIDE_SAFETY_LAYOUT.md 3.7)
@@ -137,6 +141,7 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   smoothKerbs(track);
   buildVRunoff(track);
   buildReach(track);
+  buildBridgeGround(track);
 
   // Road height under a point beside sample n: that sample's height, carried along the grade.
   const roadAt = (n, px, pz) => h[n] + grade[n] * Math.max(-ds, Math.min(ds, (px - x[n]) * tx[n] + (pz - z[n]) * tz[n]));
@@ -194,24 +199,34 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
     if (dist < corridor) land = Math.min(land, h[landNear] - 0.35);
     const bridgeHint = Number.isInteger(hint) && track.isBridge[near];
     if (!bridgeHint) near = landNear;
+    // beside the bridge deck the land comes from the bridge ground blend (buildBridgeGround), which fades in over BRIDGE_ZONE_FAR
+    const bg = !bridgeHint && track.bridgeGround, zone = bg ? bg.weight(px, pz) : 0, zoneLand = zone > 0 ? bg.height(px, pz) : 0;
+    // `shadow`: 0 where the nearest road sample really is beside the point, easing to 1 over BRIDGE_END_EASE metres past a road END
+    // (the point is then beyond the road, under or beside the deck, not on it)
+    const alongNear = (px - x[landNear]) * tx[landNear] + (pz - z[landNear]) * tz[landNear];
+    const e = Math.min(1, Math.max(0, (Math.abs(alongNear) - 1.5) / BRIDGE_END_EASE)), shadow = zone > 0 && bg.endSample[landNear] ? e * e * (3 - 2 * e) : 0;
     let side = (px - x[near]) * nx[near] + (pz - z[near]) * nz[near] < 0 ? 0 : 1;
     let lateral = Math.abs((px - x[near]) * nx[near] + (pz - z[near]) * nz[near]);
     let paved = track.hw[near] + track.kerb[side][near] + track.sausage[side][near] + track.runoff[side][near];
     if (side === 0 && track.pitOut[near]) paved = Math.max(paved, track.pitOut[near]);
     if (track.isBridge[near]) paved = track.wall[side][near];
-    if (lateral <= paved) return roadAt(near, px, pz);
+    if (lateral <= paved && shadow === 0) return roadAt(near, px, pz);
     if (!bridgeHint) {
       near = landNear;
       side = (px - x[near]) * nx[near] + (pz - z[near]) * nz[near] < 0 ? 0 : 1;
       lateral = Math.abs((px - x[near]) * nx[near] + (pz - z[near]) * nz[near]);
       paved = track.hw[near] + track.kerb[side][near] + track.sausage[side][near] + track.runoff[side][near];
       if (side === 0 && track.pitOut[near]) paved = Math.max(paved, track.pitOut[near]);
-      if (lateral <= paved) return roadAt(near, px, pz);
+      if (lateral <= paved && shadow === 0) return roadAt(near, px, pz);
     }
     const roadHeight = roadAt(near, px, pz);
     const slope = bridgeHint ? 1 / 3 : 0.12;
-    const rise = Math.min(Math.abs(land - roadHeight), (lateral - paved) * slope);
-    return roadHeight + Math.sign(land - roadHeight) * rise;
+    const shoulder = ground => roadHeight + Math.sign(ground - roadHeight) * Math.min(Math.abs(ground - roadHeight), Math.max(0, lateral - paved) * slope);
+    const plain = shoulder(land);
+    if (!zone) return plain;
+    // the shoulder rule only holds near a road: a few metres out the ground is the blend alone, so the height never hangs on which road is nearest
+    const out = Math.min(1, Math.max(0, (lateral - paved - 3) / 12)), farFromRoad = Math.max(shadow, out * out * (3 - 2 * out));
+    return plain * (1 - zone) + (shoulder(zoneLand) * (1 - farFromRoad) + zoneLand * farFromRoad) * zone;
   };
   // Ground under the bridge deck (and 1.5 m beyond its edges) lies below the deck underside. Without this, the
   // nearest non-bridge sample to a point under the deck is the deck end, and the land takes its height (or its
@@ -532,6 +547,67 @@ function buildVRunoff(T) {
       T.wall[sd][i] = Math.max(T.wall[sd][i], edge + T.runoff[sd][i] + STREET_GAP);
     }
   }
+}
+
+// The ground at and beside the bridge deck. The deck stands well above the land under it (the main straight runs through the
+// cutting below), and the plain terrain rule (height of the nearest non-deck sample) flips between the approach embankment and the
+// straight part way along the deck, a cliff of several metres. Here the deck samples carry the height of the embankment under
+// them instead: it falls from just under the deck at each end at 1:3 down to the level of the road below, and the ground near the
+// deck is the inverse-distance blend of those heights and the neighbouring road samples, so it is continuous everywhere.
+function buildBridgeGround(T) {
+  const { N } = T;
+  T.bridgeGround = null;
+  const deck = []; for (let i = 0; i < N; i++) if (T.isBridge[i]) deck.push(i);
+  if (!deck.length) return;
+  const run = runsOf(N, i => T.isBridge[i])[0], first = run[0], last = run[run.length - 1];
+  const sa = T.s[first], sb = T.s[last], len = T.length;
+  // level of whatever runs underneath: the lowest road sample within 14 m (in plan) that is well below the deck
+  let floor = -Infinity;
+  for (const i of deck) {
+    let low = Infinity;
+    for (let j = 0; j < N; j++) {
+      if (T.isBridge[j] || T.h[j] > T.h[i] - 3) continue;
+      if ((T.x[j] - T.x[i]) ** 2 + (T.z[j] - T.z[i]) ** 2 < 14 * 14) low = Math.min(low, T.h[j] - 0.35);
+    }
+    if (low < Infinity) floor = floor === -Infinity ? low : Math.min(floor, low);
+  }
+  const he = new Float64Array(N).fill(NaN);
+  for (const i of deck) {
+    const fromStart = ((T.s[i] - sa) % len + len) % len, toEnd = ((sb - T.s[i]) % len + len) % len;
+    he[i] = Math.max(floor, T.h[first] - 1.7 - fromStart * BRIDGE_SLOPE, T.h[last] - 1.7 - toEnd * BRIDGE_SLOPE);
+  }
+  // the heights the blend draws on: every second sample within BRIDGE_ZONE_FAR + 60 m of the deck
+  const R = BRIDGE_ZONE_FAR + 60;
+  const sources = [];
+  for (let i = 0; i < N; i += 2) {
+    let ok = false;
+    for (let k = 0; k < deck.length && !ok; k += 6) ok = (T.x[i] - T.x[deck[k]]) ** 2 + (T.z[i] - T.z[deck[k]]) ** 2 < R * R;
+    if (ok) sources.push(i);
+  }
+  const sx = Float64Array.from(sources, i => T.x[i]), sz = Float64Array.from(sources, i => T.z[i]);
+  const sh = Float64Array.from(sources, i => (T.isBridge[i] ? he[i] : T.h[i] - 0.35));
+  const dx = Float64Array.from(deck, i => T.x[i]), dz = Float64Array.from(deck, i => T.z[i]);
+  // the road samples next to the deck: the only ones that can be the END of a road
+  const endSample = new Uint8Array(N);
+  for (const i of deck) for (let k = -3; k <= 3; k++) if (!T.isBridge[wrap(i + k, N)]) endSample[wrap(i + k, N)] = 1;
+  T.bridgeGround = {
+    endSample,
+    // 1 within BRIDGE_ZONE_NEAR of the deck, easing to 0 at BRIDGE_ZONE_FAR
+    weight(px, pz) {
+      let q = Infinity;
+      for (let k = 0; k < dx.length; k += 2) q = Math.min(q, (px - dx[k]) ** 2 + (pz - dz[k]) ** 2);
+      const f = Math.min(1, Math.max(0, (BRIDGE_ZONE_FAR - Math.sqrt(q)) / (BRIDGE_ZONE_FAR - BRIDGE_ZONE_NEAR)));
+      return f * f * (3 - 2 * f);
+    },
+    height(px, pz) {
+      let sw = 0, swh = 0;
+      for (let k = 0; k < sx.length; k++) {
+        const q = (px - sx[k]) ** 2 + (pz - sz[k]) ** 2, w = 1 / ((q + BRIDGE_BLEND) * (q + BRIDGE_BLEND));
+        sw += w; swh += w * sh[k];
+      }
+      return swh / sw;
+    },
+  };
 }
 
 // How far out each band may go before the offset curve would fold over itself on the inside of a

@@ -226,8 +226,36 @@ for (const [label, items] of [['barrier', T.barriers.flatMap(b => b.pts)], ['boa
   }
 }
 
+// Ground around the bridge deck: continuous, no cliff. On a 2 m grid within 90 m of the deck, no two neighbouring points differ by
+// more than MAX_SLOPE (rise over run), except on the abutment lines, 8 m either side of the deck ends, where the ground drops from the road.
+let bridgeSlope = 0;
+{
+  const MAX_SLOPE = 1.5, STEP = 2, REACH = 90;
+  const deck = []; for (let i = 0; i < T.N; i += 3) if (T.isBridge[i]) deck.push(i);
+  const ends = []; for (let i = 0; i < T.N; i++) if (T.isBridge[i] && !(T.isBridge[(i + 1) % T.N] && T.isBridge[(i + T.N - 1) % T.N])) ends.push(i);
+  if (deck.length) {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const i of deck) { x0 = Math.min(x0, T.x[i]); x1 = Math.max(x1, T.x[i]); z0 = Math.min(z0, T.z[i]); z1 = Math.max(z1, T.z[i]); }
+    x0 -= REACH; x1 += REACH; z0 -= REACH; z1 += REACH;
+    const nx = Math.ceil((x1 - x0) / STEP) + 1, nz = Math.ceil((z1 - z0) / STEP) + 1, H = new Float32Array(nx * nz);
+    for (let j = 0; j < nz; j++) for (let k = 0; k < nx; k++) H[j * nx + k] = T.groundAt(x0 + k * STEP, z0 + j * STEP);
+    const nearDeck = (x, z) => deck.some(i => (x - T.x[i]) ** 2 + (z - T.z[i]) ** 2 < REACH * REACH);
+    const nearEnd = (x, z) => ends.some(i => (x - T.x[i]) ** 2 + (z - T.z[i]) ** 2 < 14 * 14);
+    let reported = 0;
+    for (let j = 0; j < nz - 1; j++) for (let k = 0; k < nx - 1; k++) {
+      const x = x0 + k * STEP, z = z0 + j * STEP, a = H[j * nx + k];
+      const slope = Math.max(Math.abs(a - H[j * nx + k + 1]), Math.abs(a - H[(j + 1) * nx + k])) / STEP;
+      if (slope <= MAX_SLOPE || !nearDeck(x, z) || nearEnd(x, z)) { if (slope > bridgeSlope && nearDeck(x, z) && !nearEnd(x, z)) bridgeSlope = slope; continue; }
+      bridgeSlope = Math.max(bridgeSlope, slope);
+      if (reported++ < 3) errors.push(`ground near the bridge: a cliff of ${(slope * STEP).toFixed(1)} m in ${STEP} m at (${x.toFixed(0)}, ${z.toFixed(0)})`);
+    }
+    if (reported > 3) errors.push(`ground near the bridge: ${reported - 3} more cliff cells`);
+  }
+}
+
 console.log(`Lakeside geometry audit: ${T.length.toFixed(0)} m`);
 console.log(`  barrier points ${barrierPoints}; closest barrier ${closest.toFixed(2)} m; closest street wall ${closestStreet.toFixed(2)} m`);
+console.log(`  ground within 90 m of the bridge deck: steepest slope ${bridgeSlope.toFixed(2)} (limit 1.5, deck-end abutments excepted)`);
 console.log(`  max physics/terrain height difference ${maxGroundError.toFixed(3)} m across 2,000 points`);
 console.log(`  narrowest pit sample ${Number.isFinite(narrowPit) ? `${narrowPit.toFixed(2)} m at s=${T.s[pitWidthAt].toFixed(1)}` : 'no pit samples'}; pit wall clearance ${pitWallClear.toFixed(2)} m`);
 console.log(`  distance boards, posts and panels ${spaced.length}; floating barrier/board bases checked`);

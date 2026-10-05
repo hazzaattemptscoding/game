@@ -85,7 +85,7 @@ export function wallClearance(T, x, z, ignoreBridge = false) {
 export function checkStand(T, ground, blockers, others, f, side, len, rows) {
   const depth = rows * ROW + 3;
   const pts = [];
-  for (let a = -len / 2 - 2; a <= len / 2 + 2 + 1e-6; a += 4) for (let b = -6; b <= depth + 3 + 1e-6; b += 3) pts.push([a, b, ...local(f, a, b)]);
+  for (let a = -len / 2 - 2; a <= len / 2 + 2 + 1e-6; a += 2) for (let b = -6; b <= depth + 3 + 1e-6; b += 2) pts.push([a, b, ...local(f, a, b)]);   // as fine as the venue check (tools/venue.js), so a place that passes here passes there
   // clearance round the whole footprint, including the walkway in front of the stand
   for (const [, b, x, z] of pts) if (wallClearance(T, x, z) < (b < 0 ? 4 : 8)) return 'too close to the circuit';
   // the structure itself stays 6 m from every barrier line
