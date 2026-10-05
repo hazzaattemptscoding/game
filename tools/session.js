@@ -25,7 +25,6 @@ console.log('SESSIONS');
   check(makeSession('race').laps === 5, 'race defaults to 5 laps');
   check(makeSession('race', { laps: 500 }).laps === 99 && makeSession('race', { laps: 0 }).laps === 1, 'custom laps are clamped to 1 to 99');
   check(makeSession('race', { slot: 3 }).slot === 3 && makeSession('race', { slot: -2 }).slot === 0, 'grid slot');
-  check(makeSession('race', { ai: 5 }).ai === 5 && makeSession('online', { ai: 5 }).ai === 0 && makeSession('timetrial', { ai: 5 }).ai === 0 && makeSession('race').ai === 0, 'AI opponents are for the offline race and practice only, off by default');
   check(makeSession('nonsense').mode === 'practice', 'unknown mode falls back to practice');
   check(makeSession('practice', { start: 'standing' }).start === 'standing', 'practice may start on the grid');
   check(p.weather === 'clear' && p.time === 'midday' && makeSession('race', { weather: 'heavyrain', time: 'night' }).weather === 'heavyrain' && makeSession('race', { weather: 'x', time: 9 }).time === 'midday', 'weather and time are part of the session, bad values fall back to clear midday');

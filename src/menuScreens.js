@@ -141,10 +141,6 @@ function setupScreen() {
       if (api.hasRacingLine && api.hasRacingLine()) c.append(segRow('Racing line', [[true, 'Allowed'], [false, 'Not allowed']], () => cur.racingLine, v => { cur.racingLine = v; store(); }));
       c.append(...weatherRows(ctx, segRow, h));
       c.append(segRow('Track limits', [['warn', 'Warnings']], () => 'warn', () => {}, { note: 'Cutting a corner shows a warning and makes the lap invalid.' }));
-      const ai = segRow('AI opponents', [['0', 'None']], () => '0', () => {}, { note: 'Coming soon.' });
-      const aiBtn = btn('Coming soon', 'm-opt', null); aiBtn.disabled = true; aiBtn.setAttribute('aria-disabled', 'true');
-      ai.querySelector('.m-seg').append(aiBtn);
-      c.append(ai);
       const go = btn('Start race', 'm-btn primary', () => api.startRace({ laps: cur.laps, assists: cur.assists, racingLine: api.hasRacingLine && api.hasRacingLine() ? cur.racingLine : true }));
       go.dataset.first = '1';
       c.append(h('div', 'm-actions', go));
