@@ -21,15 +21,15 @@ const REGEN = 'regenerate it with `npm run racingline` and commit src/racingLine
 // 1. data
 ok(dataMatches(T), `racingLineData.js does not match the track (length ${data.length} vs ${T.length.toFixed(2)}, ${data.d.length} vs ${T.N} samples, ds ${data.ds} vs ${T.ds.toFixed(6)}): ${REGEN}`);
 ok(data.d.length === T.N && data.c.length === T.N, `data has ${data.d.length} offsets and ${data.c.length} classes for ${T.N} samples: ${REGEN}`);
-const lim = T.halfWidth - EDGE_MARGIN + 1e-9;
+const limAt = i => T.hw[i] - EDGE_MARGIN + 1e-9;
 let maxStep = 0, bad = 0;
 for (let i = 0; i < T.N; i++) {
   const d = data.d[i];
-  if (!Number.isFinite(d) || Math.abs(d) > lim) bad++;
+  if (!Number.isFinite(d) || Math.abs(d) > limAt(i)) bad++;
   if (Math.abs(Math.round(d * 20) - d * 20) > 1e-6) bad++;
   maxStep = Math.max(maxStep, Math.abs(data.d[(i + 1) % T.N] - d));
 }
-ok(bad === 0, `${bad} offsets are out of range (more than ${lim.toFixed(2)} m from the centreline) or not rounded to 5 cm`);
+ok(bad === 0, `${bad} offsets are out of range (more than ${(T.halfWidth - EDGE_MARGIN).toFixed(2)} m from the centreline, less where the track narrows) or not rounded to 5 cm`);
 const stepLimit = MAX_LATERAL_RATE * T.ds + 0.06;   // plus the 5 cm rounding
 ok(maxStep <= stepLimit, `offset jumps ${maxStep.toFixed(2)} m between neighbouring samples (limit ${stepLimit.toFixed(2)} m)`);
 ok(/^[blt]+$/.test(data.c), 'classes must be b, l or t');

@@ -11,6 +11,10 @@ Things that are liked and must not change. `npm run check` does not test these; 
 - The Blockout setting.
 - Keyboard handling and the keyboard tuning from fix pass 2.
 
+## Track fixes: chicane, street section, bridge ground
+
+- Guardroom Chicane is narrower. The tarmac is 10.5 m wide (13 m elsewhere) from point 56.1 to 59.1 (s 3452 to 3542), easing back to full width over 60 m before and 50 m after (smoothstep, no step in the edge; the pit road entry at s 3605 is on full width). `LAYOUT.narrow` holds it. `T.hw[i]` is the half width at each sample and is used by the surfaces, kerbs, run-off, wall line, bollards, ground ribbon, racing line and the audits; `T.halfWidth` is still the full layout half width. Kerbs, apron, gravel and the wall line are measured from the edge, so they move in with it; the track limits bollards stay on the inside kerb. `src/racingLineData.js` regenerated (`tools/racingline.js` now rounds the offsets to 5 cm without going past the per-sample limit). Laptest (analog laps 1:30.942 / 1:33.958 / 1:34.975 before): 1:30.925 / 1:33.925 / 1:34.958 after; keyboard excursions 17 before, 14 after, none in the chicane; keyboard average +5.2 s before, +5.3 s after. 10 m and 9.5 m wide gave +7.3 s and +7.1 s for the average keyboard driver, over the 7 s limit; the limit was left alone and 10.5 m kept.
+
 ## Track detail pass (venue)
 
 Visual only. Nothing in `track.js`, the physics, the surfaces or the barrier audit changed; the placement rules are checked by `npm run venue` (also in `npm run check`).

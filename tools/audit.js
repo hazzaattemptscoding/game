@@ -18,7 +18,7 @@ function edgeGap(x, z, y) {
     const dx = x - T.x[i], dz = z - T.z[i];
     if (Math.abs(dx * T.tx[i] + dz * T.tz[i]) > 0.6) continue;
     const d = dx * T.nx[i] + dz * T.nz[i], side = d < 0 ? 0 : 1;
-    best = Math.min(best, Math.abs(d) - T.halfWidth - T.kerb[side][i] - T.sausage[side][i]);
+    best = Math.min(best, Math.abs(d) - T.hw[i] - T.kerb[side][i] - T.sausage[side][i]);
   }
   return best;
 }
@@ -118,7 +118,7 @@ const shortNotes = [];
 // Tall stretches are justified by departures: the wall line at the section must be at least as far out as the deepest
 // departure listed for it (corners.js depth is measured from the track edge, as in tools/laptest.js).
 for (const t of T.tallStretches) {
-  const i = Math.round(t.s / T.ds), off = T.wall[t.sd][i] - T.halfWidth;
+  const i = Math.round(t.s / T.ds), off = T.wall[t.sd][i] - T.hw[i];
   if (off < t.need && !t.constrained && ACCEPTED_SHORT.some(a => a.corner === t.corner && a.sd === t.sd && Math.abs(a.s - t.s) < 15)) { shortNotes.push(`${t.corner} s=${t.s.toFixed(0)} ${t.sd ? 'R' : 'L'}: wall ${off.toFixed(1)} m out, a departure stops ${t.need} m out (accepted)`); continue; }
   if (off < t.need && !t.constrained) errors.push(`${t.corner}: the wall line at s=${t.s} side ${t.sd ? 'R' : 'L'} is ${off.toFixed(1)} m out (edge to wall centreline) but a departure stops ${t.need} m out: push the wall out over s ${(t.s - t.length / 2).toFixed(0)} to ${(t.s + t.length / 2).toFixed(0)} (buildSides reach)`);
 }
@@ -204,7 +204,7 @@ for (let i = 0; i < T.N; i++) if (T.pitOut[i] > 0) {
   if (width < narrowPit) { narrowPit = width; pitWidthAt = i; }
   if (width < 10) errors.push(`pit road ${width.toFixed(2)} m wide at s=${T.s[i].toFixed(1)} (${T.x[i].toFixed(1)}, ${T.z[i].toFixed(1)})`);
   if (T.pitWall[i]) {
-    const clear = T.pitIn[i] - 0.6 - T.halfWidth;
+    const clear = T.pitIn[i] - 0.6 - T.hw[i];
     pitWallClear = Math.min(pitWallClear, clear);
     if (clear < 4) errors.push(`pit wall ${clear.toFixed(2)} m from track edge at s=${T.s[i].toFixed(1)}`);
   }

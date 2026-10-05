@@ -30,7 +30,7 @@ for (let i = 0; i < T.N; i += Math.round(STEP_S / T.ds)) {
       if (!hits.length) continue;                              // only ground well above the road here: a bank
       const top = hits[0];
       // within the road width, terrain must never be above the road surface (checked on the deck and its approaches too)
-      if (d < T.halfWidth + 0.5) {
+      if (d < T.hw[i] + 0.5) {
         const road = hits.find(q => q.cat === 'road'), terr = hits.find(q => q.cat === 'terrain');
         if (terr && terr.y > (road ? road.y : T.h[i]) + 0.005) found.terrainTop.push(`${where} terrain ${(terr.y - (road ? road.y : T.h[i])).toFixed(2)} m above road`);
       }
@@ -40,7 +40,7 @@ for (let i = 0; i < T.N; i += Math.round(STEP_S / T.ds)) {
         const under = hits.find(q => q.cat !== 'terrain');
         if (under ? under.cat !== 'grass' : Math.abs(top.y - T.h[i]) < 0.5) found.terrainTop.push(`${where} ${under ? 'buries ' + under.cat : 'no strip'}`);
       }
-      if (d < T.halfWidth - 0.1 && top.cat !== 'road' && top.cat !== 'line' && !(T.pitMouth[i] && top.cat === 'pit')) found.onRoad.push(`${where} is ${top.cat}`);
+      if (d < T.hw[i] - 0.1 && top.cat !== 'road' && top.cat !== 'line' && !(T.pitMouth[i] && top.cat === 'pit')) found.onRoad.push(`${where} is ${top.cat}`);
       const inner = idx.at(x, z, 1e-4).filter(near);        // clear of shared edges, where two bands touch by design
       for (let k = 1; k < inner.length; k++) {
         const a = inner[k - 1], b = inner[k];

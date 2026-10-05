@@ -11,7 +11,7 @@ const G = 9.81, AIR = 1.225;
 export function computeRacingLine(T, edgeMargin = 1.4) {
   const { N, x, z, nx, nz } = T;
   const off = new Float64Array(N);
-  const lim = T.halfWidth - edgeMargin;
+  const lim = i => (T.hw ? T.hw[i] : T.halfWidth) - edgeMargin;
   const px = i => x[i] + nx[i] * off[i], pz = i => z[i] + nz[i] * off[i];
   for (const [reach, iters] of [[24, 300], [12, 300], [6, 300], [3, 200]]) {
     for (let it = 0; it < iters; it++) {
@@ -21,7 +21,7 @@ export function computeRacingLine(T, edgeMargin = 1.4) {
         const mx = (4 * (px(a) + px(b)) - px(a2) - px(b2)) / 6;
         const mz = (4 * (pz(a) + pz(b)) - pz(a2) - pz(b2)) / 6;
         const want = (mx - x[i]) * nx[i] + (mz - z[i]) * nz[i];
-        off[i] = Math.max(-lim, Math.min(lim, off[i] + 0.5 * (want - off[i])));
+        off[i] = Math.max(-lim(i), Math.min(lim(i), off[i] + 0.5 * (want - off[i])));
       }
     }
   }

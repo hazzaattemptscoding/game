@@ -31,7 +31,7 @@ const tag = (mesh, cat) => { mesh.userData.debug = cat; return mesh; };
 
 export function buildTrackScene(T, ground) {
   const group = new THREE.Group();
-  const hw = T.halfWidth;
+  const HW = T.hw;
   // A point at sample i, d metres to the side. Every ground surface takes its height from
   // T.groundAt, so neighbouring bands share their edge vertices exactly and nothing is stacked.
   // `lift` is only for real relief (T.relief) and paint decals (DECAL).
@@ -89,10 +89,10 @@ export function buildTrackScene(T, ground) {
   const S = {};
   const strips = name => (S[name] ||= new Strips());
 
-  strips('road').strip(all, i => P(i, -hw), i => P(i, hw), (i, j) => sOf(i, j, all) / 8, -hw / 8, hw / 8);
+  strips('road').strip(all, i => P(i, -HW[i]), i => P(i, HW[i]), (i, j) => sOf(i, j, all) / 8, i => -HW[i] / 8, i => HW[i] / 8);
   for (const g of [-1, 1]) {
     const lineRuns = g < 0 ? runs(T.N, i => !T.pitMouth[i]) : [all];
-    for (const run of lineRuns) strips('line').strip(run, i => P(i, g * (hw - 0.15), DECAL), i => P(i, g * hw, DECAL), () => 0, 0, 1);
+    for (const run of lineRuns) strips('line').strip(run, i => P(i, g * (HW[i] - 0.15), DECAL), i => P(i, g * HW[i], DECAL), () => 0, 0, 1);
   }
 
   // all the ground beside the tarmac, as one ribbon with shared vertices (groundRibbon.js)
@@ -102,7 +102,7 @@ export function buildTrackScene(T, ground) {
   for (const sd of [0, 1]) {
     const g = sd ? 1 : -1;
     for (const run of runs(T.N, i => T.concrete[sd][i] && T.runoff[sd][i] > 1.8)) {
-      const inner = i => hw + T.kerb[sd][i] + T.sausage[sd][i];
+      const inner = i => HW[i] + T.kerb[sd][i] + T.sausage[sd][i];
       for (const fraction of [1 / 3, 2 / 3]) {
         strips('rumble').strip(run, i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction - 0.275), 0.006),
           i => P(i, g * (inner(i) + T.runoff[sd][i] * fraction + 0.275), 0.006),
@@ -137,8 +137,8 @@ export function buildTrackScene(T, ground) {
 
   // start line, grid slots, sector and DRS lines, pit limiter lines
   // (the chequered start line and the grid boxes are painted by gantry.js)
-  for (const s of T.sectors.slice(1)) crossLine(strips('line'), T, s, 0.3, -hw, hw);
-  for (const [a] of T.drs) crossLine(strips('line'), T, a, 0.3, -hw, hw);
+  for (const s of T.sectors.slice(1)) crossLine(strips('line'), T, s, 0.3, -HW[Math.round(s / T.ds) % T.N], HW[Math.round(s / T.ds) % T.N]);
+  for (const [a] of T.drs) crossLine(strips('line'), T, a, 0.3, -HW[Math.round(a / T.ds) % T.N], HW[Math.round(a / T.ds) % T.N]);
   const lim = runs(T.N, i => T.pitLimiter[i] > 0)[0];
   if (lim) for (const i of [lim[0], lim[lim.length - 1]]) crossLine(strips('line'), T, T.s[i], 0.5, -T.pitIn[i], -T.pitOut[i]);
 
@@ -432,7 +432,7 @@ export function onAnyRoad(T, x, z, margin) {
     const along = dx * T.tx[i] + dz * T.tz[i];
     if (Math.abs(along) > 0.6) continue;
     const d = dx * T.nx[i] + dz * T.nz[i];
-    if (Math.abs(d) < T.halfWidth + margin) return true;
+    if (Math.abs(d) < T.hw[i] + margin) return true;
     if (T.pitOut[i] && d < 0 && -d > T.pitIn[i] - margin && -d < T.pitOut[i] + margin) return true;
   }
   return false;

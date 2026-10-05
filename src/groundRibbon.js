@@ -19,7 +19,7 @@ const PIT_FADE = 10, TARMAC_TONE = 0.76;   // the pit asphalt takes its own tone
 const wrap = (i, n) => ((i % n) + n) % n;
 
 export function buildGroundRibbon(T, strips, P, G) {
-  const { N } = T, hw = T.halfWidth;
+  const { N } = T;
 
   // how far each pit sample is from the mouth, for the tone fade
   const fromMouth = new Float64Array(N).fill(1e9);
@@ -33,7 +33,7 @@ export function buildGroundRibbon(T, strips, P, G) {
     const g = sd ? 1 : -1;
     const E = [], MAT = [];
     for (let i = 0; i < N; i++) {
-      let c = hw;
+      let c = T.hw[i];
       const e = [c], m = [];
       const push = (w, mat) => { c += Math.max(0, w); e.push(c); m.push(mat); };
       const wall = T.wall[sd][i];

@@ -147,7 +147,6 @@ for (const [name, surf] of [['tarmac run-off', SURF.RUNOFF], ['grass', SURF.GRAS
 // Safety checks (reference/LAKESIDE_SAFETY_LAYOUT.md). Any failure makes the
 // test exit with an error.
 console.log('\nSAFETY CHECKS');
-const hw = track.halfWidth;
 // how far a point is from the nearest track edge (any part of the track at a similar height), kerbs included
 const edgeGap = (x, z, y) => {
   let best = Infinity;
@@ -157,7 +156,7 @@ const edgeGap = (x, z, y) => {
     const along = dx * track.tx[i] + dz * track.tz[i];
     if (Math.abs(along) > 0.6) continue;
     const d = dx * track.nx[i] + dz * track.nz[i], sd = d < 0 ? 0 : 1;
-    best = Math.min(best, Math.abs(d) - hw - track.kerb[sd][i] - track.sausage[sd][i]);
+    best = Math.min(best, Math.abs(d) - track.hw[i] - track.kerb[sd][i] - track.sausage[sd][i]);
   }
   return best;
 };
@@ -208,7 +207,7 @@ for (const b of track.barriers) {
 }
 // 3. the pit road never overlaps the racing surface
 let overlap = 0;
-for (let i = 0; i < track.N; i++) if (track.pitOut[i] && track.pitIn[i] < hw - 1e-6) overlap++;
+for (let i = 0; i < track.N; i++) if (track.pitOut[i] && track.pitIn[i] < track.hw[i] - 1e-6) overlap++;
 if (overlap) fails.push(`pit road overlaps the track on ${overlap} samples`);
 // 4. boards, posts and panels at least 30 m apart
 const furn = track.furniture.filter(f => ['board', 'post', 'panel'].includes(f.type));   // signs only need 6 m

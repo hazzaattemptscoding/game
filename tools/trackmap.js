@@ -43,22 +43,21 @@ function bands(band, fill) {
   return svg;
 }
 
-const hw = T.halfWidth;
 let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W.toFixed(0)} ${H.toFixed(0)}" width="${(W * 1.2).toFixed(0)}" height="${(H * 1.2).toFixed(0)}" style="background:#2c4a26;font-family:Arial,sans-serif">`;
 
 for (const sd of [0, 1]) {
   const g = sd ? 1 : -1;
-  const kerbOut = i => hw + T.kerb[sd][i], sausOut = i => kerbOut(i) + T.sausage[sd][i], runOut = i => sausOut(i) + T.runoff[sd][i];
-  svg += bands(i => [g * hw, g * T.wall[sd][i]], hex(C.grass));
+  const kerbOut = i => T.hw[i] + T.kerb[sd][i], sausOut = i => kerbOut(i) + T.sausage[sd][i], runOut = i => sausOut(i) + T.runoff[sd][i];
+  svg += bands(i => [g * T.hw[i], g * T.wall[sd][i]], hex(C.grass));
   svg += bands(i => T.gravelOut[sd][i] > 0 ? [g * T.gravelIn[sd][i], g * T.gravelOut[sd][i]] : null, hex(C.gravel));
   svg += bands(i => T.runoff[sd][i] > 0.2 && !T.concrete[sd][i] ? [g * sausOut(i), g * runOut(i)] : null, hex(C.runoff));
   svg += bands(i => T.runoff[sd][i] > 0.2 && T.concrete[sd][i] ? [g * sausOut(i), g * runOut(i)] : null, hex(C.runoff));
-  svg += bands(i => T.kerb[sd][i] > 0 ? [g * hw, g * kerbOut(i)] : null, hex(C.kerb));
+  svg += bands(i => T.kerb[sd][i] > 0 ? [g * T.hw[i], g * kerbOut(i)] : null, hex(C.kerb));
   svg += bands(i => T.sausage[sd][i] > 0 ? [g * kerbOut(i), g * sausOut(i)] : null, hex(C.sausage));
 }
 svg += bands(i => T.pitOut[i] ? [-T.pitIn[i], -T.pitOut[i]] : null, hex(C.pit));
-svg += bands(i => T.pitIsland[i] ? [-hw, -T.pitIn[i]] : null, hex(C.island));
-svg += bands(() => [-hw, hw], hex(C.road));
+svg += bands(i => T.pitIsland[i] ? [-T.hw[i], -T.pitIn[i]] : null, hex(C.island));
+svg += bands(i => [-T.hw[i], T.hw[i]], hex(C.road));
 
 // barriers by type, catch fences dashed behind the impact sections
 const style = {

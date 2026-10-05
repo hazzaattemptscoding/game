@@ -116,6 +116,12 @@ export const LAYOUT = {
     [59, 60.6, 'L', 12],       // widest: chicane exit onto the main straight
   ],
 
+  // Narrower tarmac: [from point, to point, width m, ease in m, ease out m]. Full narrow width from `from` to `to`, easing
+  // back to `width` above over the ease lengths (a smooth ramp, no step in the edge). Kerbs, run-off and the wall line follow the edge.
+  narrow: [
+    [56.1, 59.1, 10.5, 60, 50],  // Guardroom Chicane: 2.5 m narrower than the rest of the lap, more punishing
+  ],
+
   // Raised sausage kerbs on the inside of the chicane, to stop cars cutting it.
   sausage: [
     [55.7, 56.3, 'R'],

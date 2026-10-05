@@ -132,12 +132,12 @@ export function generate() {
   // the offset: low-pass, clamp to the edge, limit the lateral rate, round
   const w = Math.round(SMOOTH_M / T.ds);
   let d = smooth(acc.d, w, 2);
-  const lim = T.halfWidth - EDGE_MARGIN;
+  const limAt = i => T.hw[i] - EDGE_MARGIN;
   let clamped = 0;
-  for (let i = 0; i < N; i++) { if (Math.abs(d[i]) > lim) { d[i] = Math.sign(d[i]) * lim; clamped++; } }
+  for (let i = 0; i < N; i++) { if (Math.abs(d[i]) > limAt(i)) { d[i] = Math.sign(d[i]) * limAt(i); clamped++; } }
   limitRate(d, T.ds, MAX_LATERAL_RATE);
   d = smooth(d, Math.round(4 / T.ds), 1);
-  const dOut = Array.from(d, v => Math.round(Math.max(-lim, Math.min(lim, v)) * 20) / 20);
+  const dOut = Array.from(d, (v, i) => { const m = Math.floor(limAt(i) * 20 + 1e-9) / 20; return Math.max(-m, Math.min(m, Math.round(v * 20) / 20)); })   // rounded to 5 cm, never past the limit;
 
   // the classes from the smoothed signals
   const sw = Math.round(SIGNAL_M / T.ds);
