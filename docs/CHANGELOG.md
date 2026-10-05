@@ -1,5 +1,13 @@
 # Changelog
 
+## Start/Finish Gantry and Footbridge Video Displays
+
+The gantry over the start/finish line and both pedestrian footbridges now feature the PowerMedia video loop (3840x128, 30:1) as a primary display, replacing static sponsor boards in high-visibility locations.
+
+- **Gantry rebuild**: enlarged and restructured as a more impressive portal spanning the track, pit lane and run-off. The main screen displays the PowerMedia video letterboxed across the full 20 m width with a companion text panel showing "LAKESIDE START / FINISH" in a bold condensed italic display font on the back face. Supports positioned clearly outside barriers with heavier cross-bracing (X-pattern per leg bay). Deeper truss structure (three chords instead of two) with refined proportions, expanded lighting rig with five independent modules and camera pods, and a catwalk along the top. Sponsor boards retained on both sides of the truss.
+- **Footbridge video**: both footbridges (West and East) now carry a PowerMedia banner on the underside of the deck, stretched across the full span, visible to spectators and drivers below. Sponsor panels kept on the visible truss sides.
+- **Video implementation**: both the gantry and footbridges use the same PowerMedia video URL with fallback still boards. The browser caches the video, avoiding multiple downloads. No change to lap times, track geometry or physics; `tools/laptest.js` passes unchanged. Draw calls increase by a handful (video mesh per structure).
+
 ## Sponsors: PowerMedia logo and DeltaDash brand
 
 Real sponsor logos replace generated boards on trackside hoardings, in the garage livery selector, and on car bodies during online races.

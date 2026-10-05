@@ -3,6 +3,10 @@
 // The gantry stands 4 m outside the white lines (the legs are well clear of the pit wall, which is 13 m out) and
 // everything on it is 6 m or more above the road, so a car, a mirror or a roll hoop can never touch it.
 // Frame, in local axes: x along the direction of travel, y up from the road at the centre line, z to the right.
+//
+// The main screen displays the PowerMedia video loop (3840 x 128, 30:1 aspect), letterboxed across the full width.
+// A companion text board shows LAKESIDE START / FINISH in a bold condensed display font.
+// The structure includes a deep truss, lighting rig, camera pods, and a catwalk along the top.
 
 import * as THREE from 'three';
 import * as tex from './textures.js';
@@ -14,6 +18,43 @@ export const GANTRY_LOWEST = 6.25;  // lowest point of anything hanging from it 
 export const GANTRY_LEG = 4.0;      // legs stand this far outside the white line
 
 const DECAL = 0.006;
+
+// A muted looping video as a texture, or null where there is no browser video (the headless tools).
+// Reused from bridge.js to avoid multiple concurrent video instances on mobile Safari.
+function bannerVideo(url, onReady) {
+  if (typeof document === 'undefined' || typeof document.createElement('video').play !== 'function') return null;
+  const v = document.createElement('video');
+  v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
+  v.src = url.startsWith('data:') ? url : (import.meta.env?.BASE_URL ?? './') + url;
+  const t = new THREE.VideoTexture(v);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
+  v.addEventListener('loadeddata', () => { v.play().then(onReady, () => {}); });
+  v.addEventListener('error', () => {});
+  return t;
+}
+
+// Canvas texture with START / FINISH text in a bold condensed display font
+function gantryTextTexture() {
+  const c = document.createElement('canvas');
+  c.width = 1920; c.height = 512;
+  const x = c.getContext('2d');
+  x.fillStyle = '#1a1a1e';
+  x.fillRect(0, 0, 1920, 512);
+  x.fillStyle = '#ffd21f';
+  x.font = 'italic 900 180px "Arial Narrow", "Roboto Condensed", Arial, sans-serif';
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText('LAKESIDE', 480, 256);
+  x.fillText('START / FINISH', 1440, 256);
+  x.fillStyle = 'rgba(255, 210, 31, 0.3)';
+  x.strokeStyle = '#ffd21f';
+  x.lineWidth = 3;
+  x.strokeRect(20, 20, 880, 472);
+  x.strokeRect(1020, 20, 880, 472);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 // A flat quad facing +x or -x (dir), spanning z0..z1 and y0..y1, reading left to right for a viewer in front of it.
 function faceX(kit, key, x, y0, y1, z0, z1, dir, vb = 0, vt = 1, u0 = 0, u1 = 1) {
@@ -27,93 +68,137 @@ export function buildGantry(T, sponsorTex) {
   const c = trackPoint(T, GANTRY_S, 0), i = c.i;
   const roadY = T.groundAt(c.x, c.z, i);
   const kit = new Kit();
-  const bankY0 = GANTRY_CLEAR, topY = GANTRY_CLEAR + 1.35, half = span + 0.7;
+  const bankY0 = GANTRY_CLEAR, topY = GANTRY_CLEAR + 2.4, half = span + 0.7;
 
-  // legs: a pair of columns each side, braced, on a concrete plinth cut down to the real ground
+  // legs: a pair of columns each side, braced on concrete plinths
   for (const sd of [-1, 1]) {
     const z = sd * span, p = trackPoint(T, GANTRY_S, z);
     const base = T.groundAt(p.x, p.z, i) - roadY - 0.5;
-    for (const dx of [-0.5, 0.5]) kit.column('steel', 0.4, 0.4, base, topY + 0.1, dx, z);
-    kit.column('concrete', 1.8, 1.8, base, base + 0.9, 0, z);
-    for (let y = base + 2.2; y < topY; y += 2.4) kit.box('steel', 1.0, 0.12, 0.12, 0, y, z);
-    for (let y = base + 2.2, k = 0; y + 2.4 < topY + 0.2; y += 2.4, k++) {
-      const len = Math.hypot(1.0, 2.4);
-      kit.box('steel', 0.1, len, 0.1, 0, y + 1.2, z, 0, 0, 0, (k % 2 ? 1 : -1) * Math.atan2(1.0, 2.4));
+    for (const dx of [-0.6, 0.6]) kit.column('steel', 0.48, 0.48, base, topY + 0.2, dx, z);
+    kit.column('concrete', 2.2, 2.2, base, base + 1.0, 0, z);
+    // heavy cross-bracing on the legs: X-pattern with thicker diagonal members
+    for (let y = base + 2.4; y < topY; y += 2.8) {
+      kit.box('steel', 1.2, 0.14, 0.14, 0, y, z);
+      const len = Math.hypot(1.2, 2.8);
+      for (const sx of [-1, 1]) {
+        kit.box('steel', 0.12, len, 0.12, sx * 0.6, y + 1.4, z, 0, 0, 0, sx * Math.atan2(1.2, 2.8));
+      }
     }
-    // timing loop cabinet and a speaker on the inside face
-    kit.box('housing', 0.5, 0.9, 0.35, 0.9, base + 1.6, z - sd * 0.1);
-    kit.box('housing', 0.3, 0.3, 0.3, -0.7, topY - 1.0, z - sd * 0.5);
+    // timing loop cabinet and speaker mounted on the inside face
+    kit.box('housing', 0.6, 1.0, 0.4, 1.1, base + 1.8, z - sd * 0.15);
+    kit.box('housing', 0.35, 0.35, 0.35, -0.8, topY - 1.1, z - sd * 0.6);
   }
 
-  // truss between the legs: four chords, uprights and diagonals on both faces
-  for (const x of [-0.55, 0.55]) for (const y of [bankY0 + 0.12, topY]) kit.box('steel', 0.2, 0.2, half * 2, x, y, 0);
-  const bays = Math.round(half * 2 / 1.4), bay = half * 2 / bays;
+  // deep truss between the legs: outer and inner chords plus a center beam
+  for (const x of [-0.65, 0, 0.65]) for (const y of [bankY0 + 0.15, topY]) {
+    kit.box('steel', 0.24, 0.24, half * 2, x, y, 0);
+  }
+  // vertical uprights and diagonals in bay sections
+  const bays = Math.round(half * 2 / 1.6), bay = half * 2 / bays;
   for (let k = 0; k <= bays; k++) {
     const z = -half + k * bay;
-    for (const x of [-0.55, 0.55]) kit.box('steel', 0.1, topY - bankY0 - 0.12, 0.1, x, (topY + bankY0 + 0.12) / 2, z);
-    kit.box('steel', 1.1, 0.1, 0.1, 0, topY, z);
-    kit.box('steel', 1.1, 0.1, 0.1, 0, bankY0 + 0.12, z);
+    for (const x of [-0.65, 0, 0.65]) {
+      kit.box('steel', 0.12, topY - bankY0 - 0.15, 0.12, x, (topY + bankY0 + 0.15) / 2, z);
+    }
+    kit.box('steel', 1.3, 0.12, 0.12, 0, topY, z);
+    kit.box('steel', 1.3, 0.12, 0.12, 0, bankY0 + 0.15, z);
     if (k < bays) {
-      const h = topY - bankY0 - 0.12, len = Math.hypot(bay, h), a = Math.atan2(bay, h) * (k % 2 ? 1 : -1);
-      for (const x of [-0.55, 0.55]) kit.box('steel', 0.08, len, 0.08, x, (topY + bankY0 + 0.12) / 2, z + bay / 2, 0, 0, a);
+      const h = topY - bankY0 - 0.15, len = Math.hypot(bay, h);
+      for (const x of [-0.65, 0.65]) {
+        kit.box('steel', 0.10, len, 0.10, x, (topY + bankY0 + 0.15) / 2, z + bay / 2, 0, 0, (k % 2 ? 1 : -1) * Math.atan2(bay, h));
+      }
     }
   }
 
-  // timing banner on top: chequered ends and START / FINISH towards the grid, PowerMedia on the other face
-  const bw = 8.6, by0 = topY + 0.35, by1 = by0 + 1.6;
-  kit.box('steel', 0.22, by1 - by0 + 0.1, bw * 2 + 0.2, 0, (by0 + by1) / 2, 0);
-  for (const z of [-bw + 0.5, -bw / 2, 0, bw / 2, bw - 0.5]) kit.box('steel', 0.2, by0 - topY, 0.18, 0, (topY + by0) / 2, z);
-  faceX(kit, 'banner', -0.125, by0, by1, -bw, bw, -1);
-  const [vb, vt] = sponsorRow(0);
-  faceX(kit, 'sponsor', 0.125, by0, by1, -bw, bw, 1, vb, vt);
-  // the top edge cap
-  kit.box('steel', 0.36, 0.1, bw * 2 + 0.3, 0, by1 + 0.07, 0);
+  // main screens and text board on top: PowerMedia video on front, START/FINISH text on back
+  const sw = 10.0, sy0 = topY + 0.4, sy1 = sy0 + 1.2;
+  kit.box('steel', 0.28, sy1 - sy0 + 0.12, sw * 2 + 0.25, 0, (sy0 + sy1) / 2, 0);
+  for (const z of [-sw + 0.6, -sw / 2, 0, sw / 2, sw - 0.6]) kit.box('steel', 0.24, sy0 - topY, 0.22, 0, (topY + sy0) / 2, z);
+  // back face: text panel
+  faceX(kit, 'text', -0.16, sy0, sy1, -sw, sw, -1);
+  // front face: will hold still board (video mesh added separately)
+  faceX(kit, 'banner', 0.16, sy0, sy1, -sw, sw, 1, 0, 1);
+  // top edge cap with detail
+  kit.box('steel', 0.4, 0.12, sw * 2 + 0.35, 0, sy1 + 0.08, 0);
+  kit.box('steel', 0.14, 0.08, sw * 2 + 0.25, 0, sy1 + 0.26, 0);
 
-  // sponsor boards along both faces of the truss, either side of the lamp housing
+  // sponsor boards on both sides of the truss (visible from the sides)
   const rows = tex.MODERN_SPONSORS;
-  const panels = [[-9.8, -4.9], [4.9, 9.8]];
+  const panels = [[-9.2, -4.6], [4.6, 9.2]];
   panels.forEach(([z0, z1], k) => {
     const [b0, t0] = sponsorRow(rows[(k + 1) % rows.length]);
-    faceX(kit, 'sponsor', -0.68, bankY0 + 0.25, topY - 0.1, z0, z1, -1, b0, t0);
+    faceX(kit, 'sponsor', -0.8, bankY0 + 0.3, topY - 0.12, z0, z1, -1, b0, t0);
   });
-  [[-9.8, -5], [-4.8, 0], [0.2, 5], [5.2, 9.8]].forEach(([z0, z1], k) => {
+  [[-9.2, -4.8], [-4.6, 0], [0.2, 4.8], [4.6, 9.2]].forEach(([z0, z1], k) => {
     const [b0, t0] = sponsorRow(rows[(k + 4) % rows.length]);
-    faceX(kit, 'sponsor', 0.68, bankY0 + 0.25, topY - 0.1, z0, z1, 1, b0, t0);
+    faceX(kit, 'sponsor', 0.8, bankY0 + 0.3, topY - 0.12, z0, z1, 1, b0, t0);
   });
 
-  // lamp housing: one long black bar on the grid side of the truss, five modules, two lamps in each
-  const hy = 6.75;
-  kit.box('housing', 0.62, 1.0, 8.8, -0.95, hy, 0);
-  const lamp = new THREE.CircleGeometry(0.18, 20);
+  // lighting rig: long bar on the grid side with five modules
+  const hy = 7.0;
+  kit.box('housing', 0.7, 1.15, 9.8, -1.1, hy, 0);
+  const lamp = new THREE.CircleGeometry(0.22, 24);
   const lights = [];
   for (let k = 0; k < 5; k++) {
-    const z = (k - 2) * 1.6;
-    kit.box('housing', 0.14, 0.92, 1.3, -1.33, hy, z);
+    const z = (k - 2) * 1.9;
+    kit.box('housing', 0.16, 1.05, 1.5, -1.5, hy, z);
+    // structural pod frame
+    kit.box('steel', 0.08, 0.7, 0.08, -0.9, hy - 0.3, z);
     const pair = [];
-    for (const y of [-0.24, 0.24]) {
+    for (const y of [-0.3, 0.3]) {
       const m = new THREE.Mesh(lamp, new THREE.MeshStandardMaterial({ color: 0x5a0f0f, emissive: 0xff1a1a, emissiveIntensity: 0, roughness: 0.4 }));
-      m.position.set(-1.405, hy + y, z);
+      m.position.set(-1.5, hy + y, z);
       m.rotation.y = -Math.PI / 2;
       g.add(m);
       pair.push(m);
-      kit.box('housing', 0.12, 0.03, 0.46, -1.45, hy + y + 0.2, z);
+      kit.box('housing', 0.14, 0.04, 0.54, -1.6, hy + y + 0.25, z);
     }
     lights.push(pair);
   }
-  // two camera pods on the roof side of the lamp housing ends
-  for (const z of [-4.9, 4.9]) kit.box('housing', 0.4, 0.4, 0.4, -0.85, hy + 0.7, z);
+  // camera pods: on the back of the lamp housing and on the wing positions
+  for (const z of [-5.7, 0, 5.7]) kit.box('housing', 0.48, 0.48, 0.48, -1.0, hy + 0.9, z);
+  // catwalk structure along the top of the truss
+  kit.box('steel', 0.08, 0.05, sw * 2 + 0.4, 0, topY + 0.05, 0);
+  for (let k = 0; k <= bays; k++) {
+    const z = -half + k * bay;
+    kit.box('steel', 0.08, 0.05, 0.16, 0, topY + 0.1, z);
+  }
 
-  const steel = new THREE.MeshStandardMaterial({ color: 0x3a3e44, roughness: 0.5, metalness: 0.55 });
+  // Build materials
+  const steel = new THREE.MeshStandardMaterial({ color: 0x2a2e34, roughness: 0.52, metalness: 0.6 });
+  const textMat = new THREE.MeshStandardMaterial({ map: gantryTextTexture(), roughness: 0.4 });
+  const stillBannerMat = new THREE.MeshStandardMaterial({ map: tex.gantryBannerTexture(), roughness: 0.4, toneMapped: false });
   const mats = {
     steel,
-    housing: new THREE.MeshStandardMaterial({ color: 0x16171a, roughness: 0.55, metalness: 0.2 }),
-    concrete: new THREE.MeshStandardMaterial({ map: tex.standConcreteTexture(), roughness: 0.9 }),
-    banner: new THREE.MeshStandardMaterial({ map: tex.gantryBannerTexture(), roughness: 0.5 }),
-    sponsor: new THREE.MeshStandardMaterial({ map: sponsorTex, roughness: 0.5 }),
+    housing: new THREE.MeshStandardMaterial({ color: 0x0f1114, roughness: 0.6, metalness: 0.15 }),
+    concrete: new THREE.MeshStandardMaterial({ map: tex.standConcreteTexture(), roughness: 0.92 }),
+    text: textMat,
+    banner: stillBannerMat,
+    sponsor: new THREE.MeshStandardMaterial({ map: sponsorTex, roughness: 0.48 }),
   };
   const body = kit.build(mats);
   body.traverse(o => { if (o.isMesh) o.userData.debug = 'building'; });
   g.add(body);
+
+  // Video screen: create a separate mesh for the PowerMedia video, layered over the still board
+  // Build it the same way as bridge.js does: create geometry separately, add with video texture
+  const videoGeom = new THREE.BufferGeometry();
+  const pos = [0.16, sy0, -sw, 0.16, sy0, sw, 0.16, sy1, sw, 0.16, sy1, -sw];
+  videoGeom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  videoGeom.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+  videoGeom.setIndex([0, 1, 2, 0, 2, 3]);
+  videoGeom.computeVertexNormals();
+
+  const videoMat = new THREE.MeshBasicMaterial({ toneMapped: false });
+  const videoTex = bannerVideo('sponsors/powermedia-bridge-30x1-loop-1.mp4', () => {
+    videoMesh.visible = true;
+  });
+  videoMat.map = videoTex || null;
+  const videoMesh = new THREE.Mesh(videoGeom, videoMat);
+  videoMesh.visible = false;
+  videoMesh.userData.debug = 'building';
+  g.add(videoMesh);
+
   g.userData.lights = lights;
   g.userData.bounds = { s: GANTRY_S, span, legs: [-span, span], clear: GANTRY_LOWEST };
   g.position.set(c.x, roadY, c.z);

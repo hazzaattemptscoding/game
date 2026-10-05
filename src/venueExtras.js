@@ -9,6 +9,21 @@ import { Kit, metreUV, sponsorPanel, trackPoint, hash01 } from './meshKit.js';
 import { frame, checkStand, wallClearance, standDepth, GAP } from './grandstands.js';
 import { lampMaterial, flagMaterial, addFlag, onLampLevel } from './lamps.js';
 
+// A muted looping video as a texture, or null where there is no browser video (the headless tools).
+// Shared across structures to avoid multiple concurrent video instances on mobile Safari.
+function bannerVideo(url, onReady) {
+  if (typeof document === 'undefined' || typeof document.createElement('video').play !== 'function') return null;
+  const v = document.createElement('video');
+  v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
+  v.src = url.startsWith('data:') ? url : (import.meta.env?.BASE_URL ?? './') + url;
+  const t = new THREE.VideoTexture(v);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
+  v.addEventListener('loadeddata', () => { v.play().then(onReady, () => {}); });
+  v.addEventListener('error', () => {});
+  return t;
+}
+
 const wrapN = (i, n) => ((i % n) + n) % n;
 const PALETTE = [0xc8102e, 0xf2f2ee, 0x1d4e9e, 0xffd21f, 0x0e7c86, 0xff6a13, 0x2f3136, 0x3f9d4f, 0xd4145a, 0x8a5cd6];
 const SKIN = [0xf1c9a5, 0xe0ac88, 0xc68a62, 0x9a6540, 0x6b4328, 0xf6d6bd];
@@ -272,7 +287,7 @@ function mediaTower(kit, st, spots) {
   for (let k = 0; k < 6; k++) spots.push([-4 + k * 1.5, h[3] + 0.02, 2.4 + (k % 2) * 0.7, PALETTE[(k * 3) % PALETTE.length], hash01(k, 2, 3), false]);
 }
 
-function footbridge(kit, b) {
+function footbridge(kit, b, videoGroup) {
   const { c, deckY } = b, P = (u, t, y) => [c.x + c.nx * u + c.tx * t, y, c.z + c.nz * u + c.tz * t];
   const uL = -b.halfSpan[0], uR = b.halfSpan[1], hw = DECK_W / 2;
   const yaw = Math.atan2(-c.nz, c.nx);
@@ -291,11 +306,44 @@ function footbridge(kit, b) {
   }
   for (let k = 0; k <= n; k += 2) beam(kit, 'steel', P(uL + k * step, -hw, deckY + H), P(uL + k * step, hw, deckY + H), 0.1);   // cross ties
   kit.box('roof', span, 0.08, DECK_W + 0.6, mp[0], deckY + H + 0.2, mp[2], yaw);                              // a light roof
-  // banners on the truss, one each way
+
+  // PowerMedia video banner on the underside of the deck
+  if (videoGroup) {
+    const vw = span - 0.4, vh = 0.8, vy0 = deckY - 0.32, vy1 = vy0 - vh;
+    const stillMat = new THREE.MeshStandardMaterial({ map: tex.gantryBannerTexture(), roughness: 0.4, toneMapped: false });
+    const still = new THREE.Mesh(
+      new THREE.PlaneGeometry(vw, vh),
+      stillMat
+    );
+    still.position.set(mp[0], (vy0 + vy1) / 2, mp[2]);
+    still.rotation.set(Math.PI / 2, yaw + Math.PI, 0);
+    still.userData.debug = 'building';
+    videoGroup.add(still);
+
+    // Overlay with video when ready
+    const videoMat = new THREE.MeshBasicMaterial({ toneMapped: false });
+    const videoTex = bannerVideo('sponsors/powermedia-bridge-30x1-loop-1.mp4', () => {
+      video.visible = true;
+      still.visible = false;
+    });
+    videoMat.map = videoTex || null;
+    const video = new THREE.Mesh(
+      new THREE.PlaneGeometry(vw, vh),
+      videoMat
+    );
+    video.position.set(mp[0], (vy0 + vy1) / 2, mp[2]);
+    video.rotation.set(Math.PI / 2, yaw + Math.PI, 0);
+    video.visible = false;
+    video.userData.debug = 'building';
+    videoGroup.add(video);
+  }
+
+  // sponsor banners on the truss sides
   for (let k = 0; k < 3; k++) {
     const u0 = uL + (k + 0.2) * span / 3, u1 = u0 + span / 3 * 0.8, a = P(u0, -hw - 0.1, deckY + 0.2), z = P(u1, -hw - 0.1, deckY + 0.2), row = tex.MODERN_SPONSORS[(k + Math.round(b.s)) % tex.MODERN_SPONSORS.length];
     sponsorPanel(kit, 'sponsor', row, a[0], a[2], z[0], z[2], deckY + 0.15, deckY + 1.5, 1);
   }
+
   // stairs on each side, going down away from the circuit: stringers, handrails, treads and posts
   for (const [side, sg] of [[0, -1], [1, 1]]) {
     const ua = sg < 0 ? uL : uR, ub = ua + sg * STAIR, top = deckY, g0 = b.sides[side].lo;
@@ -338,6 +386,8 @@ export function buildExtras(T, ground, plan) {
   const head = new THREE.OctahedronGeometry(0.13, 0);
   const crowdMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
 
+  const videoGroup = new THREE.Group();
+
   for (const st of plan.items) {
     const kit = new Kit(), spots = [];
     if (st.kind === 'fanzone') fanZone(kit, st, spots); else if (st.kind === 'screen') bigScreen(kit, st); else if (st.kind === 'tower') mediaTower(kit, st, spots);
@@ -359,7 +409,7 @@ export function buildExtras(T, ground, plan) {
       group.add(cg);
     }
   }
-  for (const b of plan.bridges) footbridge(all, b);
+  for (const b of plan.bridges) footbridge(all, b, videoGroup);
 
   // signs, pit boards: one merged mesh with the atlas
   const sk = new Kit();
@@ -386,6 +436,7 @@ export function buildExtras(T, ground, plan) {
   const body = all.build(mats);
   body.traverse(o => { if (o.isMesh) o.userData.debug = 'building'; });
   group.add(body);
+  group.add(videoGroup);
 
   // bins: instanced
   if (plan.small.bins.length) {
