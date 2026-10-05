@@ -9,6 +9,7 @@ import * as tex from './textures.js';
 import { Kit, trackPoint, hash01, sponsorRow } from './meshKit.js';
 import { wallClearance } from './grandstands.js';
 import { garageBay } from './pitBuilding.js';
+import { flagMaterial, addFlag } from './lamps.js';
 
 const wrapN = (i, n) => ((i % n) + n) % n;
 
@@ -43,7 +44,7 @@ export function buildProps(T, ground, blockers, stands) {
   // ---- marshal posts ------------------------------------------------------------------------------------------------
   {
     const kit = new Kit(), posts = [];
-    for (let s = 60; s < T.length - 40; s += 170) {
+    for (let s = 60; s < T.length - 40; s += 105) {
       let placed = null;
       for (const off of [0, 12, -12, 25, -25, 40, -40, 60, -60]) {
         const c = trackPoint(T, s + off, 0), i = c.i;
@@ -71,9 +72,15 @@ export function buildProps(T, ground, blockers, stands) {
       at('orange', 3.5, 0.12, 3.0, 0, 2.35, 0.1);
       at('steel', 0.07, 4.2, 0.07, 1.9, 2.1, 0.9);
       const W = (a, yy, cc) => [p.x + ex[0] * a + ez[0] * cc, y + yy, p.z + ex[1] * a + ez[1] * cc];
-      const flag = hash01(Math.round(s), 3) < 0.5 ? 'flagY' : 'flagG';
-      kit.quad(flag, W(1.93, 3.9, 0.9), W(2.9, 3.9, 0.9), W(2.9, 4.6, 0.9), W(1.93, 4.6, 0.9));
-      kit.quad(flag, W(2.9, 3.9, 0.9), W(1.93, 3.9, 0.9), W(1.93, 4.6, 0.9), W(2.9, 4.6, 0.9));
+      const flag = hash01(Math.round(s), 3) < 0.5 ? 'flagY' : 'flagG', fw = W(1.93, 3.9, 0.9);
+      addFlag(kit, flag, fw[0], fw[1], fw[2], ex[0], ex[1], 1.0, 0.7, 4);
+      // the flag stand in front of the post: a rack of poles with the yellow, red and blue flags on it
+      at('steel', 2.4, 0.08, 0.08, 0, 0.5, 2.2);
+      [['flagY', -1], ['flagR', 0], ['flagB', 1]].forEach(([fk, a]) => {
+        at('steel', 0.04, 2.6, 0.04, a * 0.8, 1.6, 2.2);
+        const fp = W(a * 0.8 + 0.02, 1.9, 2.2);
+        addFlag(kit, fk, fp[0], fp[1], fp[2], ex[0], ex[1], 0.7, 0.5, 3);
+      });
       posts.push([p.x, p.z]);
     }
     const mats = {
@@ -81,8 +88,10 @@ export function buildProps(T, ground, blockers, stands) {
       white: new THREE.MeshStandardMaterial({ color: 0xe8e6de, roughness: 0.7 }),
       orange: new THREE.MeshStandardMaterial({ color: 0xff6a13, roughness: 0.6 }),
       steel: new THREE.MeshStandardMaterial({ color: 0x4a4f55, roughness: 0.5, metalness: 0.5 }),
-      flagY: new THREE.MeshStandardMaterial({ color: 0xffd21f, roughness: 0.8, side: THREE.DoubleSide }),
-      flagG: new THREE.MeshStandardMaterial({ color: 0x2fb04a, roughness: 0.8, side: THREE.DoubleSide }),
+      flagY: flagMaterial({ color: 0xffd21f }),
+      flagG: flagMaterial({ color: 0x2fb04a }),
+      flagR: flagMaterial({ color: 0xc8102e }),
+      flagB: flagMaterial({ color: 0x1d4e9e }),
     };
     const mesh = kit.build(mats);
     mesh.traverse(o => { if (o.isMesh) o.userData.debug = 'sign'; });
@@ -157,20 +166,18 @@ export function buildProps(T, ground, blockers, stands) {
 
   // ---- flag masts at the ends of the main stand, and a chequered flag at the start line ------------------------------------
   {
-    const kit = new Kit(), main = stands.find(s => s.name === 'Main Grandstand');
+    const kit = new Kit();
     const masts = [];
-    if (main) for (const a of [-main.len / 2 - 6, main.len / 2 + 6]) masts.push({ x: main.x + main.ex[0] * a + main.ez[0] * 6, z: main.z + main.ex[1] * a + main.ez[1] * 6, ex: main.ex, ez: main.ez });
+    for (const main of stands.filter(s => s.kind === 'main' || s.name === 'Main Grandstand')) for (const a of [-main.len / 2 - 6, main.len / 2 + 6]) masts.push({ x: main.x + main.ex[0] * a + main.ez[0] * 6, z: main.z + main.ex[1] * a + main.ez[1] * 6, ex: main.ex, ez: main.ez });
     masts.forEach((m, k) => {
       const y = yAt(m.x, m.z) - 0.2, key = ['flagR', 'flagB'][k % 2];
       kit.box('steel', 0.14, 11, 0.14, m.x, y + 5.5, m.z);
-      const W = (a, yy) => [m.x + m.ex[0] * a, y + yy, m.z + m.ex[1] * a];
-      kit.quad(key, W(0.07, 9.3), W(3.2, 9.3), W(3.2, 10.9), W(0.07, 10.9));
-      kit.quad(key, W(3.2, 9.3), W(0.07, 9.3), W(0.07, 10.9), W(3.2, 10.9));
+      addFlag(kit, key, m.x + m.ex[0] * 0.07, y + 9.3, m.z + m.ex[1] * 0.07, m.ex[0], m.ex[1], 3.2, 1.6, 6);
     });
     const mats = {
       steel: new THREE.MeshStandardMaterial({ color: 0xcfd3d6, roughness: 0.5, metalness: 0.4 }),
-      flagR: new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: 0.8, side: THREE.DoubleSide }),
-      flagB: new THREE.MeshStandardMaterial({ color: 0x1d4e9e, roughness: 0.8, side: THREE.DoubleSide }),
+      flagR: flagMaterial({ color: 0xc8102e }),
+      flagB: flagMaterial({ color: 0x1d4e9e }),
     };
     const mesh = kit.build(mats, { debug: 'sign' });
     g.add(mesh);
@@ -216,6 +223,25 @@ export function buildProps(T, ground, blockers, stands) {
         if (n > 70) break;
       }
     }
+    // and round the corners: shorter runs of boards on the outside of the bends, behind the catch fence
+    {
+      let k = 0;
+      for (let i = 0; i < T.N - 8 && k < 80; i += 9) {
+        const j = i + 8;
+        if (Math.abs(T.curv[i]) < 0.004 || T.isBridge[i] || T.isBridge[j]) continue;
+        const side = T.curv[i] > 0 ? 0 : 1, sg = side ? 1 : -1;
+        if ((side === 0 && (T.pitOut[i] || T.pitOut[j])) || T.street[side][i] || T.street[side][j]) continue;
+        const a = trackPoint(T, T.s[i], sg * (T.wall[side][i] + 5.4)), b = trackPoint(T, T.s[j], sg * (T.wall[side][j] + 5.4)), mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+        const rule = { behind: 4, fromBarrier: 4.5, pad: 1 };
+        if (!free(a.x, a.z, rule) || !free(b.x, b.z, rule) || !free(mx, mz, rule)) continue;
+        const ya = yAt(a.x, a.z), yb = yAt(b.x, b.z), [vb, vt] = sponsorRow(rows[Math.floor(hash01(i, side, 5) * rows.length)]);
+        const A = [a.x, ya + 0.5, a.z], B = [b.x, yb + 0.5, b.z], A2 = [a.x, ya + 1.9, a.z], B2 = [b.x, yb + 1.9, b.z];
+        if (side === 1) kit.quad('sponsor', B, A, A2, B2, [[0, vb], [1, vb], [1, vt], [0, vt]]); else kit.quad('sponsor', A, B, B2, A2, [[0, vb], [1, vb], [1, vt], [0, vt]]);
+        kit.quad('back', A, B, B2, A2);
+        kit.box('post', 0.1, 1.9, 0.1, a.x, ya + 0.95, a.z);
+        k++; count++;
+      }
+    }
     const mats = {
       sponsor: new THREE.MeshStandardMaterial({ map: tex.sharedSponsorAtlas(), roughness: 0.55, side: THREE.FrontSide }),
       back: new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.8, side: THREE.DoubleSide }),
@@ -244,21 +270,52 @@ export function buildProps(T, ground, blockers, stands) {
       }
     }
     if (trees.length) {
-      const trunkG = new THREE.CylinderGeometry(0.22, 0.34, 3.2, 6); trunkG.translate(0, 1.6, 0);
-      const crown = new THREE.IcosahedronGeometry(2.7, 0); crown.translate(0, 5.4, 0);
-      const top = new THREE.IcosahedronGeometry(1.9, 0); top.translate(0.5, 7.4, 0.3);
-      const crownAll = mergeTwo(crown, top);
-      const trunk = new THREE.InstancedMesh(trunkG, new THREE.MeshLambertMaterial({ color: 0x5b4632 }), trees.length);
-      const leaves = new THREE.InstancedMesh(crownAll, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), trees.length);
+      // five kinds: oak, pine, poplar, birch and a low bush, each an instanced trunk and crown
+      const crownOf = (...parts) => mergeTwo(parts[0], parts[1] || parts[0]);
+      const oakC = crownOf((() => { const c = new THREE.IcosahedronGeometry(2.7, 0); c.translate(0, 5.4, 0); return c; })(), (() => { const c = new THREE.IcosahedronGeometry(1.9, 0); c.translate(0.5, 7.4, 0.3); return c; })());
+      const pineC = (() => { const a1 = new THREE.ConeGeometry(2.6, 4.2, 7); a1.translate(0, 4.2, 0); const a2 = new THREE.ConeGeometry(1.8, 3.6, 7); a2.translate(0, 6.9, 0); return mergeTwo(a1, a2); })();
+      const popC = (() => { const c = new THREE.IcosahedronGeometry(1.5, 0); c.scale(1, 3.4, 1); c.translate(0, 7.2, 0); return c; })();
+      const birchC = (() => { const c = new THREE.IcosahedronGeometry(1.9, 0); c.scale(1, 1.3, 1); c.translate(0, 5.8, 0); return c; })();
+      const trunk = (r, h, c) => ({ g: (() => { const t = new THREE.CylinderGeometry(r * 0.65, r, h, 6); t.translate(0, h / 2, 0); return t; })(), c });
+      const kinds = [
+        { crown: oakC, ...trunk(0.34, 3.2, 0x5b4632), hue: [0.24, 0.07], l: [0.2, 0.08] },
+        { crown: pineC, ...trunk(0.3, 2.4, 0x4a3a2a), hue: [0.36, 0.04], l: [0.13, 0.05] },
+        { crown: popC, ...trunk(0.22, 3.0, 0x6a5a44), hue: [0.2, 0.06], l: [0.22, 0.08] },
+        { crown: birchC, ...trunk(0.2, 3.6, 0xdad6cc), hue: [0.18, 0.06], l: [0.28, 0.08] },
+      ];
+      const byKind = kinds.map(() => []);
+      trees.forEach(t => { const r = hash01(Math.round(t[0] * 3), Math.round(t[1] * 3), 12); byKind[r < 0.4 ? 0 : r < 0.62 ? 1 : r < 0.8 ? 2 : 3].push(t); });
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), c = new THREE.Color();
-      trees.forEach(([x, z, sc, h], k) => {
-        e.set(0, h * 6.28, 0);
-        m4.compose(new THREE.Vector3(x, yAt(x, z) - 0.2, z), q.setFromEuler(e), new THREE.Vector3(sc, sc * (0.9 + h * 0.3), sc));
-        trunk.setMatrixAt(k, m4); leaves.setMatrixAt(k, m4);
-        leaves.setColorAt(k, c.setHSL(0.24 + h * 0.07, 0.42, 0.2 + ((h * 31) % 1) * 0.08));
+      kinds.forEach((kd, ki) => {
+        const list = byKind[ki];
+        if (!list.length) return;
+        const tr = new THREE.InstancedMesh(kd.g, new THREE.MeshLambertMaterial({ color: kd.c }), list.length);
+        const lv = new THREE.InstancedMesh(kd.crown, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), list.length);
+        list.forEach(([x, z, sc, h], k) => {
+          e.set(0, h * 6.28, 0);
+          m4.compose(new THREE.Vector3(x, yAt(x, z) - 0.2, z), q.setFromEuler(e), new THREE.Vector3(sc, sc * (0.9 + h * 0.3), sc));
+          tr.setMatrixAt(k, m4); lv.setMatrixAt(k, m4);
+          lv.setColorAt(k, c.setHSL(kd.hue[0] + h * kd.hue[1], 0.42, kd.l[0] + ((h * 31) % 1) * kd.l[1]));
+        });
+        tr.userData.debug = lv.userData.debug = 'grass';
+        g.add(tr, lv);
       });
-      trunk.userData.debug = leaves.userData.debug = 'grass';
-      g.add(trunk, leaves);
+      // bushes close to the fence line, behind the catch fence
+      const bushes = [];
+      for (let s = 0; s < T.length; s += 23) for (const side of [0, 1]) {
+        if (hash01(Math.round(s), side, 21) > 0.3) continue;
+        const i = wrapN(Math.round(s / T.ds), T.N), sg = side ? 1 : -1;
+        const p = trackPoint(T, s, sg * (T.wall[side][i] + 14 + hash01(Math.round(s), side, 22) * 12));
+        if (free(p.x, p.z, { behind: 11, fromBarrier: 9, pad: 4 }) && !T.street[side][i] && !T.isBridge[i]) bushes.push([p.x, p.z, 0.7 + hash01(Math.round(s), side, 23) * 0.8, hash01(Math.round(s), side, 24)]);
+      }
+      if (bushes.length) {
+        const bg = new THREE.IcosahedronGeometry(1.1, 0); bg.scale(1.3, 0.8, 1.1); bg.translate(0, 0.7, 0);
+        const bm = new THREE.InstancedMesh(bg, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), bushes.length);
+        bushes.forEach(([x, z, sc, h], k) => { e.set(0, h * 6.28, 0); m4.compose(new THREE.Vector3(x, yAt(x, z) - 0.15, z), q.setFromEuler(e), new THREE.Vector3(sc, sc, sc)); bm.setMatrixAt(k, m4); bm.setColorAt(k, c.setHSL(0.22 + h * 0.08, 0.4, 0.17 + ((h * 17) % 1) * 0.08)); });
+        bm.userData.debug = 'grass';
+        g.add(bm);
+        stats.bushes = bushes.length;
+      }
     }
     stats.trees = trees.length;
   }

@@ -12,6 +12,8 @@ import * as tex from './textures.js';
 import { buildGrandstands, trackBlockers } from './grandstands.js';
 import { buildProps } from './props.js';
 import { buildPitDetail } from './pitBuilding.js';
+import { planMasts, buildFloodlights } from './floodlights.js';
+import { planExtras, buildExtras, footBlockers } from './venueExtras.js';
 
 // Longer, rougher grass for everything beyond the containment wall: one texture, one tint, shared by the ground ribbon's
 // outer band and the terrain mesh, so the two meet without a seam. A second look at the same texture at another scale
@@ -376,7 +378,12 @@ export function buildScenery(T, ground) {
   // grandstands, then everything small that has to keep clear of them and of the buildings
   const blockers = sceneryFootprints(T);
   const stands = buildGrandstands(T, ground, blockers);
-  g.add(stands, buildProps(T, ground, [...trackBlockers(T), ...blockers], stands.userData.stands), buildPitDetail(T, ground));
+  const all = [...trackBlockers(T), ...blockers];
+  const extras = planExtras(T, ground, all, stands.userData.stands);
+  const obstacles = [...stands.userData.stands, ...extras.items];
+  const allB = [...all, ...footBlockers(extras.bridges)];
+  g.add(stands, buildExtras(T, ground, extras), buildProps(T, ground, allB, obstacles), buildPitDetail(T, ground));
+  g.add(buildFloodlights(T, ground, planMasts(T, allB, obstacles)));
 
   return g;
 }
