@@ -536,7 +536,7 @@ export class Multiplayer {
       this.changed();
     } else if (data.t === 'lv') {
       if (p.hello && typeof data.l === 'string' && this.ghosts) this.ghosts.setLivery(id, data.l);
-    } else if (data.t === 'clk' || data.t === 'clkr' || data.t === 'race') {
+    } else if (data.t === 'clk' || data.t === 'clkr' || data.t === 'race' || data.t === 'env') {
       if (p.hello && this.onControl) this.onControl(data, id);      // clock samples and race starts (src/raceControl.js)
     } else if (data.t === 'name') {
       p.name = cleanName(data.n) || p.name;

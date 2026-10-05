@@ -26,6 +26,8 @@ import { createBoard } from './board.js';
 import { CarAudio } from './audio.js';
 import { createRacingLine } from './racingLine.js';
 import { createDirector, HOLD } from './director.js';
+import { createEnvironment } from './environment.js';
+import { envFromParams } from './weather.js';
 
 const params = new URLSearchParams(location.search);
 const settings = loadSettings();
@@ -52,7 +54,8 @@ const skyTop = new THREE.Color(0x6fa3d6), skyBottom = new THREE.Color(0xd9e6ee);
 scene.background = skyTexture(skyTop, skyBottom);
 scene.fog = new THREE.Fog(0xcfdde6, 300, 2600);
 
-scene.add(new THREE.HemisphereLight(0xdfeeff, 0x4a5a3a, 1.1));
+const hemi = new THREE.HemisphereLight(0xdfeeff, 0x4a5a3a, 1.1);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff1dc, 2.4);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
@@ -60,12 +63,16 @@ Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, n
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
-const SUN_DIR = new THREE.Vector3(-0.5, 0.75, 0.42).normalize();
+const SUN_DIR = new THREE.Vector3(-0.5, 0.75, 0.42).normalize();   // the environment (src/environment.js) moves it with the time of day
 
 const ground = createGround(track), terrain = ground.mesh();
 const world = new THREE.Group();
 world.add(terrain, buildTrackScene(track, ground), buildScenery(track, ground));
 scene.add(world);
+const env = createEnvironment({ renderer, scene, sun, hemi, sunDir: SUN_DIR });   // sky, light, fog, weather, wet road, lamps
+const urlEnv = envFromParams(params);   // ?weather=rain&time=dusk wins over the settings and the room, for testing
+env.set(urlEnv || settings, { instant: true });
+env.registerWorld(world);
 const racingLine = createRacingLine(track);   // optional colour coded racing line (L key, Settings); the page ?line=1 turns it on
 scene.add(racingLine.group);
 if (params.get('line') === '1') settings.racingLine = true;
@@ -79,6 +86,7 @@ const playerId = localPlayerId(), myLivery = () => ownLivery(settings.livery, pl
 const view = new CarView(GT, myLivery());
 view.setFlat(settings.blockout);
 scene.add(view.root);
+env.attachCar(view);
 
 // ?view=x,y,z,tx,ty,tz pins the camera (for screenshots); ?viewat=s,d,height,lookahead places it by track position
 let fixedView = params.has('view') ? params.get('view').split(',').map(Number) : null;
@@ -176,6 +184,7 @@ function frame(now) {
     }
   }
 
+  env.set(urlEnv || dir.api.environment());
   view.update(car, acc / STEP);
   if (reportTool.opened) reportTool.update();
   else if (topDown && fixedView) {
@@ -198,6 +207,7 @@ function frame(now) {
   sun.target.position.copy(p);
   sun.position.copy(p).addScaledVector(SUN_DIR, 150);
 
+  env.update(dt, rig.camera, { speed: car.speed });
   audio.update(car, dt, paused);
   lobby.update(now);
   hud.update(car, timer, track, simTime, playerInput);
@@ -215,7 +225,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // for quick checks from the browser console
-window.lakeside = { car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir };
+window.lakeside = { car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer };
 
 function skyTexture(top, bottom) {
   const c = document.createElement('canvas');
@@ -265,7 +275,7 @@ function averageColour(texture) {
 // Full, Blockout and the top-down debug colours share one switch.
 function applyLook() {
   markers.visible = topDown;
-  scene.fog.far = topDown ? 20000 : 2600;
+  env.setTopDown(topDown);
   // the race view only looks 2.6 km and starts at 0.5 m: that keeps the depth buffer fine enough that
   // nothing a few millimetres apart flickers
   { rig.camera.near = topDown ? 1 : 0.5; rig.camera.far = topDown ? 6000 : 2600; rig.camera.updateProjectionMatrix(); }

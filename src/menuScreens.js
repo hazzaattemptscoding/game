@@ -2,6 +2,7 @@
 // Registered on the menu by registerScreens(menu). The game's side of each button is `ctx.api` (director.js).
 
 import { LAP_CHOICES } from './session.js';
+import { weatherRows } from './weatherMenu.js';
 import { HUD_ELEMENTS, MAP_SIZES, MAP_POSITIONS, PRESET_ORDER, PRESET_NAMES, SCALE_MIN, SCALE_MAX, MAP_OPACITY_MIN, detectPreset, applyPreset } from './hudSettings.js';
 
 export const h = (tag, cls, ...kids) => {
@@ -137,6 +138,7 @@ function setupScreen() {
       c.append(start);
       c.append(segRow('Assists', [['any', 'Any'], ['off', 'All off']], () => cur.assists, v => { cur.assists = v; store(); }, { note: 'All off switches traction control, ABS and stability control off for the race.' }));
       if (api.hasRacingLine && api.hasRacingLine()) c.append(segRow('Racing line', [[true, 'Allowed'], [false, 'Not allowed']], () => cur.racingLine, v => { cur.racingLine = v; store(); }));
+      c.append(...weatherRows(ctx, segRow, h));
       c.append(segRow('Track limits', [['warn', 'Warnings']], () => 'warn', () => {}, { note: 'Cutting a corner shows a warning and makes the lap invalid.' }));
       const ai = segRow('AI opponents', [['0', 'None']], () => '0', () => {}, { note: 'Coming soon.' });
       const aiBtn = btn('Coming soon', 'm-opt', null); aiBtn.disabled = true; aiBtn.setAttribute('aria-disabled', 'true');
@@ -154,7 +156,7 @@ function setupScreen() {
 // --- settings ---------------------------------------------------------------------------------------------------------
 
 function settingsScreen() {
-  const TABS = ['Driving', 'Display', 'Interface', 'Sound', 'Controls', 'Online'];
+  const TABS = ['Driving', 'Display', 'Weather', 'Interface', 'Sound', 'Controls', 'Online'];
   return {
     title: 'Settings',
     mount(c, ctx) {
@@ -217,6 +219,7 @@ function settingsScreen() {
           mrow(segRow('Corner numbers', [['off', 'Off'], ['numbers', 'On']], () => tm.labels, v => set('labels', v)));
           p.append(mg);
         },
+        Weather(p) { p.append(...weatherRows(ctx, segRow, h)); },
         Sound(p) {
           p.append(segRow('Sound', [[true, 'On'], [false, 'Off']], () => settings.sound !== false, v => { settings.sound = v; persist(); }));
           p.append(sliderRow('Volume', { min: 0, max: 100, step: 1, get: () => Math.round(settings.volume * 100), set: v => { settings.volume = Math.max(0, Math.min(1, v / 100)); persist(); }, fmt: v => `${Math.round(v)}%` }));
@@ -292,6 +295,7 @@ function onlineScreen() {
       setup.append(segRow('Laps', LAP_CHOICES.map(n => [n, String(n)]), () => cur.laps, v => { cur.laps = v; cur.custom = false; store(); }));
       setup.append(segRow('Assists', [['any', 'Any'], ['off', 'All off']], () => cur.assists, v => { cur.assists = v; store(); }));
       if (api.hasRacingLine && api.hasRacingLine()) setup.append(segRow('Racing line', [[true, 'Allowed'], [false, 'Not allowed']], () => cur.racingLine, v => { cur.racingLine = v; store(); }));
+      setup.append(...weatherRows(ctx, segRow, h));
       const startBtn = btn('Start race', 'm-btn primary', () => api.hostStartRace({ laps: cur.laps, assists: cur.assists, racingLine: api.hasRacingLine && api.hasRacingLine() ? cur.racingLine : true }));
       setup.append(h('div', 'm-actions', startBtn));
       const wait = h('p', 'm-note', 'Waiting for the host to start the race.');

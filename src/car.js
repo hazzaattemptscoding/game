@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { normaliseLivery, liveryEquals, DEFAULT_LIVERY } from './livery.js';
+import { light } from './lamps.js';
 import { acquireTextures, releaseTextures, SIDE_W, SIDE_H } from './liveryTex.js';
 
 const VIBRATION = 0.006;   // metres of body movement per unit of surface roughness (rumble is 1.2, gravel 0.6)
@@ -262,6 +263,7 @@ export class CarView {
       w.spin.rotation.z = -wheel;
     }
 
-    this.brakeMat.emissiveIntensity = car.brake > 0.05 ? 3 : 0.25;
+    this.brakeMat.emissiveIntensity = car.brake > 0.05 ? 3 + 2 * light.night : 0.25 + 1.4 * light.night;   // the tail lights stay on in the dark
+    this.headMat.emissiveIntensity = 1.5 + 4 * light.headlamps;
   }
 }

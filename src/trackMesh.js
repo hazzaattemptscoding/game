@@ -78,6 +78,7 @@ export function buildTrackScene(T, ground) {
     attenuator: new THREE.MeshStandardMaterial({ map: tex.chevronTexture('#f2c200', '#111111'), roughness: 0.6 }),
     lampOff: new THREE.MeshStandardMaterial({ color: 0x2a0606, emissive: 0xff1a1a, emissiveIntensity: 0 }),
   };
+  for (const k of ['road', 'line', 'kerb', 'sausage', 'apron', 'concrete', 'rumble', 'pit', 'island', 'attenuator']) mat[k].userData.wet = 'road';   // the weather (src/environment.js) makes these glossy and dark in the rain
   const DEBUG_OF = {
     road: 'road', line: 'line', kerb: 'kerb', sausage: 'sausage', apron: 'runoff', concrete: 'runoff', rumble: 'rumble', grass: 'grass',
     gravel: 'gravel', gravelEdge: 'gravel', pit: 'pit', island: 'island', armco: 'armco', armcoSingle: 'armcoSingle',

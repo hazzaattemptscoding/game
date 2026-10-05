@@ -8,6 +8,8 @@ import { StartSequence, START, pickHold, goOffset, gridSlot, pitSlot, sampleOffs
 import { makeSession, Flow, PHASE, RaceTracker, RACE, orderResults, timeTrialRows, hasStartLights } from '../src/session.js';
 import { buildTrack } from '../src/track.js';
 import { createRaceControl, cleanRaceMessage } from '../src/raceControl.js';
+import { TIMES, WEATHERS, resolveEnv, blendEnv, cleanEnv, cleanWeather, cleanTime, envFromParams, shadowsOn, DEFAULT_ENV } from '../src/weather.js';
+import { migrateSettings } from '../src/settings.js';
 
 const fails = [];
 const check = (ok, msg) => { if (!ok) fails.push(msg); };
@@ -25,6 +27,7 @@ console.log('SESSIONS');
   check(makeSession('race', { ai: 5 }).ai === 0, 'AI is not available yet');
   check(makeSession('nonsense').mode === 'practice', 'unknown mode falls back to practice');
   check(makeSession('practice', { start: 'standing' }).start === 'standing', 'practice may start on the grid');
+  check(p.weather === 'clear' && p.time === 'midday' && makeSession('race', { weather: 'heavyrain', time: 'night' }).weather === 'heavyrain' && makeSession('race', { weather: 'x', time: 9 }).time === 'midday', 'weather and time are part of the session, bad values fall back to clear midday');
   check(!hasStartLights(p) && !hasStartLights(t) && hasStartLights(r) && hasStartLights(makeSession('online')), 'only races have start lights');
 }
 
@@ -256,8 +259,65 @@ console.log('ONLINE: A FAKE ROOM WITH SKEWED CLOCKS AND UNEVEN LATENCY');
   check(cleanRaceMessage({ t: 'race', startAt: 'x' }) === null && cleanRaceMessage(null) === null && cleanRaceMessage({ t: 'clk' }) === null, 'messages without a start time are dropped');
   const c = cleanRaceMessage({ t: 'race', startAt: 5, laps: 999, hold: 99999, assists: 'weird', grid: ['a', 3, 'b'] });
   check(c.laps === 99 && c.hold === START.HOLD_MAX_MS && c.assists === 'any' && c.grid.join() === 'a,b', 'laps, hold, assists and grid are clamped');
+  // weather and time of day: the host chooses, guests see the same; old hosts send nothing and guests keep their own
+  H.rc.hostSetEnv({ weather: 'heavyrain', time: 'night' });
+  run(T + 1000);
+  check(A.rc.env && A.rc.env.weather === 'heavyrain' && A.rc.env.time === 'night' && B.rc.env && B.rc.env.time === 'night', 'the host\'s weather reaches every guest');
+  check(C.rc.env && C.rc.env.weather === 'heavyrain', 'a late joiner gets the weather once from the next host update');
+  check(H.rc.env === null, 'the host has no host environment of its own');
+  const sentBefore = A.rc.env; H.rc.hostSetEnv({ weather: 'heavyrain', time: 'night' }); run(T + 1000);
+  check(A.rc.env === sentBefore, 'an unchanged environment is not sent again');
+  H.rc.hostSetEnv({ weather: 'fog', time: 'dusk' }); run(T + 1000);
+  check(A.rc.env.weather === 'fog' && A.rc.env.time === 'dusk' && B.rc.env.weather === 'fog', 'a change reaches everybody');
+  const r2 = H.rc.hostStart({ laps: 2, assists: 'any', racingLine: true, weather: 'lightrain', time: 'golden' });
+  check(r2.msg.weather === 'lightrain' && r2.msg.time === 'golden', 'the race message carries the weather');
+  run(T + 6000);
+  check(A.rc.env.weather === 'lightrain' && A.rc.env.time === 'golden' && A.got[A.got.length - 1].msg.weather === 'lightrain', 'guests take the weather from the race message too');
+  A.rc.handle({ t: 'env', weather: 'bogus', time: 42 }, 'host');
+  check(A.rc.env.weather === 'clear' && A.rc.env.time === 'midday', 'a bad environment message becomes the default');
+  const hostEnvBefore = H.rc.env; H.rc.handle({ t: 'env', weather: 'fog', time: 'night' }, 'g1');
+  check(H.rc.env === hostEnvBefore, 'the host ignores environment messages');
+  A.rc.clearEnv(); check(A.rc.env === null, 'leaving the room clears the host environment');
+  const old = createRaceControl({ mp: { isHost: false, selfId: 'x', peers: new Map(), sendControl() {} }, now: () => 0, random: () => 0.5, setTimeout: () => {}, onRace: () => {} });
+  old.handle({ t: 'race', startAt: 5000, laps: 3, grid: [] }, 'host');
+  check(old.env === null, 'a race message from an old host (no weather) leaves the guest on its own settings');
   // the host does not obey a race message, a guest does not answer clock requests
   const before = H.got.length; H.rc.handle({ t: 'race', startAt: 1, laps: 3 }, 'g1'); check(H.got.length === before, 'the host ignores race messages');
+}
+
+console.log('WEATHER AND TIME OF DAY');
+{
+  const d = resolveEnv(DEFAULT_ENV);
+  const hex = h => [(h >> 16 & 255) / 255, (h >> 8 & 255) / 255, (h & 255) / 255];
+  const same = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-9);
+  check(same(d.sky, hex(0x6fa3d6)) && same(d.skyBottom, hex(0xd9e6ee)) && same(d.fog, hex(0xcfdde6)) && d.fogNear === 300 && d.fogFar === 2600, 'the default is the old clear daytime sky and fog');
+  check(same(d.sun, hex(0xfff1dc)) && d.sunI === 2.4 && same(d.hemiSky, hex(0xdfeeff)) && same(d.hemiGround, hex(0x4a5a3a)) && d.hemiI === 1.1 && d.exposure === 1, 'the default sun, sky light and exposure are unchanged');
+  const sd = [-0.5, 0.75, 0.42], n = Math.hypot(...sd);
+  check(same(d.dir, sd.map(x => x / n)) && d.rain === 0 && d.wet === 0 && d.lamps === 0 && d.stars === 0 && d.cloud === 0, 'default sun direction, no rain, wet road, lamps, stars or cloud');
+  let finite = true;
+  for (const time of TIMES) for (const weather of WEATHERS) {
+    const r = resolveEnv({ time, weather });
+    for (const v of Object.values(r)) if (typeof v === 'number' ? !Number.isFinite(v) : Array.isArray(v) ? v.some(x => !Number.isFinite(x)) : false) finite = false;
+    if (!(r.fogFar > r.fogNear && r.fogNear > 0)) finite = false;
+  }
+  check(finite, 'every time and weather resolves to finite numbers with fog far beyond near');
+  check(resolveEnv({ time: 'night', weather: 'clear' }).lamps === 1 && resolveEnv({ time: 'dusk', weather: 'clear' }).lamps > 0.5 && resolveEnv({ time: 'midday', weather: 'clear' }).lamps === 0, 'floodlights come on at dusk and night, not by day');
+  check(resolveEnv({ time: 'night', weather: 'clear' }).stars > 0.9 && resolveEnv({ time: 'night', weather: 'overcast' }).stars < 0.2 && resolveEnv({ time: 'midday', weather: 'clear' }).stars === 0, 'stars at a clear night, hidden by cloud and by day');
+  check(resolveEnv({ weather: 'heavyrain' }).wet === 1 && resolveEnv({ weather: 'lightrain' }).wet < 1 && resolveEnv({ weather: 'lightrain' }).wet > 0.3 && resolveEnv({ weather: 'cloudy' }).wet === 0, 'the road is wet in rain only');
+  check(resolveEnv({ weather: 'fog' }).fogFar < 500 && resolveEnv({ weather: 'heavyrain' }).fogFar < resolveEnv({ weather: 'lightrain' }).fogFar && resolveEnv({ weather: 'lightrain' }).fogFar < 2600, 'fog and rain shorten the view');
+  check(resolveEnv({ weather: 'overcast' }).sunI < resolveEnv({ weather: 'cloudy' }).sunI && resolveEnv({ weather: 'cloudy' }).sunI < 2.4 && shadowsOn(d) && !shadowsOn(resolveEnv({ weather: 'heavyrain' })) && !shadowsOn(resolveEnv({ time: 'night' })), 'cloud takes the sun down and the shadows go with it');
+  check(resolveEnv({ time: 'golden' }).dir[1] < resolveEnv({ time: 'midday' }).dir[1] && resolveEnv({ time: 'morning' }).dir[1] < 0.5, 'the sun is lower at golden hour and in the morning');
+  check(resolveEnv({ weather: 'heavyrain' }).wind > resolveEnv({ weather: 'clear' }).wind && resolveEnv({ weather: 'heavyrain' }).spray > 0.9 && resolveEnv({ weather: 'cloudy' }).spray === 0, 'wind and spray follow the weather');
+  const mid = blendEnv(resolveEnv({ time: 'midday' }), resolveEnv({ time: 'night' }), 0.5);
+  check(Math.abs(mid.sunI - (2.4 + resolveEnv({ time: 'night' }).sunI) / 2) < 1e-9 && same(blendEnv(d, d, 0.3).sky, d.sky) && blendEnv(d, resolveEnv({ time: 'night' }), 1).lamps === 1, 'blending between two looks');
+  check(cleanWeather('Light Rain') === 'lightrain' && cleanWeather('rain') === 'lightrain' && cleanWeather('storm') === 'heavyrain' && cleanWeather('nonsense') === 'clear' && cleanWeather(null) === 'clear', 'weather names are cleaned');
+  check(cleanTime('Golden hour') === 'golden' && cleanTime('night') === 'night' && cleanTime(3) === 'midday' && cleanTime('sunset') === 'dusk', 'time names are cleaned');
+  const q = s => new URLSearchParams(s);
+  check(envFromParams(q('')) === null && envFromParams(q('?menu=0')) === null, 'no weather in the address gives no override');
+  check(JSON.stringify(envFromParams(q('?weather=rain&time=dusk'))) === JSON.stringify({ weather: 'lightrain', time: 'dusk' }) && envFromParams(q('?time=night')).weather === 'clear', '?weather=rain&time=dusk and a time alone');
+  check(cleanEnv({ weather: 'fog', timeOfDay: 'dusk' }).time === 'dusk' && cleanEnv(null).weather === 'clear', 'settings style environments are accepted');
+  const ms = migrateSettings({ weather: 'blizzard', timeOfDay: 'teatime' });
+  check(ms.weather === 'clear' && ms.timeOfDay === 'midday' && migrateSettings({ weather: 'fog', timeOfDay: 'night' }).weather === 'fog' && !('weather' in migrateSettings({})), 'saved settings are cleaned and old saves are left alone');
 }
 
 console.log(fails.length ? `FAILED\n  ${fails.join('\n  ')}` : 'session: all checks passed');

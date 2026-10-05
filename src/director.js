@@ -12,6 +12,7 @@ import { createSessionHud } from './sessionHud.js';
 import { Flow, PHASE, makeSession, timeTrialRows, raceDistance, MODE_NAMES } from './session.js';
 import { START, gridSlot, pitSlot, orbitPose, cinematicPose } from './start.js';
 import { createRaceControl } from './raceControl.js';
+import { cleanEnv } from './weather.js';
 
 // the car on the grid before lights out: brake held, but under the 0.5 that would put it in reverse
 export const HOLD = Object.freeze({ steer: 0, throttle: 0, brake: 0.45, drs: false });
@@ -29,7 +30,7 @@ export function createDirector(g) {
   const mp = lobby.mp;
   const rc = createRaceControl({ mp, now: () => performance.now(), onRace: ({ msg, seq, slot, late }) => {
     if (late) { api.startPractice({ start: 'pit' }); return; }
-    launch(makeSession('online', { laps: msg.laps, assists: msg.assists, racingLine: msg.racingLine, slot }), { seq });
+    launch(makeSession('online', { laps: msg.laps, assists: msg.assists, racingLine: msg.racingLine, weather: msg.weather, time: msg.time, slot }), { seq });
   } });
   mp.onControl = (m, id) => rc.handle(m, id);
 
@@ -40,6 +41,9 @@ export function createDirector(g) {
   menu.addScreen('results', resultsScreen());
 
   const online = () => !!lobby.active;
+  // weather and time of day on screen: a guest takes the host's (when the host sends one), everybody else their own choice. Visual only.
+  const ownEnv = () => cleanEnv({ weather: settings.weather, time: settings.timeOfDay });
+  const environment = () => (online() && !mp.isHost && rc.env ? rc.env : ownEnv());
   const racingLineAllowed = () => !session || session.racingLine !== false;
 
   function applyAssists() {
@@ -91,6 +95,8 @@ export function createDirector(g) {
   // --- what the buttons do ---
   Object.assign(api, {
     session: () => session,
+    environment,
+    envLocked: () => online() && !mp.isHost,     // a guest cannot change the room's weather
     inRoom: online,
     lobby,
     hasRacingLine: () => true,
@@ -108,12 +114,12 @@ export function createDirector(g) {
       else if (id === 'race') menu.push('setup', { mode: 'race' });
       else menu.push(id);
     },
-    startPractice: (o = {}) => launch(makeSession('practice', { start: o.start })),
-    startTimeTrial: () => launch(makeSession('timetrial')),
-    startRace: o => launch(makeSession('race', o)),
+    startPractice: (o = {}) => launch(makeSession('practice', { start: o.start, ...ownEnv() })),
+    startTimeTrial: () => launch(makeSession('timetrial', ownEnv())),
+    startRace: o => launch(makeSession('race', { ...ownEnv(), ...o })),
     hostStartRace(o) {
-      const r = rc.hostStart({ laps: o.laps, assists: o.assists, racingLine: o.racingLine });
-      if (r) launch(makeSession('online', { laps: o.laps, assists: o.assists, racingLine: o.racingLine, slot: r.slot }), { seq: r.seq });
+      const r = rc.hostStart({ laps: o.laps, assists: o.assists, racingLine: o.racingLine, ...ownEnv() });
+      if (r) launch(makeSession('online', { laps: o.laps, assists: o.assists, racingLine: o.racingLine, ...ownEnv(), slot: r.slot }), { seq: r.seq });
     },
     resume: () => menu.close(),
     restart() {
@@ -186,6 +192,7 @@ export function createDirector(g) {
       const mpPhase = mp.phase;
       if (mpPhase !== lastMpPhase) { lastMpPhase = mpPhase; if (mpPhase === 'joined' && !mp.isHost) rc.syncClock(); }
       rc.tick();
+      if (lobby.active && mp.isHost) rc.hostSetEnv(ownEnv()); else if (!lobby.active) rc.clearEnv();
       if (session && lobby.active) lobby.setMeta({ mode: MODE_NAMES[session.mode] || 'Free practice', laps: session.laps || 0, started: flow.phase === PHASE.RUN || flow.phase === PHASE.START ? session.mode === 'online' || session.mode === 'race' : false });
       if (flow.phase === PHASE.START) {
         if (!menu.isOpen && flow.seq && playerInput) {

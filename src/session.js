@@ -3,6 +3,7 @@
 // Plain JavaScript, no page: tools/session.js tests it in node.
 
 import { StartSequence, START, pickHold } from './start.js';
+import { cleanWeather, cleanTime } from './weather.js';
 
 export const MODES = ['practice', 'timetrial', 'race', 'online'];
 export const MODE_NAMES = { practice: 'Free practice', timetrial: 'Time trial', race: 'Race', online: 'Online race' };
@@ -13,7 +14,7 @@ export const LAP_CHOICES = [3, 5, 10, 20];
 // slot: grid slot (0 offline, join order online).
 export function makeSession(mode = 'practice', o = {}) {
   if (!MODES.includes(mode)) mode = 'practice';
-  const s = { mode, laps: 0, start: 'pit', assists: 'any', racingLine: true, trackLimits: 'warn', ai: 0, slot: 0 };
+  const s = { mode, laps: 0, start: 'pit', assists: 'any', racingLine: true, trackLimits: 'warn', ai: 0, slot: 0, weather: 'clear', time: 'midday' };
   if (mode === 'timetrial') s.start = 'pit';
   if (mode === 'race' || mode === 'online') { s.laps = 5; s.start = 'standing'; }
   if (mode === 'practice' && o.start === 'standing') s.start = 'standing';
@@ -23,6 +24,7 @@ export function makeSession(mode = 'practice', o = {}) {
     if (typeof o.racingLine === 'boolean') s.racingLine = o.racingLine;
   }
   if (Number.isFinite(o.slot)) s.slot = Math.max(0, Math.min(7, Math.floor(o.slot)));
+  s.weather = cleanWeather(o.weather); s.time = cleanTime(o.time ?? o.timeOfDay);   // visual only; online the host's choice
   s.ai = 0;
   return s;
 }
