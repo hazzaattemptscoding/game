@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { trackPoint, hash01 } from './meshKit.js';
 import { wallClearance } from './grandstands.js';
-import { lampMaterial, onLampLevel } from './lamps.js';
+import { lampMaterial, onLampLevel, onTopDown, light } from './lamps.js';
 
 export const MAST_H = 26;        // metres to the lamp frame
 export const MAST_BEHIND = 7;    // metres behind the containment wall, at least
@@ -126,7 +126,19 @@ export function buildFloodlights(T, ground, masts) {
   const pools = new THREE.Mesh(pg, poolMat);
   pools.frustumCulled = false; pools.renderOrder = 3; pools.userData.debug = 'sign';
   g.add(glow, pools);
-  onLampLevel(l => { glowMat.uniforms.uLevel.value = l; poolMat.opacity = l; glow.visible = pools.visible = l > 0.01; });
+
+  const updateVisibility = () => {
+    const l = light.lamps;
+    const n = light.night;
+    const topDown = light.topDown;
+    glowMat.uniforms.uLevel.value = l * n;
+    poolMat.opacity = n;
+    glow.visible = pools.visible = !topDown && l > 0.01 && n > 0.01;
+  };
+  onLampLevel(() => updateVisibility());
+  onTopDown(() => updateVisibility());
+  updateVisibility();
+
   g.userData.count = masts.length;
   return g;
 }

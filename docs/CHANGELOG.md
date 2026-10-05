@@ -1,5 +1,14 @@
 # Changelog
 
+## Floodlight and car headlamp pools: visibility in map view and daylight
+
+Floodlight light pools (34 masts, 9x9 grid each) and car headlamp light pools are now hidden in top-down/map view and during daylight hours, keeping the map clean and making the pools night-only visual effects.
+
+- **Floodlight pools**: opacity now scales with the night factor (0 by day, 1 by night) instead of lamp level, so pools are fully invisible until evening. Pools are hidden in top-down/map camera view. Visibility checks both lamp level (> 0.01) and night factor (> 0.01) to prevent the pools appearing during golden hour or brief evening spells.
+- **Car headlamp pools** (carFx): now explicitly hidden in top-down/map view; the existing opacity scaling by headlamp brightness remains.
+- **Callback system**: new `onTopDown` and `setTopDown` functions in `lamps.js` broadcast topDown state changes to listeners, allowing floodlights and other scenery to react. The environment calls `setTopDownLight` when the topDown state changes.
+- No change to lap times or physics. Verification with `tools/venue.js` and `tools/hudsettings.js` passes.
+
 ## Start/Finish Gantry and Footbridge Video Displays
 
 The gantry over the start/finish line and both pedestrian footbridges now feature the PowerMedia video loop (3840x128, 30:1) as a primary display, replacing static sponsor boards in high-visibility locations.

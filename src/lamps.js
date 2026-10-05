@@ -5,14 +5,20 @@
 
 import * as THREE from 'three';
 
-export const light = { lamps: 0, night: 0, headlamps: 0 };   // read by car.js for the tail lights and headlamps
+export const light = { lamps: 0, night: 0, headlamps: 0, topDown: false };   // read by car.js for the tail lights and headlamps
 export const wind = { uTime: { value: 0 }, uWind: { value: 0.45 } };
 
 const listeners = new Set();
+const topDownListeners = new Set();
 export function onLampLevel(fn) { listeners.add(fn); fn(light.lamps); return fn; }
 export function setLampLevel(level) {
   light.lamps = level;
   for (const fn of listeners) fn(level);
+}
+export function onTopDown(fn) { topDownListeners.add(fn); fn(light.topDown); return fn; }
+export function setTopDown(topDown) {
+  light.topDown = topDown;
+  for (const fn of topDownListeners) fn(topDown);
 }
 
 // A material that glows with the lamp level: emissive colour times `base` times the level (0 by day).

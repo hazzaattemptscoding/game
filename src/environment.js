@@ -14,7 +14,7 @@
 
 import * as THREE from 'three';
 import { resolveEnv, blendEnv, shadowsOn, DEFAULT_ENV, cleanEnv, sameEnv } from './weather.js';
-import { setLampLevel, light, wind } from './lamps.js';
+import { setLampLevel, setTopDown as setTopDownLight, light, wind } from './lamps.js';
 
 const FADE_S = 1.2;
 const RAIN_MAX = 14000;
@@ -337,7 +337,7 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
         head.visible = light.headlamps > 0.05;
       }
     },
-    setTopDown(v) { topDown = !!v; apply(cur); },
+    setTopDown(v) { topDown = !!v; setTopDownLight(topDown); apply(cur); },
     strike(delay = 1, strength = 0.8) { bolt.t = 0; if (onLightning) onLightning(delay, strength); },     // one flash now (heavy rain only shows it), for tests and the console
     // call every frame. carState (optional): { speed } of the player's car, for the spray
     update(dt, cam, carState) {

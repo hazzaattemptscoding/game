@@ -97,7 +97,7 @@ export function createCarFx(scene) {
       for (let j = k; j < P; j++) size[j] = 0;
       gg.attributes.position.needsUpdate = gg.attributes.aCol.needsUpdate = gg.attributes.aSize.needsUpdate = true;
       glow.visible = !topDown && k > 0 && (night > 0.05 || list.some(c => c.brk > 0.05));
-      pools.count = n; pools.visible = n > 0;
+      pools.count = n; pools.visible = !topDown && n > 0;
       pools.instanceMatrix.needsUpdate = true; alphaAttr.needsUpdate = true;
 
       // spray
