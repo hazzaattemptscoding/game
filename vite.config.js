@@ -46,6 +46,7 @@ export default {
   base: './',
   define: { __BUILD_COMMIT__: JSON.stringify(commit) },
   plugins: [localReportWriter()],
-  // ARTIFACT=1 packs everything, PeerJS included, into one file (the claude.ai artifact is a single html page and has no live page)
-  build: { chunkSizeWarningLimit: 900, rollupOptions: process.env.ARTIFACT ? { output: { inlineDynamicImports: true } } : { input: { main: path.join(root, 'index.html'), live: path.join(root, 'live.html') } } },
+  // ARTIFACT=1 packs everything, PeerJS included, into one file (the claude.ai artifact is a single html page and has no live page).
+  // It also inlines every imported asset (the gantry screen's logos and fonts) as data: URLs, since nothing sits beside the page.
+  build: { chunkSizeWarningLimit: 900, ...(process.env.ARTIFACT ? { assetsInlineLimit: () => true } : {}), rollupOptions: process.env.ARTIFACT ? { output: { inlineDynamicImports: true } } : { input: { main: path.join(root, 'index.html'), live: path.join(root, 'live.html') } } },
 };
