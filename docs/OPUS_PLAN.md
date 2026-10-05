@@ -45,6 +45,8 @@ Open problems to settle first:
 
 Each item: do it, verify it, update `docs/CHANGELOG.md`, commit, then ship when a batch is done.
 
+**Idea from the owner, parked (2026-10-05), do not start until asked: live leaderboard with ghosts.** Gather LEGAL laps only (no track limit warnings), tagged wet or dry, and kept separate for single player and online sessions (and normal or reverse direction, which now exists in free practice). Upload them to a database on the relay server so everyone can see the times, load a lap's ghost and race against it. Replaces queue item 6 below when it is picked up.
+
 **Queued by the owner, not started (2026-10-05): move the pit entry earlier.** Report `reports/lakeside-report-2026-10-05T17-23-34-296Z.json`, build cd2f1b1, car at s=3433 d=0.2 on the left of the track after the final turn: "Pitlane entry is here. Makes pit entry much easier and allows for a nice runoff out of the exit of the final turn". Today the pit road leaves at layout `pit.entry` 60.5 (about s=3605), roughly 170 m later. Owner's intent: the pit road splits off on the left from about s=3433, so the paved entry also works as run-off on the exit of the final turn. Things to settle when it is picked up: whether the pit lane (and limiter line) starts earlier too or only the entry road is longer; what happens to the left-side tyre wall and the grandstand on that side; keep `tools/audit.js` pit drive-in passing and the laptest unchanged. Wait for the owner to say go.
 
 1. **Infield surfaces and barriers near s=3149.** Report: the inside of the track should be grass for the nearer half with gravel kept on the far inside, and the inside barriers are "squiggly" (smooth them).
