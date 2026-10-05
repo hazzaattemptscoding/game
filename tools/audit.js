@@ -39,7 +39,7 @@ for (const b of T.barriers) {
 
 let closest = Infinity, closestStreet = Infinity, barrierPoints = 0;
 for (const b of T.barriers) {
-  if (b.type === BARRIER.PARAPET || b.type === BARRIER.PITWALL) continue;
+  if (b.type === BARRIER.PARAPET || b.type === BARRIER.PITWALL || b.type === BARRIER.PITSEP) continue;
   for (const [x, y, z] of b.pts) {
     const gap = edgeGap(x, z, y);
     if (!Number.isFinite(gap)) continue;

@@ -62,7 +62,7 @@ svg += bands(i => [-T.hw[i], T.hw[i]], hex(C.road));
 // barriers by type, catch fences dashed behind the impact sections
 const style = {
   [BARRIER.TYRES]: [C.tyres, 2.5], [BARRIER.ARMCO]: [C.armcoSingle, 1.4], [BARRIER.CONCRETE]: [C.street, 2],
-  [BARRIER.PARAPET]: [C.parapet, 2], [BARRIER.PITWALL]: [C.pitwall, 2], [BARRIER.PITOUTER]: [C.pitwall, 1],
+  [BARRIER.PARAPET]: [C.parapet, 2], [BARRIER.PITWALL]: [C.pitwall, 2], [BARRIER.PITOUTER]: [C.pitwall, 1], [BARRIER.PITSEP]: [C.pitwall, 1],
 };
 for (const b of T.barriers) {
   const [col, w] = style[b.type];

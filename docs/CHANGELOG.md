@@ -5,7 +5,9 @@
 From the owner's sketch (`docs/pit-exit-sketch.webp`). The exit road no longer cuts onto the track at the apex of Scramble.
 
 - After the pit wall the exit road narrows from 12 m to 7 m and comes down beside the track at the old 5 degree angle.
-- It then runs alongside for 60 m (through the apex of Scramble), 2.6 m from the track edge: the track's flat kerb, a raised yellow and black kerb (sausage), and white and orange bollards every 5 m between the two roads.
+- It then runs alongside for 60 m (through the apex of Scramble), 2.6 m from the track edge: the track's flat kerb, a raised yellow and black kerb (sausage), then a low concrete wall (0.55 m high, 0.9 m thick, white top, new barrier type `PITSEP`, hit from either side) on the exit road's edge from the end of the pit wall to the start of the merge, with white and orange bollards every 5 m on top of it.
+- Pit exit line: along the track edge where the merged lane runs beside the track, solid at first so cars leaving the pits keep to their lane, then 3 m dashes and gaps over the last 60 m before the track is back to its normal width.
+- The low wall stands about 1.5 m behind the kerb, so `tools/laptest.js` and the audit exempt it from the 4 m barrier rule, as they do the street walls, the pit wall and the bridge parapet. The owner asked for it.
 - Then a 70 m chevron-hatched merge, the gap easing to nothing, with bollards down its middle while it is wider than a car. The road is fully merged at about s=512, on the outside of Hurricane Sweep where the racing line is on the far side (layout `pit.exitRun`, 155 m past the old exit including the closing taper).
 - Once merged, the lane does not stop dead: its outer edge eases in to the track edge over 60 m (s=512 to 572).
 - Solid white lines down both edges of the pit entry and exit roads.

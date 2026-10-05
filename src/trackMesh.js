@@ -143,6 +143,17 @@ export function buildTrackScene(T, ground) {
     strips('line').strip(run, i => P(i, -(T.pitOut[i] - 0.4), DECAL), i => P(i, -(T.pitOut[i] - 0.2), DECAL), () => 0, 0, 1);
   }
 
+  // the pit exit line along the track edge where the merged exit lane runs beside the track: solid, so cars leaving
+  // the pits keep to their lane, then dashed (3 m dashes, 3 m gaps) over the last 60 m before the track is back to its normal width
+  if (T.pitRange) {
+    const end = T.pitRange[1], DASHED = 60;
+    const toEnd = i => ((end - T.s[i]) % T.length + T.length) % T.length;
+    const exitMouth = i => T.pitMouth[i] && T.pitOut[i] > 0 && toEnd(i) < (T.pitExitClose || 0) + 20;
+    const edge = (run) => strips('line').strip(run, i => P(i, -(HW[i] - 0.1), DECAL), i => P(i, -(HW[i] + 0.15), DECAL), () => 0, 0, 1);
+    for (const run of runs(T.N, i => exitMouth(i) && toEnd(i) > DASHED)) edge(run);
+    for (const run of runs(T.N, i => exitMouth(i) && toEnd(i) <= DASHED && Math.floor(toEnd(i) / 3) % 2 === 0)) if (run.length > 1) edge(run);
+  }
+
   // start line, grid slots, sector and DRS lines, pit limiter lines
   // (the chequered start line and the grid boxes are painted by gantry.js)
   for (const s of T.sectors.slice(1)) crossLine(strips('line'), T, s, 0.3, -HW[Math.round(s / T.ds) % T.N], HW[Math.round(s / T.ds) % T.N]);
@@ -211,6 +222,11 @@ export function buildTrackScene(T, ground) {
       group.add(attenuator(pts, nrm, mat.attenuator));
     } else if (b.type === BARRIER.PITOUTER) {
       wall('pitOuter', 0, -0.2, 0.81, 6); cap('pitOuter', 0, 0.3, 0.81);
+    } else if (b.type === BARRIER.PITSEP) {
+      // the low wall between the pit exit road and the track: concrete both faces, white top, square ends
+      const W = T.pitSepWidth, top = 0.55;
+      wall('wallConcrete', 0, -0.2, top, 6); wall('wallConcrete', W, -0.2, top, 6); cap('white', 0, W, top);
+      for (const k of [0, pts.length - 1]) strips('wallConcrete').strip([0, 1], j => at(k, j * W, -0.2), j => at(k, j * W, top), j => j * W / 6, 0, top / 6);
     }
   }
   mat.armcoSingle = mat.armco; mat.parapet = mat.wallConcrete; mat.pitOuter = mat.wallConcrete;
@@ -346,7 +362,8 @@ function furniture(T) {
       // a flexible white post with an orange band, standing on the kerb
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.9, 8), bollardMat.white);
       const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0625, 0.0625, 0.18, 8), bollardMat.orange);
-      post.position.set(f.x, f.y + 0.45, f.z); band.position.set(f.x, f.y + 0.72, f.z);
+      const y = f.y + (f.raise || 0);   // pit exit bollards stand on the low wall
+      post.position.set(f.x, y + 0.45, f.z); band.position.set(f.x, y + 0.72, f.z);
       post.castShadow = true;
       g.add(tag(post, 'sign'), tag(band, 'sign'));
     } else if (f.type === 'sign') {
