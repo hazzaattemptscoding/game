@@ -11,6 +11,7 @@ import { wrap, BARRIER } from './track.js';
 import * as tex from './textures.js';
 import { buildGroundRibbon } from './groundRibbon.js';
 import { buildGantry, buildStartPaint } from './gantry.js';
+import { buildBridge } from './bridge.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
 const DECAL = 0.006;          // paint sits this far above the surface, drawn with polygonOffset so it never fights
@@ -206,7 +207,14 @@ export function buildTrackScene(T, ground) {
   // pit garages: rough block for now, rebuilt in part 2
   const garageRun = runs(T.N, i => T.pitGarage[i] > 0)[0];
   if (garageRun) {
-    const mid = Math.floor(garageRun.length / 2), bay = garageRun.slice(Math.max(0, mid - 63), mid + 64);
+    const mid = Math.floor(garageRun.length / 2);
+    let bay = garageRun.slice(Math.max(0, mid - 63), mid + 64);
+    // the building stops short of the bridge: its roof is level with the deck, so nothing of it may stand under or beside the deck
+    const deck = [];
+    for (let i = 0; i < T.N; i++) if (T.isBridge[i]) deck.push(i);
+    const hitsDeck = i => [T.pitOut[i] + 2, T.pitOut[i] + 16].some(d => deck.some(j => Math.hypot(T.x[i] - T.nx[i] * d - T.x[j], T.z[i] - T.nz[i] * d - T.z[j]) < T.wall[0][j] + 14));
+    const cut = bay.findIndex(hitsDeck);
+    if (cut >= 0) bay = bay.slice(0, Math.max(0, cut));
     const front = i => -(T.pitOut[i] + 2), back = i => front(i) - 14, H = 9.5;
     strips('garage').strip(bay, i => P(i, front(i), 0), i => P(i, front(i), 5.5), (i, j) => sOf(i, j, bay) / 14, 0, 1);
     strips('glass').strip(bay, i => P(i, front(i) + 1.2, 6.6), i => P(i, front(i) + 1.2, H), (i, j) => sOf(i, j, bay) / 28, 0, 1);
@@ -227,7 +235,7 @@ export function buildTrackScene(T, ground) {
   group.add(instancedPosts(posts, mat.post, 0.06, 'armco'));
   group.add(instancedPosts(fencePosts, mat.fencePost, 0.06, 'fence'));
 
-  group.add(bridge(T, mat, ground));
+  group.add(buildBridge(T, ground, mat, { Strips }));
   const gantryGroup = buildGantry(T, sponsorTex);
   group.add(gantryGroup, buildStartPaint(T));
   group.add(furniture(T));
@@ -418,65 +426,6 @@ function crossLine(b, T, s, width, d0, d1, lift = DECAL) {
   for (let k = 0; k <= Math.max(1, Math.round(width / T.ds)); k++) idx.push(wrap(i0 + k, T.N));
   const y = (i, d) => T.groundAt(T.x[i] + T.nx[i] * d, T.z[i] + T.nz[i] * d, i) + lift;
   b.strip(idx, i => [T.x[i] + T.nx[i] * d0, y(i, d0), T.z[i] + T.nz[i] * d0], i => [T.x[i] + T.nx[i] * d1, y(i, d1), T.z[i] + T.nz[i] * d1], () => 0, 0, 1);
-}
-
-// ---------------------------------------------------------------------------
-// Bridge: deck underside, banners and pillars. Pillars never stand on a road.
-
-function bridge(T, mat, ground) {
-  const g = new THREE.Group();
-  const idx = [];
-  for (let i = 0; i < T.N; i++) if (T.isBridge[i]) idx.push(i);
-  if (!idx.length) return g;
-  const b = new Strips();
-  const P = (i, d, lift) => {
-    const x = T.x[i] + T.nx[i] * d;
-    const z = T.z[i] + T.nz[i] * d;
-    return [x, T.groundAt(x, z, i) + lift, z];
-  };
-  b.strip(idx, i => P(i, -T.wall[0][i] - 0.45, -1.3), i => P(i, T.wall[1][i] + 0.45, -1.3), () => 0, 0, 1);
-  // deck edge beams carry a big PowerMedia banner on the outside faces
-  const banners = new Strips();
-  for (const sd of [0, 1]) {
-    const gg = sd ? 1 : -1;
-    const mid = idx.slice(Math.floor(idx.length * 0.25), Math.floor(idx.length * 0.75));
-    const len = mid.length - 1;
-    banners.strip(mid, i => P(i, gg * (T.wall[sd][i] + 0.5), -1.25), i => P(i, gg * (T.wall[sd][i] + 0.5), 1.0),
-      (i, j) => (sd ? j / len : 1 - j / len), 1 - 1 / tex.SPONSORS.length, 1);
-  }
-  const deck = tag(new THREE.Mesh(b.geometry(), mat.concrete), 'parapet');
-  deck.receiveShadow = deck.castShadow = true;
-  const ban = new THREE.Mesh(banners.geometry(), mat.sponsor);
-  g.add(deck, ban);
-
-  // Roundel Bridge: a big RAF-style roundel painted under the deck, over the main straight
-  const mid = idx[Math.floor(idx.length / 2)];
-  const width = T.wall[0][mid] + T.wall[1][mid];
-  const roundel = new THREE.Mesh(new THREE.PlaneGeometry(width, width), new THREE.MeshStandardMaterial({ map: tex.roundelTexture(), roughness: 0.8 }));
-  const off = (T.wall[1][mid] - T.wall[0][mid]) / 2;
-  roundel.position.set(T.x[mid] + T.nx[mid] * off, T.h[mid] - 1.33, T.z[mid] + T.nz[mid] * off);
-  roundel.rotation.set(Math.PI / 2, 0, 0);
-  g.add(roundel);
-
-  // pillars in pairs under the deck edges, skipping any that would land on a road
-  const pillarGeo = new THREE.BoxGeometry(1.4, 1, 1.4);
-  pillarGeo.translate(0, 0.5, 0);
-  for (let k = 6; k < idx.length - 6; k += 10) {
-    const i = idx[k];
-    for (const sd of [0, 1]) {
-      const d = (sd ? 1 : -1) * (T.wall[sd][i] - 0.3);
-      const x = T.x[i] + T.nx[i] * d, z = T.z[i] + T.nz[i] * d;
-      if (onAnyRoad(T, x, z, 3)) continue;
-      const base = ground.height(x, z), top = T.h[i] - 1.3;
-      if (top - base < 1.5) continue;
-      const p = new THREE.Mesh(pillarGeo, mat.concrete);
-      p.scale.y = top - base;
-      p.position.set(x, base, z);
-      p.castShadow = p.receiveShadow = true;
-      g.add(p);
-    }
-  }
-  return g;
 }
 
 // Is this point on any non-bridge tarmac (track or pit lane), with a margin?

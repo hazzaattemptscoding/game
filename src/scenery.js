@@ -84,7 +84,7 @@ export function createGround(T) {
       x0 = Math.min(x0, T.x[i]); x1 = Math.max(x1, T.x[i]);
       z0 = Math.min(z0, T.z[i]); z1 = Math.max(z1, T.z[i]);
     }
-    const pad = 700, cell = 12;
+    const pad = GRID_PAD, cell = GRID_CELL;
     let lowest = Infinity;
     const info = { dist: 0 };
     x0 -= pad; x1 += pad; z0 -= pad; z1 += pad;
@@ -124,7 +124,31 @@ export function createGround(T) {
     return m;
   }
 
-  return { height, drawn, clearance, mesh };
+  // The terrain as it is drawn: the same 12 m grid and the same triangles as mesh(), so things that stand on the
+  // ground (piers, tyre stacks, stands) can sit on the surface that is actually on screen, not on the smooth ground function.
+  const GRID_PAD = 700, GRID_CELL = 12;
+  let grid = null;
+  const nodes = new Map();
+  function meshHeight(x, z) {
+    if (!grid) {
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (let i = 0; i < T.N; i++) { x0 = Math.min(x0, T.x[i]); x1 = Math.max(x1, T.x[i]); z0 = Math.min(z0, T.z[i]); z1 = Math.max(z1, T.z[i]); }
+      grid = { x0: x0 - GRID_PAD, z0: z0 - GRID_PAD, nx: Math.ceil((x1 - x0 + 2 * GRID_PAD) / GRID_CELL) + 1 };
+    }
+    const fx = (x - grid.x0) / GRID_CELL, fz = (z - grid.z0) / GRID_CELL, k = Math.floor(fx), j = Math.floor(fz), u = fx - k, v = fz - j;
+    const node = (a, b) => {
+      const key = b * grid.nx + a;
+      let h = nodes.get(key);
+      if (h === undefined) { h = drawn(grid.x0 + a * GRID_CELL, grid.z0 + b * GRID_CELL); nodes.set(key, h); }
+      return h;
+    };
+    const ha = node(k, j), hb = node(k + 1, j), hc = node(k, j + 1);
+    if (u + v <= 1) return ha + (hb - ha) * u + (hc - ha) * v;
+    const hd = node(k + 1, j + 1);
+    return hd + (hc - hd) * (1 - u) + (hb - hd) * (1 - v);
+  }
+
+  return { height, drawn, meshHeight, clearance, mesh };
 }
 
 // A foundation under a building: a block from the building's base down to the lowest terrain drawn under
