@@ -56,7 +56,7 @@ function bannerVideo(url, onReady) {
   if (typeof document === 'undefined' || typeof document.createElement('video').play !== 'function') return null;
   const v = document.createElement('video');
   v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
-  v.src = (import.meta.env?.BASE_URL ?? './') + url;
+  v.src = url.startsWith('data:') ? url : (import.meta.env?.BASE_URL ?? './') + url;   // tools/artifact.mjs swaps the path for a data: URL
   const t = new THREE.VideoTexture(v);
   t.colorSpace = THREE.SRGBColorSpace;
   t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
