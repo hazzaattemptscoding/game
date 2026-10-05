@@ -222,13 +222,12 @@ function frame(now) {
   const cursorOn = settings.steering === 'cursor';
   steerBar.hidden = !(cursorOn && hudOn(settings, 'steerBar'));
   if (cursorOn) steerMark.style.left = `${(50 + playerInput.steer * 44).toFixed(1)}%`;
+  selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake;
+  carFx.update(dt, rig.camera, lobby.ghosts.fx, selfFx, env.resolved, topDown);
   renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-
-  selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake;
-  carFx.update(dt, rig.camera, lobby.ghosts.fx, selfFx, env.resolved, topDown);
 // for quick checks from the browser console
 window.lakeside = { car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx };
 
