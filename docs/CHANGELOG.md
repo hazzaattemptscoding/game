@@ -1,5 +1,14 @@
 # Changelog
 
+## Boundary Loop infield and smoother barrier lines
+
+Reports at s=3110 ("barriers really wonky in the final sector") and s=3149 (grass for the nearer half of the inside, gravel kept on the far inside, squiggly inside barriers).
+
+- The inside of a curve can no longer hold flat ground deeper than 60% of the tightest radius within 40 m (`INSIDE_DEPTH`), eased along the lap, and never less than a corner's departure reach or the pit road needs. Inside Boundary Loop the wall stood 48 m in on a 44 m radius: the offset line folded back on itself, which drew the zig-zag wall and doubled gravel.
+- Layout gravel zones take an optional fifth value, the share nearest the track left as grass. Boundary Loop's infield is now grass on the nearer half and gravel on the far half (`[50.4, 54.8, 'L', 36, 0.5]`). The ground ribbon has a new grass band between the apron and a set-back gravel trap.
+- Tyre wall lines get six light relaxation passes (three points held at each end so pieces still meet cleanly). The worst corner between neighbouring points on the containment wall drops from 18 to 13 degrees away from the joins; the audit's kink limit (25) and 4 m rule still pass.
+- Lap times unchanged.
+
 ## Start gantry rebuilt over the track and the pit lane
 
 From the reports at s=3824 (supports too close, too basic) and the owner's choice of a span over the pit lane.

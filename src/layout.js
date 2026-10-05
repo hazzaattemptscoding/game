@@ -86,7 +86,7 @@ export const LAYOUT = {
     [33.3, 35.6, 'L', 24],
     [36.8, 38.8, 'R', 26],
     [43, 45.4, 'L', 22],
-    [50.4, 54.8, 'L', 36],     // infield gravel inside the top-left loop
+    [50.4, 54.8, 'L', 36, 0.5], // infield inside the top-left loop: grass on the nearer half, gravel on the far half
     [53.8, 56.2, 'R', 22],
   ],
 

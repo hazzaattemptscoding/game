@@ -1,7 +1,7 @@
 // The ground beside the tarmac, built as ONE continuous ribbon per side.
 //
 // At every sample along the track, each side has a row of vertices at every band border
-// (kerb, sausage, apron, gravel, grass, pit road, outer grass). Neighbouring bands share
+// (kerb, sausage, apron, grass, gravel, grass, pit road, outer grass). Neighbouring bands share
 // those vertices exactly, so there is no overlap, no gap, no stacked layer and no height step
 // at a border. Which material a band takes is decided per sample (concrete or tarmac apron,
 // island or grass beside the pit road, ...); a band that is zero wide at a sample simply
@@ -12,7 +12,7 @@
 // taking its own ground height, so a 60 m grass band follows a bank instead of cutting a chord.
 
 const MAX_PIECE = 6;
-const BANDS = 9;                       // kerb, sausage up, sausage down, apron, gravel, grass A, pit, grass B, outer grass
+const BANDS = 10;                      // kerb, sausage up, sausage down, apron, grass before gravel, gravel, grass A, pit, grass B, outer grass
 const U_SCALE = { kerb: 2, sausage: 1.6, apron: 8, concrete: 15, gravel: 6, grass: 40, meadow: 24, pit: 16, road: 8, island: 4 };
 const PIT_FADE = 10, TARMAC_TONE = 0.76;   // the pit asphalt takes its own tone over 10 m after the mouth
 
@@ -42,6 +42,7 @@ export function buildGroundRibbon(T, strips, P, G) {
         push(T.kerb[sd][i], 'kerb');
         push(T.sausage[sd][i] / 2, 'sausage'); push(T.sausage[sd][i] / 2, 'sausage');
         push(T.runoff[sd][i], T.concrete[sd][i] ? 'concrete' : 'apron');
+        push(T.gravelOut[sd][i] > 0 ? T.gravelIn[sd][i] - c : 0, 'grass');   // grass between the apron and a gravel trap set back from it
         push(T.gravelOut[sd][i] > 0 ? T.gravelOut[sd][i] - c : 0, 'gravel');
         if (sd === 0 && T.pitMouth[i] && T.pitOut[i] > 0) { push(0, 'grass'); push(T.pitOut[i] - c, 'road'); push(wall - c, 'grass'); }
         else if (sd === 0 && T.pitOut[i] > 0) { push(T.pitIn[i] - c, T.pitIsland[i] ? 'island' : 'grass'); push(T.pitOut[i] - c, 'pit'); push(wall - c, 'grass'); }

@@ -47,6 +47,7 @@ const DS = 1;              // sample spacing, metres
 const KERB_WIDTH = 1.0;    // flat kerbs, metres
 const STREET_KERB = 0.7;   // narrower kerbs in the walled street section
 const SAUSAGE_WIDTH = 0.45; // raised kerb behind the flat kerb
+const INSIDE_DEPTH = 0.6;   // flat ground on the inside of a curve reaches at most this share of the radius
 const LINE_WIDTH = 0.15;   // painted edge line, metres
 const PLAIN_RUNOFF = 22;   // flat grass beside the track where no corner needs more, metres
 const GRAVEL_APRON = 3;    // a gravel trap always has at least this much paved apron in front of it
@@ -493,9 +494,29 @@ function buildSides(T, corners) {
   });
   // the exit road's raised kerb: a flat kerb at the track edge, then the sausage the bollards stand behind
   for (let i = 0; i < N; i++) if (T.pitSep[i]) { T.kerb[0][i] = KERB_WIDTH; T.sausage[0][i] = SAUSAGE_WIDTH; }
-  for (const [a, b, code, width] of layout.gravel || []) forZone(a, b, code, 30, (sd, i, w) => {
+  // [from, to, side, width, grassFirst]: grassFirst (0..1) leaves that share of the band nearest the track as grass
+  const gravelGrass = pair();
+  for (const [a, b, code, width, grassFirst = 0] of layout.gravel || []) forZone(a, b, code, 30, (sd, i, w) => {
     gravelW[sd][i] = Math.max(gravelW[sd][i], width * w);
+    if (grassFirst) gravelGrass[sd][i] = Math.max(gravelGrass[sd][i], grassFirst * w);
   });
+
+  // On the inside of a curve an offset line deeper than the radius folds over itself (a zig-zag wall, gravel drawn
+  // twice). Cap the flat ground on the inside at INSIDE_DEPTH of the tightest radius within 40 m, eased along the lap.
+  const insideCap = pair();
+  for (let sd = 0; sd < 2; sd++) {
+    const g = sd ? 1 : -1, raw = new Float64Array(N);
+    for (let i = 0; i < N; i++) {
+      let r = Infinity;
+      for (let k = -40; k <= 40; k++) { const j = wrap(i + k, N), c = T.curv[j]; if (c * g > 1e-4) r = Math.min(r, 1 / Math.abs(c)); }
+      raw[i] = Math.max(HW[i] + MIN_EDGE + MIN_BARRIER, INSIDE_DEPTH * r);
+    }
+    for (let i = 0; i < N; i++) {
+      let sum = 0;
+      for (let k = -25; k <= 25; k++) sum += Math.min(raw[wrap(i + k, N)], 1e4);
+      insideCap[sd][i] = Math.min(raw[i] * 1.15, sum / 51);
+    }
+  }
 
   // 3. Lay the bands out from the edge: kerb, apron, gravel, grass, and how
   // far the flat ground reaches (out to the barrier, or the plain run-off)
@@ -509,8 +530,11 @@ function buildSides(T, corners) {
       let flat = Math.max(HW[i] + PLAIN_RUNOFF, HW[i] + reach[sd][i], T.gravelOut[sd][i] + 3);
       if (streetW[sd][i] > 0) flat = flat + (edge + STREET_GAP - flat) * streetW[sd][i];
       if (sd === 0 && T.pitOut[i]) flat = Math.max(flat, T.pitOut[i] + PIT_APRON);
-      T.wall[sd][i] = Math.min(flat, Math.max(HW[i] + 2, T.room[sd][i]));
+      // never inside what a departure from the corner needs (reach), nor inside the pit road
+      const cap = Math.max(insideCap[sd][i], HW[i] + reach[sd][i], sd === 0 && T.pitOut[i] ? T.pitOut[i] + PIT_APRON : 0);
+      T.wall[sd][i] = Math.min(flat, Math.max(HW[i] + 2, T.room[sd][i]), cap);
       if (T.gravelOut[sd][i] > T.wall[sd][i] - 1) T.gravelOut[sd][i] = Math.max(0, T.wall[sd][i] - 1);
+      if (gravelGrass[sd][i] > 0 && T.gravelOut[sd][i] > 0) T.gravelIn[sd][i] = edge + (T.gravelOut[sd][i] - edge) * gravelGrass[sd][i];
       if (T.gravelOut[sd][i] <= T.gravelIn[sd][i] + 0.5) T.gravelOut[sd][i] = 0;
     }
     // beside the pit road mouths the run-off eases away over 60 m instead of ending against the pit road
@@ -885,6 +909,20 @@ function buildBarriers(T, corners) {
   }
   for (const run of runsOf(N, i => T.pitSepWall[i])) {
     follow(BARRIER.PITSEP, 0, run, i => -(T.pitIn[i] - EXIT_SEP_WALL), 2, { why: 'low wall between the pit exit road and the track' });
+  }
+
+  // smooth the tyre wall lines a little: offsets that change pace (a slope limit starting, an inside cap easing in)
+  // leave 10 to 20 degree corners between neighbouring points. A few relaxation passes, ends fixed, round them off
+  // without moving the line more than a few centimetres where it was already smooth.
+  for (const b of T.barriers) {
+    if (b.type !== BARRIER.ARMCO || b.pts.length < 5) continue;
+    const P = b.pts;
+    for (let pass = 0; pass < 6; pass++) {
+      const nx = P.map(p => p[0]), nz = P.map(p => p[2]);
+      for (let k = 3; k < P.length - 3; k++) { nx[k] = (P[k - 1][0] + 2 * P[k][0] + P[k + 1][0]) / 4; nz[k] = (P[k - 1][2] + 2 * P[k][2] + P[k + 1][2]) / 4; }
+      for (let k = 3; k < P.length - 3; k++) { P[k][0] = nx[k]; P[k][2] = nz[k]; }   // three points held at each end, where it meets the next piece
+    }
+    for (const p of P) p[1] = T.groundAt(p[0], p[2], p[3]);
   }
 
   // collision segments, each with a face normal pointing back towards the track
