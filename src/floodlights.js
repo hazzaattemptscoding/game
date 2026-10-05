@@ -85,7 +85,7 @@ export function buildFloodlights(T, ground, masts) {
   const heads = new THREE.InstancedMesh(lampAll, lampMaterial({ color: 0xdfe3e6, emissive: 0xfff0c8, roughness: 0.3 }, 5.5), masts.length);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), one = new THREE.Vector3(1, 1, 1);
   const glowPos = [], poolPos = [], poolCol = [], poolIdx = [];
-  const N = 9;
+  const N = 9, tmpLoc = {};
   masts.forEach((m, k) => {
     const y = ground.meshHeight(m.x, m.z) - 0.2;
     e.set(0, m.yaw, 0);
@@ -97,7 +97,10 @@ export function buildFloodlights(T, ground, masts) {
     for (let a = 0; a < N; a++) for (let b = 0; b < N; b++) {
       const dx = (a / (N - 1) * 2 - 1) * POOL_R, dz = (b / (N - 1) * 2 - 1) * POOL_R, x = cx + dx, z = cz + dz;
       const f = Math.max(0, 1 - Math.hypot(dx, dz) / POOL_R), w = f * f;
-      poolPos.push(x, Math.max(ground.height(x, z), ground.meshHeight(x, z)) + 0.14, z);
+      // the road surface sits a little above the ground height under it, so near the road the pool is lifted clear of it
+      // (otherwise the road hides the pool and the light stops dead at the road edge)
+      const loc = T.locate(x, z, m.i, tmpLoc), lift = 0.32 * (1 - Math.min(1, Math.max(0, (Math.abs(loc.d) - T.hw[loc.i] - 0.5) / 4)));
+      poolPos.push(x, Math.max(ground.height(x, z), ground.meshHeight(x, z)) + 0.14 + lift, z);
       poolCol.push(0.62 * w, 0.5 * w, 0.3 * w);
       if (a && b) { const i0 = base + (a - 1) * N + b - 1, i1 = i0 + 1, i2 = base + a * N + b - 1, i3 = i2 + 1; poolIdx.push(i0, i2, i1, i1, i2, i3); }
     }
