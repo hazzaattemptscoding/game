@@ -191,6 +191,7 @@ export class Ghosts {
     this.pending = new Map();   // id -> livery string that arrived before the first state of that player
     this._pose = {};
     this._solids = [];
+    this.fx = [];            // pose summary of each car drawn this frame, for the lights and spray (src/carFx.js): { x, y, z, h, v, brk, o }
     this.delay = DELAY;      // seconds behind real time that remote cars are drawn; the relay transport raises it to DELAY + RELAY_EXTRA_DELAY
   }
 
@@ -235,13 +236,14 @@ export class Ghosts {
     this.pending.delete(id);
   }
 
-  clear() { for (const id of [...this.map.keys()]) this.remove(id); this.pending.clear(); }
+  clear() { for (const id of [...this.map.keys()]) this.remove(id); this.pending.clear(); this.fx.length = 0; }
 
   // the name shown for a player: the one painted on the car, else the one they joined with
   nameOf(g) { return (g.livery && g.livery.name) || g.name || 'Player'; }
 
   // Call every frame. `project(x, y, z)` gives {x, y} in pixels or null if the point is off screen or behind the camera.
   update(nowMs, project) {
+    let nfx = 0;
     for (const g of [...this.map.values()]) {
       const silent = (nowMs - g.buf.lastRecv) / 1000;
       if (silent >= TIMEOUT) { this.remove(g.id); continue; }
@@ -250,8 +252,11 @@ export class Ghosts {
       if (!pose || !g.ent) continue;
       g.ent.setPose(pose);
       g.ent.setOpacity(g.opacity);
+      const f = this.fx[nfx] || (this.fx[nfx] = {});
+      f.x = pose.x; f.y = pose.y; f.z = pose.z; f.h = pose.h; f.v = Math.hypot(pose.vx, pose.vz); f.brk = pose.brk; f.o = g.opacity; nfx++;
       g.ent.setLabel(project ? project(pose.x, pose.y + 2.1, pose.z) : null, this.nameOf(g), g.opacity, g.livery);
     }
+    this.fx.length = nfx;
   }
 
   // The remote cars as Car.collideCars wants them, at local time nowMs. The array and its objects are reused,

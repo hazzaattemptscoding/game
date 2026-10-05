@@ -19,7 +19,6 @@ import { setLampLevel, light, wind } from './lamps.js';
 const FADE_S = 1.2;
 const RAIN_MAX = 14000;
 const RAIN_BOX = 40;
-const SPRAY_MAX = 160;
 
 const col = (c, a) => new THREE.Color().setRGB(a[0], a[1], a[2], THREE.SRGBColorSpace);
 
@@ -124,9 +123,9 @@ function makeRain() {
 }
 
 // ---- spray behind the player's car ----------------------------------------------------------------------------------
-function makeSpray() {
-  const pos = new Float32Array(SPRAY_MAX * 3), size = new Float32Array(SPRAY_MAX), alpha = new Float32Array(SPRAY_MAX);
-  const vel = new Float32Array(SPRAY_MAX * 3), age = new Float32Array(SPRAY_MAX).fill(9), life = new Float32Array(SPRAY_MAX).fill(1);
+export function makeSpray(max = 160) {
+  const pos = new Float32Array(max * 3), size = new Float32Array(max), alpha = new Float32Array(max);
+  const vel = new Float32Array(max * 3), age = new Float32Array(max).fill(9), life = new Float32Array(max).fill(1);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
@@ -144,11 +143,11 @@ function makeSpray() {
   return {
     mesh,
     emit(x, y, z, vx, vy, vz) {
-      const k = next; next = (next + 1) % SPRAY_MAX;
+      const k = next; next = (next + 1) % max;
       pos[k * 3] = x; pos[k * 3 + 1] = y; pos[k * 3 + 2] = z; vel[k * 3] = vx; vel[k * 3 + 1] = vy; vel[k * 3 + 2] = vz; age[k] = 0; life[k] = 0.7 + Math.random() * 0.7;
     },
     step(dt, strength) {
-      for (let k = 0; k < SPRAY_MAX; k++) {
+      for (let k = 0; k < max; k++) {
         if (age[k] >= life[k]) { alpha[k] = 0; continue; }
         age[k] += dt;
         const f = age[k] / life[k], drag = Math.exp(-2.2 * dt);
@@ -187,7 +186,7 @@ float puddleMask() { vec2 p = vWorldXYZ.xz; float n = wn(p * 0.045) * 0.55 + wn(
 }
 
 export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera }) {
-  const sky = makeSky(), rain = makeRain(), spray = makeSpray();
+  const sky = makeSky(), rain = makeRain(), spray = makeSpray(160);
   scene.add(sky.mesh, rain.mesh, spray.mesh);
   const bgCanvas = document.createElement('canvas');
   bgCanvas.width = 2; bgCanvas.height = 256;

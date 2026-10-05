@@ -29,6 +29,7 @@ import { createDirector, HOLD } from './director.js';
 import { createEnvironment } from './environment.js';
 import { envFromParams } from './weather.js';
 
+import { createCarFx } from './carFx.js';
 const params = new URLSearchParams(location.search);
 const settings = loadSettings();
 
@@ -75,6 +76,8 @@ env.set(urlEnv || settings, { instant: true });
 env.registerWorld(world);
 const racingLine = createRacingLine(track);   // optional colour coded racing line (L key, Settings); the page ?line=1 turns it on
 scene.add(racingLine.group);
+const carFx = createCarFx(scene);     // headlamp and tail light glow, road pools and spray for the other cars
+const selfFx = { x: 0, y: 0, z: 0, h: 0, v: 0, brk: 0, o: 1, self: true };
 if (params.get('line') === '1') settings.racingLine = true;
 const markers = debugMarkers(track);
 markers.visible = false;
@@ -224,6 +227,8 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 
+  selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake;
+  carFx.update(dt, rig.camera, lobby.ghosts.fx, selfFx, env.resolved, topDown);
 // for quick checks from the browser console
 window.lakeside = { car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer };
 
