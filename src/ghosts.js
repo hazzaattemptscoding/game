@@ -109,10 +109,9 @@ export function decodeState(a) {
 
 // Reads the sending player's own car into a state (t is added by the caller). best and last are the lap times in seconds, or null.
 export function stateFromCar(car, lap, col, name, t, best = null, last = null) {
-  const along = Math.cos(car.heading) * (car.loc.tx || 0) + Math.sin(car.heading) * (car.loc.tz || 0);
   return {
     t, x: car.x, y: car.y, z: car.z, h: wrapAngle(car.heading), vx: car.vx, vz: car.vz, yr: car.yawRate, st: car.steer, w: car.wheelSpinAngle,
-    thr: car.throttle, brk: car.brake, pz: Math.atan((car.loc.grade || 0) * along) + (car.groundPitch || 0), rx: car.groundRoll || 0,
+    thr: car.throttle, brk: car.brake, pz: car.groundPitch || 0, rx: car.groundRoll || 0,
     col, lap, s: car.loc.s || 0, name, bl: best || 0, ll: last || 0,
   };
 }

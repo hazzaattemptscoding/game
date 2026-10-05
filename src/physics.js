@@ -282,8 +282,17 @@ export class Car {
       wheelRel[w] = T.relief ? T.relief(dw < 0 ? 0 : 1, loc.i, Math.abs(dw)) : 0;
     }
     const meanRel = (wheelRel[0] + wheelRel[1] + wheelRel[2] + wheelRel[3]) / 4;
-    const roll = ((wheelRel[1] + wheelRel[3]) - (wheelRel[0] + wheelRel[2])) / 2 / (2 * hwt);
-    const pitch = ((wheelRel[0] + wheelRel[1]) - (wheelRel[2] + wheelRel[3])) / 2 / (this.a + this.b);
+    // The body's tilt (drawing only, nothing here feeds the forces): the real ground under each wheel, plus the kerb on it,
+    // so the car leans with the road's camber, a bank or a sloping verge instead of only with the centreline's grade.
+    // groundPitch and groundRoll are the whole tilt (CarView draws them, ghosts.js sends them as pz and rx). Taken from the ground
+    // itself, not from loc.grade: loc's tangent points the other way to the track's, which once tilted every car the wrong way on slopes.
+    const fx = Math.cos(this.heading), fz = Math.sin(this.heading), wheelY2 = [0, 0, 0, 0];
+    for (let w = 0; w < 4; w++) {
+      const wx = this.x + fx * wheelX[w] - fz * wheelY[w], wz = this.z + fz * wheelX[w] + fx * wheelY[w];
+      wheelY2[w] = (T.groundAt ? T.groundAt(wx, wz, loc.i) : loc.h) + wheelRel[w];
+    }
+    const roll = Math.atan(((wheelY2[1] + wheelY2[3]) - (wheelY2[0] + wheelY2[2])) / 2 / (2 * hwt));
+    const pitch = Math.atan(((wheelY2[0] + wheelY2[1]) - (wheelY2[2] + wheelY2[3])) / 2 / (this.a + this.b));
     const ease = 1 - Math.exp(-dt / 0.05);
     this.groundY += (groundY - this.groundY) * ease;
     this.relY += (meanRel - this.relY) * ease; this.groundRoll += (roll - this.groundRoll) * ease; this.groundPitch += (pitch - this.groundPitch) * ease;

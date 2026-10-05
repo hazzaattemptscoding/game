@@ -241,9 +241,8 @@ export class CarView {
     this.root.position.set(lerp(p.x, car.x), lerp(p.y, car.y), lerp(p.z, car.z));
     this.root.rotation.y = -heading;
 
-    // road slope along the car
-    const along = Math.cos(heading) * car.loc.tx + Math.sin(heading) * car.loc.tz;
-    this.slope.rotation.z = Math.atan(car.loc.grade * along) + (car.groundPitch || 0);
+    // the ground's slope under the wheels (physics.js works it out from the ground under each one)
+    this.slope.rotation.z = car.groundPitch || 0;
     this.slope.rotation.x = -(car.groundRoll || 0);
 
     // weight transfer: nose dips under braking, body leans out of corners

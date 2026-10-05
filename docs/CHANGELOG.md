@@ -1,5 +1,14 @@
 # Changelog
 
+## Cars sit on the road: tilt from the ground under the wheels
+
+Report (online, a remote car): the car never follows the angle of the track.
+
+- The body's pitch and roll are now worked out from the ground height under each of the four wheels (plus any kerb), so a car leans with a slope, a bank or a sloping verge. Before, roll only followed kerbs, and pitch came from the centreline grade multiplied by the car's direction along `loc`, whose tangent points the opposite way to the track's: every car was tilted the wrong way on every slope (nose up going downhill). Remote cars get the same, as `pz` and `rx` are now the whole tilt.
+- Drawing only: lap times are unchanged to the millisecond.
+- Not changed, waiting on the owner: the hill force in `physics.js` (`slope = loc.grade * along`) uses the same reversed direction, so gravity slows the car downhill and helps it uphill. Fixing it changes lap times.
+- A remote car driven by someone on an older build still sends the old, wrong-way pitch until they update.
+
 ## Free look
 
 Settings > Display > Free look (on by default). Hold a mouse button and drag on the view, or push the right stick, to look round the car: the chase camera orbits it, the bonnet camera turns the driver's head. Let go and it settles back behind the car. With cursor steering only the right mouse button looks round (the mouse is steering). No free look by touch, where the screen is the steering and the pedals.
