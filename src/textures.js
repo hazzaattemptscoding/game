@@ -475,3 +475,131 @@ export function speedSignTexture(n) {
   x.fillStyle = '#111'; x.font = 'bold 52px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(String(n), 64, 68);
   return finish(c, { repeat: false });
 }
+
+// ---------------------------------------------------------------------------
+// Venue textures: grass, gantry banner, start line, grandstand seating.
+
+// draw `fn(dx, dy)` at the canvas position and at its wrapped copies, so the texture tiles without a seam
+function wrapped(w, h, px, py, reach, fn) {
+  for (const dx of [-w, 0, w]) for (const dy of [-h, 0, h]) {
+    const x = px + dx, y = py + dy;
+    if (x < -reach || x > w + reach || y < -reach || y > h + reach) continue;
+    fn(x, y);
+  }
+}
+
+// Mown grass beside the circuit. One tile is 40 m along by 40 m across (u along, v across), eight 5 m stripes across,
+// alternating light and dark, with fine blades and soft mottling on top. Rows of the canvas are across the track.
+export function mownGrassTexture(seed = 3) {
+  const W = 512, H = 512, [c, x] = canvas(W, H), r = rng(seed);
+  const stripe = H / 8;
+  for (let i = 0; i < 8; i++) {
+    const g = x.createLinearGradient(0, i * stripe, 0, (i + 1) * stripe);
+    const a = i % 2 ? ['#63923f', '#5a8838'] : ['#548733', '#4b7c2e'];
+    g.addColorStop(0, a[0]); g.addColorStop(1, a[1]);
+    x.fillStyle = g; x.fillRect(0, i * stripe, W, stripe);
+  }
+  // soft mottling
+  for (let i = 0; i < 90; i++) {
+    const px = r() * W, py = r() * H, rad = 18 + r() * 40, dark = r() < 0.5;
+    wrapped(W, H, px, py, rad, (qx, qy) => {
+      const g = x.createRadialGradient(qx, qy, 0, qx, qy, rad);
+      g.addColorStop(0, dark ? 'rgba(30,60,20,.10)' : 'rgba(140,175,80,.09)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = g; x.fillRect(qx - rad, qy - rad, rad * 2, rad * 2);
+    });
+  }
+  // blades, lying along the direction of the cut (along the track)
+  const tones = ['#41702a', '#6aa045', '#3a6626', '#78ad4f', '#5f9540'];
+  for (let i = 0; i < 9000; i++) {
+    const px = r() * W, py = r() * H, len = 2 + r() * 3.5;
+    x.strokeStyle = tones[(r() * tones.length) | 0]; x.globalAlpha = 0.5; x.lineWidth = 0.9;
+    wrapped(W, H, px, py, len, (qx, qy) => { x.beginPath(); x.moveTo(qx, qy); x.lineTo(qx + len, qy + (r() - 0.5) * 1.4); x.stroke(); });
+  }
+  x.globalAlpha = 1;
+  return finish(c, { aniso: 8 });
+}
+
+// Longer, rougher meadow grass for the ground further out. 24 m a tile, no stripes: clumps, seed heads and bare patches.
+export function meadowTexture(seed = 31) {
+  const W = 512, H = 512, [c, x] = canvas(W, H), r = rng(seed);
+  x.fillStyle = '#5d8240'; x.fillRect(0, 0, W, H);
+  for (let i = 0; i < 160; i++) {
+    const px = r() * W, py = r() * H, rad = 20 + r() * 55, k = r();
+    const col = k < 0.35 ? 'rgba(36,66,26,.16)' : k < 0.7 ? 'rgba(150,170,80,.13)' : 'rgba(120,100,50,.08)';
+    wrapped(W, H, px, py, rad, (qx, qy) => {
+      const g = x.createRadialGradient(qx, qy, 0, qx, qy, rad);
+      g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = g; x.fillRect(qx - rad, qy - rad, rad * 2, rad * 2);
+    });
+  }
+  const tones = ['#3b6427', '#6f9a45', '#4a7a30', '#86a655', '#a39c58', '#2f5520'];
+  for (let i = 0; i < 16000; i++) {
+    const px = r() * W, py = r() * H, len = 3 + r() * 7, ang = -Math.PI / 2 + (r() - 0.5) * 1.5;
+    x.strokeStyle = tones[(r() * tones.length) | 0]; x.globalAlpha = 0.55; x.lineWidth = 0.8 + r() * 0.7;
+    wrapped(W, H, px, py, len, (qx, qy) => {
+      x.beginPath(); x.moveTo(qx, qy); x.quadraticCurveTo(qx + Math.cos(ang) * len * 0.5, qy + Math.sin(ang) * len * 0.5, qx + Math.cos(ang) * len + (r() - 0.5) * 2, qy + Math.sin(ang) * len); x.stroke();
+    });
+  }
+  x.globalAlpha = 1;
+  return finish(c, { aniso: 8 });
+}
+
+// Chequered start line: two rows of squares. One tile is 2 squares wide (u) and 2 deep (v).
+export function chequerTexture() {
+  const [c, x] = canvas(64, 64);
+  x.fillStyle = '#f2f2ee'; x.fillRect(0, 0, 64, 64);
+  x.fillStyle = '#16171a'; x.fillRect(0, 0, 32, 32); x.fillRect(32, 32, 32, 32);
+  return finish(c, { nearest: true, aniso: 4 });
+}
+
+// The timing banner on the start gantry: START / FINISH between chequered ends, with a row of lap-clock style digits.
+export function gantryBannerTexture() {
+  const [c, x] = canvas(2048, 160);
+  x.fillStyle = '#0d0e10'; x.fillRect(0, 0, 2048, 160);
+  const sq = 20;
+  for (const x0 of [0, 2048 - 8 * sq]) for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
+    x.fillStyle = (i + j) % 2 ? '#f2f2ee' : '#16171a'; x.fillRect(x0 + i * sq, j * sq, sq, sq);
+  }
+  x.fillStyle = '#ffd21f'; x.fillRect(8 * sq, 0, 2048 - 16 * sq, 8); x.fillRect(8 * sq, 152, 2048 - 16 * sq, 8);
+  x.textBaseline = 'middle'; x.textAlign = 'center';
+  x.fillStyle = '#f2f2ee'; x.font = 'bold 92px "Arial Narrow", Arial, sans-serif';
+  x.fillText('LAKESIDE   START / FINISH', 1024, 82);
+  return finish(c, { repeat: false });
+}
+
+// Grandstand seating, seen from the front: a row of seat blocks in club colours. One tile is 8 seats wide (u) and one row deep (v).
+export function seatTexture() {
+  const [c, x] = canvas(256, 64), r = rng(77);
+  x.fillStyle = '#3a3d42'; x.fillRect(0, 0, 256, 64);
+  const cols = ['#1d4e9e', '#c8102e', '#e8e6de', '#1d4e9e'];
+  for (let i = 0; i < 8; i++) {
+    const col = cols[(i >> 1) % cols.length];
+    x.fillStyle = col; x.fillRect(i * 32 + 3, 22, 26, 36);          // back rest
+    x.fillStyle = 'rgba(0,0,0,.28)'; x.fillRect(i * 32 + 3, 52, 26, 6);
+    x.fillStyle = 'rgba(255,255,255,.18)'; x.fillRect(i * 32 + 3, 22, 26, 3);
+  }
+  speckle(x, 256, 64, r, 500, ['rgba(0,0,0,.12)', 'rgba(255,255,255,.08)'], 1.2);
+  return finish(c, { aniso: 4 });
+}
+
+// Painted concrete for stands and walls: pale, panel seams every 3 m.
+export function standConcreteTexture() {
+  const [c, x] = canvas(256, 256), r = rng(81);
+  x.fillStyle = '#c3c1ba'; x.fillRect(0, 0, 256, 256);
+  speckle(x, 256, 256, r, 4000, ['#b2b0a9', '#cfcdc6', '#a6a49d'], 1.3);
+  x.fillStyle = 'rgba(60,60,60,.45)'; x.fillRect(0, 0, 2, 256); x.fillRect(0, 0, 256, 2);
+  return finish(c);
+}
+
+// A numbered plate for a pit garage or a grid slot. Several numbers on one sheet: 8 columns by 4 rows, 1 to 32.
+export function numberSheet() {
+  const [c, x] = canvas(512, 256);
+  x.fillStyle = '#16181b'; x.fillRect(0, 0, 512, 256);
+  x.fillStyle = '#f2f2ee'; x.font = 'bold 40px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  for (let n = 0; n < 32; n++) {
+    const cx = (n % 8) * 64 + 32, cy = Math.floor(n / 8) * 64 + 34;
+    x.strokeStyle = '#ffd21f'; x.lineWidth = 3; x.strokeRect(cx - 28, cy - 24, 56, 48);
+    x.fillText(String(n + 1), cx, cy + 2);
+  }
+  return finish(c, { repeat: false });
+}

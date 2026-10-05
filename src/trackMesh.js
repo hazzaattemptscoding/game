@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { wrap, BARRIER } from './track.js';
 import * as tex from './textures.js';
 import { buildGroundRibbon } from './groundRibbon.js';
+import { buildGantry, buildStartPaint } from './gantry.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
 const DECAL = 0.006;          // paint sits this far above the surface, drawn with polygonOffset so it never fights
@@ -131,13 +132,9 @@ export function buildTrackScene(T, ground) {
   }
 
   // start line, grid slots, sector and DRS lines, pit limiter lines
-  crossLine(strips('line'), T, 0, 0.9, -hw, hw);
+  // (the chequered start line and the grid boxes are painted by gantry.js)
   for (const s of T.sectors.slice(1)) crossLine(strips('line'), T, s, 0.3, -hw, hw);
   for (const [a] of T.drs) crossLine(strips('line'), T, a, 0.3, -hw, hw);
-  for (let slot = 0; slot < 12; slot++) {
-    const s = T.length - 10 - slot * 8, d = (slot % 2 ? 1 : -1) * 3;
-    crossLine(strips('line'), T, s, 0.15, d - 1, d + 1);
-  }
   const lim = runs(T.N, i => T.pitLimiter[i] > 0)[0];
   if (lim) for (const i of [lim[0], lim[lim.length - 1]]) crossLine(strips('line'), T, T.s[i], 0.5, -T.pitIn[i], -T.pitOut[i]);
 
@@ -231,8 +228,8 @@ export function buildTrackScene(T, ground) {
   group.add(instancedPosts(fencePosts, mat.fencePost, 0.06, 'fence'));
 
   group.add(bridge(T, mat, ground));
-  const gantryGroup = gantry(T, mat, sponsorTex);
-  group.add(gantryGroup);
+  const gantryGroup = buildGantry(T, sponsorTex);
+  group.add(gantryGroup, buildStartPaint(T));
   group.add(furniture(T));
   group.userData.startLights = gantryGroup.userData.lights;
   return group;
@@ -495,70 +492,6 @@ export function onAnyRoad(T, x, z, margin) {
     if (T.pitOut[i] && d < 0 && -d > T.pitIn[i] - margin && -d < T.pitOut[i] + margin) return true;
   }
   return false;
-}
-
-// ---------------------------------------------------------------------------
-// Start gantry: steel truss over the grid, PowerMedia boards, five light pods.
-
-function gantry(T, mat, sponsorTex) {
-  const g = new THREE.Group();
-  const i = wrap(Math.round(-4 / T.ds), T.N);
-  const hw = T.halfWidth, leftD = -hw - 2.3, rightD = hw + 2.3, mid = 0;
-  const under = 6.0, beamH = 1.0, beamD = 0.9;
-  const frame = new THREE.MeshStandardMaterial({ color: 0x2b2e33, roughness: 0.5, metalness: 0.5 });
-  // pillars: 0.6 m square, 2 m beyond the track edge
-  for (const d of [leftD, rightD]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.6, under + beamH, 0.6), frame);
-    leg.position.set(0, (under + beamH) / 2, d);
-    leg.castShadow = true;
-    g.add(leg);
-  }
-  const span = rightD - leftD + 0.6;
-  const beam = new THREE.Mesh(new THREE.BoxGeometry(beamD, beamH, span), frame);
-  beam.position.set(0, under + beamH / 2, mid);
-  beam.castShadow = true;
-  g.add(beam);
-  // PowerMedia banner on both faces, 14 m by 1.2 m
-  const boardTex = sponsorTex.clone();
-  boardTex.repeat.set(1, 1 / tex.SPONSORS.length);
-  boardTex.offset.set(0, 1 - 1 / tex.SPONSORS.length);
-  boardTex.needsUpdate = true;
-  const boardMat = new THREE.MeshStandardMaterial({ map: boardTex, roughness: 0.5 });
-  for (const x of [-1, 1]) {
-    const board = new THREE.Mesh(new THREE.PlaneGeometry(14, 1.2), boardMat);
-    board.position.set(x * (beamD / 2 + 0.02), under + beamH + 0.65, mid);
-    board.rotation.y = x < 0 ? -Math.PI / 2 : Math.PI / 2;
-    g.add(board);
-    const back = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.3, 14.2), frame);
-    back.position.set(0, under + beamH + 0.65, mid);
-    g.add(back);
-  }
-  // five pods, 1.6 m apart, two stacked red lights each with a visor, facing the grid
-  const lights = [];
-  const housing = new THREE.MeshStandardMaterial({ color: 0x1a1b1e, roughness: 0.6 });
-  for (let k = 0; k < 5; k++) {
-    const z = mid + (k - 2) * 1.6;
-    const pod = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.9, 0.9), housing);
-    pod.position.set(-beamD / 2 - 0.15, under - 0.3, z);
-    g.add(pod);
-    const pair = [];
-    for (const y of [-0.2, 0.2]) {
-      const lamp = new THREE.Mesh(new THREE.CircleGeometry(0.15, 20), mat.lampOff.clone());
-      lamp.material.color.set(0x5a0f0f);
-      lamp.position.set(-beamD / 2 - 0.31, under - 0.3 + y, z);
-      lamp.rotation.y = -Math.PI / 2;
-      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.02, 0.34), housing);
-      visor.position.set(-beamD / 2 - 0.36, under - 0.3 + y + 0.16, z);
-      g.add(lamp, visor);
-      pair.push(lamp);
-    }
-    lights.push(pair);
-  }
-  g.userData.lights = lights;
-  const x = T.x[i], z = T.z[i];
-  g.position.set(x, T.groundAt(x, z, i), z);
-  g.rotation.y = -Math.atan2(T.tz[i], T.tx[i]);
-  return g;
 }
 
 // Run lengths of consecutive samples where test(i) is true, as index lists.
