@@ -90,6 +90,21 @@ check(cleanCommand({ c: 'rm -rf' }, SCENES) === null, 'unknown command refused')
   check(!C.screen.adOn('ad1') && C.screen.log.includes('msg:Hello Lakeside'), 'newcomer sees the message and the advert off: ' + C.screen.log.join());
 }
 
+// the start sequence: one command, the host runs it and everyone sees each step
+{
+  const r = room(['H', 'A'], 'H'), H = r.get('H'), A = r.get('A');
+  r.flush();
+  const timers = [];
+  const sc = createScreenControl({ screen: H.screen, mp: H.mp, inRoom: () => true, setTimeout: (f, ms) => { timers.push([ms, f]); return timers.length; }, clearTimeout: () => {}, random: () => 0.5 });
+  r.members.get('H').sc = sc;
+  sc.command({ c: 'start' });
+  timers.sort((a, b) => a[0] - b[0]).forEach(([, f]) => f());
+  r.flush();
+  const steps = A.screen.log.filter(l => /^lights|^go/.test(l)).join();
+  check(steps === 'lights0,lights1,lights2,lights3,lights4,lights5,go', 'start sequence reaches the guest in order: ' + steps);
+  check(timers.at(-1)[0] === 5000 + 200 + 0.5 * 2800, 'GO after five lamps and the hold');
+}
+
 console.log('SCREEN CONTROL: commands, access and the room messages');
 if (fails.length) { console.log('\nFAIL\n  ' + fails.join('\n  ')); process.exit(1); }
 console.log('  all passed');

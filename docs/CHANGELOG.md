@@ -4,7 +4,7 @@
 
 Pause menu > Screen control (shown to whoever may use it).
 
-- Start lights 1 to 5 and GO, flags (yellow, red, track clear, final lap, chequered) and Clear, a custom message of up to 40 characters, and the adverts: show one now (held until you resume the loop), next, and each advert in or out of the loop (at least one always stays in). The screen only: the cars are not held by these lights.
+- One Start lights button that runs the whole start (five lamps a second apart, a random hold of 0.2 to 3 s, then GO; the host runs it and sends each step, a flag or Clear stops it), flags (yellow, red, track clear, final lap, chequered) and Clear, a custom message of up to 40 characters, and the adverts: show one now (held until you resume the loop), next, and each advert in or out of the loop (at least one always stays in). The screen only: the cars are not held by these lights.
 - Single player: always available. Online: the host always has it and can give it to any player in the room (Who can use it) and take it back. A player with access sends commands to the host; only the host changes the screen, so everyone in the room sees the same thing. A newcomer is sent what is on the screen now. Your own lap board stays local.
 - Room messages `scrc`, `scr`, `scrs`, `scrg` (`src/screenControl.js`); guests ignore screen messages that are not from the host, and the relay Worker drops `scr`, `scrs` and `scrg` from anyone but the host (needs the Worker redeployed, which pushing `main` does).
 - `src/gantryScreen.js` gains a message board, adverts switched off and `next()`; the ad copy, colours and timings are unchanged.

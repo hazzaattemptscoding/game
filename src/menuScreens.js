@@ -372,9 +372,9 @@ function screenPanel() {
       const group = (title, ...kids) => { const g = h('div', 'm-group'); g.append(h('div', 'm-gtitle', title), ...kids); return g; };
       const row = (...kids) => { const r = h('div', 'm-seg'); r.append(...kids); return r; };
 
-      const lights = row(...[1, 2, 3, 4, 5].map(n => btn(String(n), 'm-opt', () => send({ c: 'lights', n }))), btn('GO', 'm-opt', () => send({ c: 'go' })));
+      const lights = row(btn('Start lights', 'm-opt', () => send({ c: 'start' })));
       lights.firstChild.dataset.first = '1';
-      c.append(group('Start lights', lights, h('p', 'm-note', 'Light the lamps one by one, then GO. The cars are not held: this is the screen only.')));
+      c.append(group('Start lights', lights, h('p', 'm-note', 'Runs the start: five lamps, a short random hold, then GO. The cars are not held: this is the screen only. A flag or Clear stops it.')));
 
       c.append(group('Flags', row(...FLAG_NAMES.map(([name, label]) => btn(label, 'm-opt', () => send({ c: 'flag', name })))), row(btn('Clear', 'm-opt', () => send({ c: 'clear' })))));
 

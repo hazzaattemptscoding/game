@@ -7,7 +7,8 @@
 //   scrs  host -> one      { t:'scrs', st }       what is on the screen now, once to each newcomer
 //   scrg  host -> all      { t:'scrg', ids }      the players the host has given access to
 //
-// Commands: { c:'lights', n } (0 to 5), { c:'go' }, { c:'flag', name } (yellow, red, green, final, chequered),
+// Commands: { c:'start' } (the whole start sequence: a lamp a second, a random hold, GO; run by the host, who sends each step),
+// { c:'lights', n } (0 to 5), { c:'go' }, { c:'flag', name } (yellow, red, green, final, chequered),
 // { c:'msg', text }, { c:'clear' }, { c:'scene', name } (hold one advert), { c:'loop' } (back to the loop), { c:'next' },
 // { c:'ad', name, on } (an advert in or out of the loop). The lap board stays local: each player sees their own laps.
 // Pure JavaScript with the screen and the room injected, so tools/screencontrol.js tests it with fakes.
@@ -22,7 +23,7 @@ export function cleanCommand(cmd, scenes = []) {
   if (!cmd || typeof cmd !== 'object') return null;
   switch (cmd.c) {
     case 'lights': { const n = Math.round(+cmd.n); return Number.isFinite(n) ? { c: 'lights', n: Math.max(0, Math.min(5, n)) } : null; }
-    case 'go': case 'clear': case 'loop': case 'next': return { c: cmd.c };
+    case 'start': case 'go': case 'clear': case 'loop': case 'next': return { c: cmd.c };
     case 'flag': return FLAGS.includes(cmd.name) ? { c: 'flag', name: cmd.name } : null;
     case 'msg': { const text = str(cmd.text).replace(/[\u0000-\u001f]/g, '').trim().slice(0, MSG_MAX); return text ? { c: 'msg', text } : null; }
     case 'scene': return scenes.includes(cmd.name) ? { c: 'scene', name: cmd.name } : null;
@@ -31,7 +32,10 @@ export function cleanCommand(cmd, scenes = []) {
   }
 }
 
-// o: { screen (createGantryScreen's api), mp (Multiplayer: isHost, selfId, hostPeerId, peers, sendControl), inRoom () => bool, onChange () }
+export const LAMP_MS = 1000, HOLD_MIN_MS = 200, HOLD_MAX_MS = 3000;   // like a real start: a lamp a second, then a random hold
+
+// o: { screen (createGantryScreen's api), mp (Multiplayer: isHost, selfId, hostPeerId, peers, sendControl), inRoom () => bool, onChange (),
+//      setTimeout, clearTimeout, random (injected for the tests) }
 export function createScreenControl(o) {
   const screen = o.screen, mp = o.mp, inRoom = o.inRoom || (() => false), changed = o.onChange || (() => {});
   const scenes = screen ? screen.scenes || [] : [];
@@ -40,6 +44,24 @@ export function createScreenControl(o) {
   let grants = new Set(), mine = false, sentTo = new Set(), lastGrants = '';
 
   const host = () => !inRoom() || mp.isHost;
+  const later = o.setTimeout || ((f, ms) => setTimeout(f, ms)), cancel = o.clearTimeout || (id => clearTimeout(id)), random = o.random || Math.random;
+  let steps = [];   // the timers of a running start sequence (host or single player)
+  const stopSequence = () => { for (const id of steps) cancel(id); steps = []; };
+  // show one step here and, in a room, on everyone's screen
+  const out = cmd => { apply(cmd); if (inRoom() && mp.isHost) mp.sendControl({ t: 'scr', cmd }); };
+  function runStart() {
+    stopSequence();
+    out({ c: 'lights', n: 0 });
+    for (let n = 1; n <= 5; n++) steps.push(later(() => out({ c: 'lights', n }), n * LAMP_MS));
+    const hold = HOLD_MIN_MS + random() * (HOLD_MAX_MS - HOLD_MIN_MS);
+    steps.push(later(() => { steps = []; out({ c: 'go' }); }, 5 * LAMP_MS + hold));
+  }
+  // the host's (or single player's) own command, or one it accepted from a player with access
+  function run(cmd) {
+    if (cmd.c === 'start') return runStart();
+    if (cmd.c !== 'lights' && cmd.c !== 'go') stopSequence();     // anything else (a flag, clear, a message) cuts a running start short
+    out(cmd);
+  }
 
   function apply(cmd) {
     if (!screen) return;
@@ -69,8 +91,7 @@ export function createScreenControl(o) {
     command(raw) {
       const cmd = cleanCommand(raw, scenes);
       if (!cmd || !api.canControl()) return false;
-      if (!inRoom()) { apply(cmd); return true; }
-      if (mp.isHost) { apply(cmd); mp.sendControl({ t: 'scr', cmd }); }
+      if (!inRoom() || mp.isHost) run(cmd);
       else mp.sendControl({ t: 'scrc', cmd });
       return true;
     },
@@ -109,11 +130,11 @@ export function createScreenControl(o) {
       if (m.t === 'scrc') {
         if (!mp.isHost || !grants.has(from)) return;     // only a player the host has let in
         const cmd = cleanCommand(m.cmd, scenes);
-        if (cmd) { apply(cmd); mp.sendControl({ t: 'scr', cmd }); }
+        if (cmd) run(cmd);
       } else if (m.t === 'scr') {
         if (mp.isHost || !fromHost) return;
         const cmd = cleanCommand(m.cmd, scenes);
-        if (cmd) apply(cmd);
+        if (cmd && cmd.c !== 'start') apply(cmd);
       } else if (m.t === 'scrs') {
         if (mp.isHost || !fromHost || !m.st || typeof m.st !== 'object') return;
         for (const name of Array.isArray(m.st.off) ? m.st.off : []) { const c = cleanCommand({ c: 'ad', name, on: false }, scenes); if (c) apply(c); }
