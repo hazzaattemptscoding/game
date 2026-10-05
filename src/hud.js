@@ -30,6 +30,7 @@ export class Hud {
           <div><span>Last</span><b id="h-last">-:--.---</b></div>
           <div><span>Best</span><b id="h-best">-:--.---</b></div>
         </div>
+        <div class="hud-live" id="h-live" hidden><b id="h-live-t">+0.000</b><span class="hud-live-bar"><i id="h-live-bar"></i></span></div>
         <div class="hud-sectors" id="h-sec"></div>
         <div class="hud-limits" id="h-limits" hidden></div>
         <div class="hud-stand" id="h-stand" hidden></div>
@@ -54,7 +55,7 @@ export class Hud {
       <pre class="hud-debug" id="h-debug"></pre>
       <div class="hud-help" id="h-help">Arrows or WASD to drive · Space for DRS · R reset · C camera · L racing line · Esc menu</div>`;
     const $ = id => root.querySelector('#' + id);
-    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr') };
+    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), live: $('h-live'), liveT: $('h-live-t'), liveBar: $('h-live-bar'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr') };
     this.root = root;
     this._layout = '';
     this.perf = 'FPS';    // the FPS readout text, set from the loop (src/main.js)
@@ -121,6 +122,19 @@ export class Hud {
     text(e.lap, fmtTime(timer.running(simTime)));
     text(e.last, fmtTime(timer.last));
     text(e.best, fmtTime(timer.best));
+
+    // live delta to the session's best lap: hidden until there is one, held to 1 decimal place of change per frame
+    const ld = timer.delta ? timer.delta(simTime) : null;
+    if (ld === null) { if (!e.live.hidden) e.live.hidden = true; }
+    else {
+      if (e.live.hidden) e.live.hidden = false;
+      text(e.liveT, fmtDelta(ld));
+      const cls = ld <= 0 ? 'ahead' : 'behind';
+      if (e.live.dataset.s !== cls) e.live.dataset.s = cls;
+      const w = Math.min(1, Math.abs(ld) / 2) * 50;   // a full half-bar at 2 s
+      const style = ld <= 0 ? `left:${50 - w}%;width:${w}%` : `left:50%;width:${w}%`;
+      if (e.liveBar.getAttribute('style') !== style) e.liveBar.setAttribute('style', style);
+    }
 
     // sector splits for the current lap, coloured against your best
     const cells = [];

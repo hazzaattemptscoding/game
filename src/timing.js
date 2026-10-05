@@ -24,6 +24,32 @@ export class LapTimer {
     this.distance = 0;       // total distance driven along the lap, for race positions
     this.events = [];        // {type: 'sector'|'lap', ...} since last read
     this.limits = new TrackLimits();   // track limit warnings this session, cleared with everything else
+    // live delta: the time into the lap at every metre of this lap, and of the session's best lap
+    this.trace = null;       // Float32Array, NaN where not reached yet
+    this.traceAt = -1;       // the last whole metre written
+    this.traceOK = false;    // false once the lap jumps (a reset, the pit lane cut short): such a lap never becomes the reference
+    this.bestTrace = null;
+  }
+
+  // live delta: time into this lap minus the session's best lap at the same distance; null on the out lap or with no best yet
+  delta(time) {
+    const b = this.bestTrace;
+    if (!b || this.lapStart === null || this.prevS === null) return null;
+    const s = this.prevS;   // already in lap order (mirrored in reverse) by update
+    const k = Math.floor(s), f = s - k, ref = b[k] + ((b[k + 1] ?? b[k]) - b[k]) * f;
+    return Number.isFinite(ref) ? (time - this.lapStart) - ref : null;
+  }
+
+  // write the time into the lap for every whole metre passed since the last call
+  recordTrace(s, time) {
+    const n = Math.ceil(this.track.length) + 1;
+    if (!this.trace) { this.trace = new Float32Array(n).fill(NaN); this.traceAt = -1; this.traceOK = true; }
+    const k = Math.floor(s), t = time - this.lapStart;
+    if (k <= this.traceAt) return;                       // standing still or going backwards: keep the first pass
+    if (k - this.traceAt > 40) this.traceOK = false;     // a jump, not driving
+    const t0 = this.traceAt >= 0 ? this.trace[this.traceAt] : 0, from = this.traceAt;
+    for (let m = from + 1; m <= k && m < n; m++) this.trace[m] = from < 0 ? t : t0 + (t - t0) * (m - from) / (k - from);
+    this.traceAt = k;
   }
 
   // the lap being driven: 0 on the out lap, then 1, 2, ...
@@ -43,9 +69,10 @@ export class LapTimer {
     this.distance += ds;
     const crossedLine = this.prevS > L - 200 && s < 200;
     if (crossedLine && ds > 0) this.finishLap(time);
-    else if (this.lapStart !== null && this.sector < 2) {
+    else if (this.lapStart !== null) {
+      if (ds > 0) this.recordTrace(s, time);
       const next = sectors[this.sector + 1];
-      if (this.prevS < next && s >= next && ds > 0) this.finishSector(time);
+      if (this.sector < 2 && this.prevS < next && s >= next && ds > 0) this.finishSector(time);
     }
     this.prevS = s;
   }
@@ -67,7 +94,14 @@ export class LapTimer {
       const isBest = this.best === null || lapTime < this.best;
       this.last = lapTime;
       this.lastSectors = this.current.slice();
-      if (isBest) this.best = lapTime;
+      if (isBest) {
+        this.best = lapTime;
+        // this lap becomes the delta reference if it was driven all the way round (the last metres up to the line filled in)
+        if (this.trace && this.traceOK && this.traceAt > this.track.length - 60) {
+          for (let m = this.traceAt + 1; m < this.trace.length; m++) this.trace[m] = lapTime;
+          this.bestTrace = this.trace;
+        }
+      }
       this.lap++;
       const warnings = this.limits.countFor(this.lap);
       this.history.push({ lap: this.lap, time: lapTime, sectors: this.lastSectors, warnings, valid: warnings === 0 });
@@ -76,6 +110,7 @@ export class LapTimer {
     this.lapStart = time;
     this.sector = 0;
     this.current = [];
+    this.trace = null; this.traceAt = -1;
   }
 
   // time into the current lap

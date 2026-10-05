@@ -1,5 +1,12 @@
 # Changelog
 
+## Live delta
+
+A running gap to your best lap this session, under the lap timer: green and a bar to the left when you are ahead, red and a bar to the right when you are behind (a full half-bar at 2 s). It appears from the lap after your first full lap.
+
+- `LapTimer` records the time into the lap at every metre; when a lap becomes the session best, its record becomes the reference, and `timer.delta(time)` is the time now minus the reference at the same distance. A lap with a jump in it (a reset, a teleport) never becomes the reference. Works in reverse.
+- New HUD part "Live delta" in Settings > Interface, on in the Full and Minimal presets.
+
 ## Cars sit on the road: tilt from the ground under the wheels
 
 Report (online, a remote car): the car never follows the angle of the track.

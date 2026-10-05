@@ -8,6 +8,7 @@ export const HUD_ELEMENTS = [
   ['lapTimer', 'Lap timer, last and best', ''],
   ['sectors', 'Sector times', ''],
   ['delta', 'Delta in the sector times', 'The gap to your last lap, beside each sector time.'],
+  ['liveDelta', 'Live delta', 'The running gap to your best lap this session: green when you are ahead, red when behind.'],
   ['limits', 'Track limits warnings', 'The banner and the count for this lap.'],
   ['assists', 'Assist indicators', 'The TC, ABS and ESC lights.'],
   ['flags', 'Event messages', 'Lap and sector flashes, session banners and the session line.'],
@@ -19,8 +20,8 @@ export const HUD_ELEMENTS = [
 export const HUD_KEYS = HUD_ELEMENTS.map(e => e[0]);
 
 // the look the game had before these settings: everything on except the three extras
-export const FULL = Object.freeze({ speed: true, lapTimer: true, sectors: true, delta: true, limits: true, assists: true, flags: true, steerBar: true, pedals: false, inputOverlay: false, fps: false });
-export const MINIMAL = Object.freeze({ speed: true, lapTimer: true, sectors: false, delta: false, limits: true, assists: false, flags: true, steerBar: false, pedals: false, inputOverlay: false, fps: false });
+export const FULL = Object.freeze({ speed: true, lapTimer: true, sectors: true, delta: true, liveDelta: true, limits: true, assists: true, flags: true, steerBar: true, pedals: false, inputOverlay: false, fps: false });
+export const MINIMAL = Object.freeze({ speed: true, lapTimer: true, sectors: false, delta: false, liveDelta: true, limits: true, assists: false, flags: true, steerBar: false, pedals: false, inputOverlay: false, fps: false });
 export const OFF = Object.freeze(Object.fromEntries(HUD_KEYS.map(k => [k, false])));
 export const PRESETS = { full: { hud: FULL, map: true }, minimal: { hud: MINIMAL, map: false }, off: { hud: OFF, map: false } };
 export const PRESET_ORDER = ['full', 'minimal', 'off'];

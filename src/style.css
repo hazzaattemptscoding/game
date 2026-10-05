@@ -334,3 +334,15 @@ body.touch #trackmap.pos-tl { top: calc(150px + env(safe-area-inset-top, 0px)); 
 
 /* screen control panel: a name at the start of a row of buttons */
 .m-seg > .m-label{flex:0 0 140px;align-self:center;margin:0}
+
+/* live delta under the lap timer: green ahead of your best lap this session, red behind */
+.hud-live{display:flex;align-items:center;gap:8px;margin-top:6px}
+.hud-live[hidden]{display:none}
+.hud-live b{font-size:22px;font-style:italic;min-width:84px;text-shadow:0 1px 3px #0009}
+.hud-live[data-s=ahead] b{color:var(--green)}
+.hud-live[data-s=behind] b{color:var(--red)}
+.hud-live-bar{position:relative;display:block;width:120px;height:6px;background:#14181d99}
+.hud-live-bar:before{content:"";position:absolute;left:50%;top:-2px;width:1px;height:10px;background:#f2efe6aa}
+.hud-live-bar i{position:absolute;top:0;height:100%;background:var(--red)}
+.hud-live[data-s=ahead] .hud-live-bar i{background:var(--green)}
+body.hx-no-liveDelta .hud-live{display:none!important}
