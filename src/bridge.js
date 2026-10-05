@@ -50,6 +50,21 @@ export function planPiers(T, ground, blocked) {
   return out;
 }
 
+// A muted looping video as a texture, or null where there is no browser video (the headless tools). onReady fires once a
+// frame is available.
+function bannerVideo(url, onReady) {
+  if (typeof document === 'undefined' || typeof document.createElement('video').play !== 'function') return null;
+  const v = document.createElement('video');
+  v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true; v.preload = 'auto'; v.crossOrigin = 'anonymous';
+  v.src = (import.meta.env?.BASE_URL ?? './') + url;
+  const t = new THREE.VideoTexture(v);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
+  v.addEventListener('loadeddata', () => { v.play().then(onReady, () => {}); });
+  v.addEventListener('error', () => {});
+  return t;
+}
+
 export function buildBridge(T, ground, mat, { Strips }) {
   const g = new THREE.Group();
   const idx = [];
@@ -94,6 +109,21 @@ export function buildBridge(T, ground, mat, { Strips }) {
   const ban = new THREE.Mesh(banners.geometry(), mat.sponsor);
   ban.userData.debug = 'tyres';
   g.add(ban);
+
+  // The PowerMedia loop (3840 x 128, 30:1) replaces the still board once the video can play. It is a looping muted
+  // video, so it starts without a click; if the file is missing (the single-file artifact) or the browser refuses it,
+  // the still board stays.
+  const videoBanners = new Strips();
+  for (const sd of [0, 1]) {
+    const gg = sd ? 1 : -1;
+    videoBanners.strip(mid, i => P(i, gg * (T.wall[sd][i] + 0.52), -GIRDER + 0.15), i => P(i, gg * (T.wall[sd][i] + 0.52), -0.1),
+      (i, j) => (sd ? j / len : 1 - j / len), 0, 1);
+  }
+  const videoTex = bannerVideo('sponsors/powermedia-bridge-30x1-loop-1.mp4', () => { ban.visible = false; videoMesh.visible = true; });
+  const videoMesh = new THREE.Mesh(videoBanners.geometry(), new THREE.MeshBasicMaterial({ map: videoTex || null, toneMapped: false }));
+  videoMesh.visible = false;
+  videoMesh.userData.debug = 'tyres';
+  g.add(videoMesh);
 
   // roundel painted under the deck over the main straight
   const m = idx[Math.floor(idx.length / 2)];
