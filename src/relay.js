@@ -157,6 +157,7 @@ export class RelayRoom {
     this.connectMs = opts.connectMs || RELAY.CONNECT_MS;
     this.transport = 'relay';
     this.name = 'Driver';
+    this.livery = '';          // our livery string, set by Multiplayer; sent as {t:'lv', l} (the relay forwards unknown JSON as it is)
     this.gen = 0;
     this.reset();
   }
@@ -249,6 +250,7 @@ export class RelayRoom {
     for (const id of [...this.peers.keys()]) if (!seen.has(id)) this.dropPeer(id, false);     // left while we were disconnected
     if (first) this.status(this.isHost ? 'hosting' : 'joined', this.roomText()); else this.status(this.phase, this.roomText());
     this.onPlayers();
+    this.sendLivery();
   }
 
   control(m) {
@@ -256,8 +258,11 @@ export class RelayRoom {
       const id = peerId(m.id);
       this.peers.set(id, { id, name: cleanName(m.name) || 'Player', hello: true });
       this.changed();
+      this.sendLivery();      // the newcomer has not seen our paint yet
     } else if (m.t === 'bye' && typeof m.id === 'number') {
       this.dropPeer(peerId(m.id), true);
+    } else if (m.t === 'lv' && typeof m.from === 'number' && typeof m.l === 'string') {
+      if (this.peers.has(peerId(m.from)) && this.ghosts) this.ghosts.setLivery(peerId(m.from), m.l);
     } else if (CONTROL.has(m.t) && typeof m.from === 'number') {
       if (this.peers.has(peerId(m.from)) && this.onControl) this.onControl(m, peerId(m.from));     // clock samples and race starts (src/raceControl.js)
     } else if (m.t === 'name' && typeof m.from === 'number') {
@@ -300,6 +305,8 @@ export class RelayRoom {
     const n = +String(to).slice(1);
     return Number.isInteger(n) ? this.client.send({ ...obj, to: n }) : false;
   }
+
+  sendLivery() { if (this.client && this.livery && this.peers.size) this.client.send({ t: 'lv', l: this.livery }); }
 
   // Broadcast our car (the array from encodeState) as one binary frame. About 20 times a second; never waits.
   sendState(arr) {

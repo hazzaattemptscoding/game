@@ -7,12 +7,23 @@ compatibility_date = "2026-09-01"
 # (https://your-domain.example). Use * only for testing. Change this before you deploy.
 [vars]
 ALLOWED_ORIGINS = "https://beta.powerrmediaa.com,http://beta.powerrmediaa.com"
+# Optional: MAX_SPECTATORS = "100" (spectators per room, 0 to 100) and SPECTATOR_STATE_DIVIDER = "2" (spectators get every 2nd car
+# update; 1 = every update, 4 = a quarter) trade the smoothness of the live view against the free plan's request count, see README.
 
 [[durable_objects.bindings]]
 name = "ROOM"
 class_name = "Room"
 
+[[durable_objects.bindings]]
+name = "DIRECTORY"
+class_name = "Directory"
+
 # SQLite-backed Durable Objects are the kind the free plan allows.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+# v2 adds the lobby directory (live timing). Room already exists from v1, so only the new class is listed here.
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Directory"]

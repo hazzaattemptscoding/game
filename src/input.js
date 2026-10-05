@@ -1,16 +1,16 @@
 // Keyboard and gamepad. Returns one input object per frame:
 //   { steer: -1..1 (right positive), throttle: 0..1, brake: 0..1, drs: bool }
-// plus one-shot actions (reset, camera, settings, board-on and board-off for the Tab times board).
+// plus one-shot actions (reset, camera, camera-prev, line, settings, board-on and board-off for the Tab times board).
 
 // Keyboard steering and pedals are eased in and out by inputModel.js, the
 // same model the test drivers in tools/drivers.js use.
 import { keyboardStep, toward, cursorSteer, CURSOR_RATE, KEY_THROTTLE_IN, KEY_BRAKE_IN, KEY_PEDAL_OUT } from './inputModel.js';
+// Gamepad reading, rumble and the Controls screen live in gamepad.js (pure and tested by tools/gamepad.js).
+import { readPad, newPadState, normaliseControllerSettings, pickPad, touchedPad, createRumbler, padCapture, openControlsOverlay, cleanName } from './gamepad.js';
+import { saveSettings } from './settings.js';
 
 const TOUCH_STEER_PX = 70;    // how far your thumb moves for full lock, in screen pixels
 const TOUCH_STEER_RATE = 8;   // smoothing on touch steering, per second
-
-const PAD_DEADZONE = 0.08;
-const PAD_CURVE = 1.4;        // above 1 = finer control near the centre of the stick
 
 // settings.steering is 'keyboard' or 'cursor' (read every frame, so the settings panel changes it live) and
 // settings.steerSens the cursor sensitivity. hooks.boardAllowed() says whether Tab may show the times board
@@ -20,7 +20,13 @@ export function createInput(settings = {}, hooks = {}) {
   const actions = [];
   const state = { steer: 0, throttle: 0, brake: 0, drs: false };
   let usingPad = false;
-  let padButtonsPrev = [];
+  const padSel = { index: -1 }, rumbler = createRumbler();
+  let padState = newPadState(), padName = '', padKey = '';
+  // hot plug: a pad that goes away hands the car back to the keyboard. Chrome only lists a pad after a button press.
+  addEventListener('gamepaddisconnected', e => {
+    const p = e.gamepad;
+    if (p && p.index === padSel.index) { usingPad = false; padSel.index = -1; padState = newPadState(); padName = ''; padKey = ''; }
+  });
   let kbSteer = 0;             // the keyboard's own steering while the cursor is in charge, so the two can be added
   let cursor = { x: 0, inside: false, value: 0 };
 
@@ -34,6 +40,7 @@ export function createInput(settings = {}, hooks = {}) {
       if (e.code === 'Escape' || e.code === 'KeyP') actions.push('settings');
       if (e.code === 'F3' || e.code === 'KeyI') actions.push('debug');
       if (e.code === 'F2') actions.push('report');
+      if (e.code === 'KeyL') actions.push('line');
     }
     if (e.code === 'Tab' && (!hooks.boardAllowed || hooks.boardAllowed())) {
       e.preventDefault();       // the browser must not move focus: Tab is the times board
@@ -74,25 +81,29 @@ export function createInput(settings = {}, hooks = {}) {
     } else { kbSteer = steer; cursor.value = 0; }
     let drs = keys.has('Space') || keys.has('ShiftLeft') || keys.has('ShiftRight');
 
-    // gamepad (standard mapping): left stick steers, right trigger throttle, left trigger brake
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const pad = [...pads].find(p => p && p.connected);
+    // gamepad: left stick steers, triggers are the pedals, buttons as bound in settings.controller (see gamepad.js)
+    let pads = [];
+    try { pads = navigator.getGamepads ? navigator.getGamepads() : []; } catch (e) { /* blocked by a permissions policy */ }
+    const pad = pickPad(pads, padSel, touchedPad(pads));
     if (pad) {
-      const x = pad.axes[0] || 0;
-      const stick = Math.abs(x) < PAD_DEADZONE ? 0 : Math.sign(x) * ((Math.abs(x) - PAD_DEADZONE) / (1 - PAD_DEADZONE)) ** PAD_CURVE;
-      const rt = pad.buttons[7] ? pad.buttons[7].value : 0;
-      const lt = pad.buttons[6] ? pad.buttons[6].value : 0;
-      if (Math.abs(stick) > 0 || rt > 0.02 || lt > 0.02) usingPad = true;
+      const key = pad.index + pad.id;
+      if (key !== padKey) { padKey = key; padName = cleanName(pad.id); padState = newPadState(); }
+      const cfg = normaliseControllerSettings(settings.controller);
+      padState.speed = speed;
+      const r = readPad(pad, cfg, padState, dt);
+      if (r.active && !padCapture.active) usingPad = true;
       if (usingPad) {
-        steer = stick; throttle = rt; brake = lt;
-        drs = drs || !!(pad.buttons[0] && pad.buttons[0].pressed);
+        steer = r.steer; throttle = r.throttle; brake = r.brake;
+        drs = drs || r.drs;
       }
-      const pressed = i => pad.buttons[i] && pad.buttons[i].pressed && !padButtonsPrev[i];
-      if (pressed(3)) actions.push('reset');      // Y / triangle
-      if (pressed(2)) actions.push('camera');     // X / square
-      if (pressed(9)) actions.push('settings');   // start / options
-      padButtonsPrev = pad.buttons.map(b => b.pressed);
-    }
+      // pad actions are not read while a text field has focus, nor while the Controls screen is binding a button
+      const ae = document.activeElement;
+      const typingNow = !!ae && (ae.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(ae.tagName));
+      if (!typingNow && !padCapture.active) for (const a of r.actions) actions.push(a);
+      const car = hooks.car || (globalThis.lakeside && globalThis.lakeside.car);
+      if (usingPad && car && !document.hidden && !(hooks.paused && hooks.paused())) rumbler.update(pad, cfg, car, performance.now());
+      else rumbler.stop(pad);
+    } else { padName = ''; padKey = ''; }
 
     if (touch.active) {
       steer = toward(prev.steer, touch.steer, TOUCH_STEER_RATE, dt);
@@ -105,10 +116,14 @@ export function createInput(settings = {}, hooks = {}) {
     return state;
   }
 
+  // ?controls opens the Controls screen on its own, for testing. Remove this line when the menu has the tab.
+  if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('controls')) openControlsOverlay(settings, saveSettings);
+
   return {
     read,
     takeActions: () => actions.splice(0),
     get usingPad() { return usingPad; },
+    get padName() { return padName; },     // the controller in use ('' if none), for the Controls screen
     get cursorValue() { return cursor.value; },
     get device() { return usingPad ? 'gamepad' : touch.active ? 'touch' : 'keyboard'; },
     pressedKeys: () => [...keys],

@@ -11,6 +11,13 @@ Things that are liked and must not change. `npm run check` does not test these; 
 - The Blockout setting.
 - Keyboard handling and the keyboard tuning from fix pass 2.
 
+## Optional racing line
+
+Off by default. L key, `settings.racingLine`, or the page parameter `?line=1`; a session can forbid it with `session.racingLine === false`.
+A 0.9 m ribbon painted on the road (`src/racingLine.js`): green throttle, yellow lift, red brake, drawn from 40 m behind to 350 m ahead of the car.
+The line and its classes come from the real autopilot lap (`npm run racingline` writes `src/racingLineData.js`; `npm run check` fails if the track or the physics
+changed and the file was not regenerated). `node tools/shot.mjs out.png "viewat=330,0,1.8,40&line=1&at=300"` takes a picture with the line on.
+
 ## Fix pass 3 (in progress)
 
 | Item | State | Notes |

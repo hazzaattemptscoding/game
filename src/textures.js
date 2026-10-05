@@ -375,6 +375,16 @@ export function sponsorAtlas() {
   return t;
 }
 
+// One sponsor board for a car decal: { canvas, row } where row is the board's row in the shared sheet (128 px high, 1024 wide).
+// The sheet is drawn once, on first use, and kept; null for an unknown id.
+let boardSheet = null;
+export function sponsorBoard(id) {
+  const row = SPONSORS.indexOf(id);
+  if (row < 0) return null;
+  boardSheet ||= sponsorAtlas();
+  return { canvas: boardSheet.image, row };
+}
+
 // Distance boards: white with a red border and black numerals (1.2 by 0.8 m).
 export function distanceTexture(n) {
   const [c, x] = canvas(192, 128);

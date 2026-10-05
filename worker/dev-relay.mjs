@@ -1,9 +1,10 @@
 // Local stand-in for the Cloudflare Worker: the same protocol (src/protocol.js), a hand-written RFC 6455 server, no packages.
 // Run: node worker/dev-relay.mjs [port]   (default 8787). Then use ?relay=ws://localhost:8787/ in the game.
-// Environment: ALLOWED_ORIGINS (default *). Used by tools/relay.js and tools/relay-live.mjs.
+// Environment: ALLOWED_ORIGINS (default *), MAX_SPECTATORS, SPECTATOR_STATE_DIVIDER like the Worker. Also serves GET /lobbies and /lobbies/CODE
+// (the directory lives in this process). Used by tools/relay.js, tools/live.js and tools/relay-live.mjs.
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { parseRoute, originAllowed, onOpen, onMessage, onClose, sweep, IDLE_MS } from './src/protocol.js';
+import { parseRoute, originAllowed, onOpen, onMessage, onClose, sweep, lobbyEntry, Directory, Publisher, IDLE_MS, MAX_PLAYERS, MAX_SPECTATORS, DIRECTORY_TTL_MS, PUBLISH_MIN_MS, PUBLISH_BEAT_MS } from './src/protocol.js';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_FRAME = 64 * 1024;
@@ -14,23 +15,41 @@ function frame(op, payload) {
   return Buffer.concat([head, payload]);
 }
 
-export function startRelay({ port = 0, allowed = process.env.ALLOWED_ORIGINS ?? '*', idleMs = IDLE_MS, sweepMs = 5000 } = {}) {
+export function startRelay({ port = 0, allowed = process.env.ALLOWED_ORIGINS ?? '*', idleMs = IDLE_MS, sweepMs = 5000, cfg: cfgIn, ttl = DIRECTORY_TTL_MS, publishMs = PUBLISH_MIN_MS, beatMs = PUBLISH_BEAT_MS } = {}) {
+  const cfg = { ...cfgIn };
+  if (cfg.maxSpectators === undefined && process.env.MAX_SPECTATORS) cfg.maxSpectators = Math.max(0, Math.min(MAX_SPECTATORS, +process.env.MAX_SPECTATORS || 0));
+  if (cfg.specDivider === undefined && process.env.SPECTATOR_STATE_DIVIDER) cfg.specDivider = Math.max(1, Math.min(20, +process.env.SPECTATOR_STATE_DIVIDER || 1));
+  const directory = new Directory(ttl);
   const rooms = new Map();        // code -> Set of conns
+  const roomObjs = new Map();     // code -> { conns(), cfg, store, notify, pub } (what protocol.js sees as `room`)
+  const roomFor = (code, set) => {
+    let r = roomObjs.get(code);
+    if (!r) {
+      r = { conns: () => [...set], cfg, pub: null, notify(urgent, now) { r.pub.poke(urgent, now); } };
+      r.pub = new Publisher({ entry: () => lobbyEntry(r), send: e => { if (e) directory.update(code, e, Date.now()); else directory.remove(code); }, minMs: publishMs, beatMs });
+      roomObjs.set(code, r);
+    }
+    return r;
+  };
   const stats = { sockets: 0 };
   const server = http.createServer((req, res) => {
     const origin = req.headers.origin;
     const route = parseRoute(new URL(req.url, 'http://x').pathname);
     const cors = origin && originAllowed(origin, allowed) ? { 'Access-Control-Allow-Origin': origin } : {};
     if (route?.kind === 'health') { res.writeHead(200, { 'Content-Type': 'text/plain', ...cors }); res.end('ok'); return; }
+    if (route?.kind === 'lobbies' || route?.kind === 'lobby') {
+      const body = route.kind === 'lobbies' ? directory.list(Date.now()) : directory.get(route.code, Date.now());
+      res.writeHead(body ? 200 : 404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...cors }); res.end(JSON.stringify(body || { error: 'no such room' })); return;
+    }
     res.writeHead(route ? 426 : 404, { 'Content-Type': 'text/plain' }); res.end(route ? 'Expected a WebSocket' : 'Lakeside dev relay');
   });
   server.on('upgrade', (req, socket) => {
-    const route = parseRoute(new URL(req.url, 'http://x').pathname), key = req.headers['sec-websocket-key'];
+    const reqUrl = new URL(req.url, 'http://x'), route = parseRoute(reqUrl.pathname), key = req.headers['sec-websocket-key'];
     const refuse = (s, m) => { socket.end(`HTTP/1.1 ${s} ${m}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); };
     if (route?.kind !== 'room' || !key || String(req.headers.upgrade).toLowerCase() !== 'websocket') return refuse(route ? 400 : 404, 'No');
     if (!originAllowed(req.headers.origin, allowed)) return refuse(403, 'Forbidden');
     const set = rooms.get(route.code) || rooms.set(route.code, new Set()).get(route.code);
-    if (set.size >= 16) return refuse(503, 'Busy');
+    if (set.size >= MAX_PLAYERS * 2 + (cfg.maxSpectators ?? MAX_SPECTATORS) + 4) return refuse(503, 'Busy');
     socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + crypto.createHash('sha1').update(key + GUID).digest('base64') + '\r\n\r\n');
     socket.setNoDelay(true);
     let att = {}, closed = false;
@@ -39,15 +58,15 @@ export function startRelay({ port = 0, allowed = process.env.ALLOWED_ORIGINS ?? 
       send(x) { if (!socket.destroyed) socket.write(typeof x === 'string' ? frame(1, Buffer.from(x)) : frame(2, Buffer.from(x.buffer, x.byteOffset, x.byteLength))); },
       close(code = 1000, reason = '') { if (closed) return; closed = true; const p = Buffer.alloc(2 + Buffer.byteLength(reason)); p.writeUInt16BE(code); p.write(reason, 2); if (!socket.destroyed) socket.end(frame(8, p)); },
     };
-    const room = { conns: () => [...set] };
+    const room = roomFor(route.code, set);
     set.add(conn); stats.sockets++;
-    onOpen(conn, Date.now());
+    onOpen(conn, Date.now(), { spectator: reqUrl.searchParams.get('spectator') === '1' });
     let buf = Buffer.alloc(0), msgOp = 0, parts = [];
     const gone = () => {
       if (!set.has(conn)) return;
       set.delete(conn); stats.sockets--; closed = true;
-      onClose(room, conn);
-      if (!set.size) rooms.delete(route.code);
+      onClose(room, conn, Date.now());
+      if (!set.size) { rooms.delete(route.code); roomObjs.delete(route.code); }
     };
     socket.on('data', d => {
       buf = Buffer.concat([buf, d]);
@@ -74,10 +93,10 @@ export function startRelay({ port = 0, allowed = process.env.ALLOWED_ORIGINS ?? 
     });
     socket.on('close', gone); socket.on('error', () => { socket.destroy(); gone(); });
   });
-  const timer = setInterval(() => { for (const set of rooms.values()) sweep({ conns: () => [...set] }, Date.now(), idleMs); }, sweepMs);
+  const timer = setInterval(() => { const now = Date.now(); for (const [code, set] of rooms) { sweep({ conns: () => [...set] }, now, idleMs); roomObjs.get(code)?.pub.tick(now); } }, sweepMs);
   timer.unref();
   return new Promise(r => server.listen(port, () => r({
-    port: server.address().port, rooms, stats,
+    port: server.address().port, rooms, stats, directory, roomObjs,
     close() { clearInterval(timer); for (const set of rooms.values()) for (const c of set) c.close(1001, 'shutdown'); server.close(); server.closeAllConnections?.(); },
   })));
 }

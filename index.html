@@ -20,11 +20,17 @@
   </div>
 </div>
 <div class="t-top">
-  <button data-action="reset" aria-label="Back on track">Reset</button>
+  <button data-action="settings" class="t-menu" aria-label="Menu">Menu</button>
   <button data-action="camera" aria-label="Switch camera">Camera</button>
-  <button data-action="board" class="t-times" aria-label="Lap times">Times</button>
+  <button data-action="reset" aria-label="Back on track">Reset</button>
   <button data-action="report" aria-label="Report a problem">Report</button>
-  <button data-action="settings" aria-label="Settings">Settings</button>
+  <button data-action="board" class="t-times" aria-label="Lap times">Times</button>
+</div>
+<div id="sess" hidden>
+  <div id="sess-chip" class="sess-chip" hidden></div>
+  <div id="sess-lights" class="sess-lights" hidden><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="sess-banner" class="sess-banner" hidden></div>
+  <div id="sess-laps" class="sess-laps" hidden></div>
 </div>
 <div id="report-layer" hidden>
   <header class="report-head">
@@ -51,49 +57,22 @@
   </section>
   <div id="report-rect" hidden></div>
 </div>
-<div id="settings" hidden>
-  <div class="box">
-    <h2>Settings</h2>
-    <label>Speed</label>
-    <div class="row"><button data-units="mph">mph</button><button data-units="kmh">km/h</button></div>
-    <label>Traction control</label>
-    <div class="row"><button data-assist="tc" data-on="true">On</button><button data-assist="tc" data-on="false">Off</button></div>
-    <label>ABS</label>
-    <div class="row"><button data-assist="abs" data-on="true">On</button><button data-assist="abs" data-on="false">Off</button></div>
-    <label>Stability control</label>
-    <div class="row"><button data-assist="esc" data-on="true">On</button><button data-assist="esc" data-on="false">Off</button></div>
-    <label>Steering</label>
-    <div class="row"><button data-steering="keyboard">Keyboard</button><button data-steering="cursor">Cursor</button></div>
-    <label for="steersens">Cursor sensitivity</label>
-    <input id="steersens" type="range" min="50" max="200" step="5" value="100">
-    <label>View</label>
-    <div class="row"><button data-topdown="false">Driving</button><button data-topdown="true">Top-down debug</button></div>
-        <label>Detail</label>
-    <div class="row"><button data-blockout="false">Full</button><button data-blockout="true">Blockout</button></div>
-        <label>Handling readout</label>
-    <div class="row"><button data-debug="false">Hide</button><button data-debug="true">Show</button></div>
-    <label>Sound</label>
-    <div class="row"><button data-sound="true">On</button><button data-sound="false">Off</button></div>
-    <label for="volume">Volume</label>
-    <input id="volume" type="range" min="0" max="100" step="1" value="70">
-    <label>Autopilot demo lap</label>
-    <div class="row"><button data-auto="false">Off</button><button data-auto="true">On</button></div>
-    <label>Multiplayer (optional)</label>
-    <div class="mp">
-      <input id="mp-name" type="text" maxlength="16" placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false">
-      <div class="row" id="mp-start"><button id="mp-host" type="button">Host a room</button></div>
-      <div class="row" id="mp-joinrow"><input id="mp-code" type="text" maxlength="5" placeholder="Room code" aria-label="Room code" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="mp-join" type="button">Join</button></div>
-      <div id="mp-room" hidden>
-        <div class="mp-big" id="mp-big" aria-label="Room code"></div>
-        <div class="row"><button id="mp-copy" type="button">Copy code</button><button id="mp-leave" type="button">Leave</button></div>
-        <p class="mp-status mp-via" id="mp-via"></p>
-        <p class="mp-status" id="mp-hint" hidden>Keep this tab in the foreground while friends join. Browsers slow down background tabs.</p>
-      </div>
-      <p class="mp-status" id="mp-status" role="status">Race other people online. Needs a real web host, not the claude.ai preview.</p>
-      <p class="mp-status" id="mp-who"></p>
-      <details class="mp-details" id="mp-details" hidden><summary>Connection details</summary><p class="mp-status" id="mp-diag"></p></details>
+<div id="menu" hidden></div>
+<div id="online-src" hidden>
+  <!-- the lobby block lives here until the Online screen of the menu moves it in (src/menuScreens.js); lobby.js finds its elements by id -->
+  <div class="mp">
+    <input id="mp-name" type="text" maxlength="16" placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false">
+    <div class="row" id="mp-start"><button id="mp-host" type="button">Host a room</button></div>
+    <div class="row" id="mp-joinrow"><input id="mp-code" type="text" maxlength="5" placeholder="Room code" aria-label="Room code" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="mp-join" type="button">Join</button></div>
+    <div id="mp-room" hidden>
+      <div class="mp-big" id="mp-big" aria-label="Room code"></div>
+      <div class="row"><button id="mp-copy" type="button">Copy code</button><button id="mp-leave" type="button">Leave</button></div>
+      <p class="mp-status mp-via" id="mp-via"></p>
+      <p class="mp-status" id="mp-hint" hidden>Keep this tab in the foreground while friends join. Browsers slow down background tabs.</p>
     </div>
-    <button id="close" class="main">Back to driving</button>
+    <p class="mp-status" id="mp-status" role="status">Race other people online. Needs a real web host, not the claude.ai preview.</p>
+    <p class="mp-status" id="mp-who"></p>
+    <details class="mp-details" id="mp-details" hidden><summary>Connection details</summary><p class="mp-status" id="mp-diag"></p></details>
   </div>
 </div>
 <script type="module" src="/src/main.js"></script>

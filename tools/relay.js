@@ -138,7 +138,7 @@ const types = c => c.out.map(m => m.t || 'bin');
   for (let i = 0; i < 400; i++) if (r.say(b, { t: 'm', i }, 20000 + i * 5) === 'forwarded') fast++;       // 200 per second for 2 s
   check(fast < 140, `200 per second is cut to about 40 per second (${fast} of 400 in 2 s)`);
   const c = r.join('C', 'c');
-  let cn = 0; for (let i = 0; i < 60; i++) if (r.say(c, new Uint8Array([i]), 30000 + i * 50) === 'forwarded') cn++;
+  let cn = 0; for (let i = 0; i < 60; i++) if (r.say(c, new Uint8Array([1, i]), 30000 + i * 50) === 'forwarded') cn++;
   eq(cn, 60, 'the 20 Hz car state plus a ping every 15 s is nowhere near the limit');
 }
 { // idle timeout
@@ -207,13 +207,13 @@ try {
   check(await A.until(() => A.msgs.filter(m => m.t === 'peer').length === 2), 'host hears about both joins');
 
   // ordering: 50 numbered JSON messages and 50 binary frames from B arrive complete and in order at A and C
-  for (let i = 0; i < 50; i++) { B.send({ t: 'seq', i }); B.send(new Uint8Array([i, 200 + (i % 50)])); await new Promise(r => setTimeout(r, 60)); }   // 2 frames per 60 ms = 33 per second, under the limit
+  for (let i = 0; i < 50; i++) { B.send({ t: 'seq', i }); B.send(new Uint8Array([1, i, 200 + (i % 50)])); await new Promise(r => setTimeout(r, 60)); }   // 2 frames per 60 ms = 33 per second, under the limit
   check(await A.until(() => A.bins.length === 50 && C.bins.length === 50 && A.msgs.filter(m => m.t === 'seq').length === 50 && C.msgs.filter(m => m.t === 'seq').length === 50, 5000), 'fan out reached both other clients');
   for (const [n, P] of [['host', A], ['third client', C]]) {
     eq(P.msgs.filter(m => m.t === 'seq').map(m => m.i), [...Array(50).keys()], `${n}: JSON arrives in order`);
     check(P.msgs.filter(m => m.t === 'seq').every(m => m.from === 1), `${n}: JSON tagged with sender id 1`);
-    eq(P.bins.map(b => b[1]), [...Array(50).keys()], `${n}: binary arrives in order`);
-    check(P.bins.every(b => b.length === 3 && b[0] === 1 && b[2] === 200 + (b[1] % 50)), `${n}: binary has the 1 byte sender prefix`);
+    eq(P.bins.map(b => b[2]), [...Array(50).keys()], `${n}: binary arrives in order`);
+    check(P.bins.every(b => b.length === 4 && b[0] === 1 && b[3] === 200 + (b[2] % 50)), `${n}: binary has the 1 byte sender prefix`);
   }
   check(!B.msgs.some(m => m.t === 'seq') && B.bins.length === 0, 'sender gets none of its own');
   // ping and pong over the wire

@@ -19,8 +19,10 @@ import { Hud } from './hud.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { ReportTool } from './report.js';
 import { createLobby } from './lobby.js';
+import { ownLivery, localPlayerId } from './livery.js';
 import { createBoard } from './board.js';
 import { CarAudio } from './audio.js';
+import { createRacingLine } from './racingLine.js';
 
 const params = new URLSearchParams(location.search);
 const settings = loadSettings();
@@ -61,13 +63,18 @@ const ground = createGround(track), terrain = ground.mesh();
 const world = new THREE.Group();
 world.add(terrain, buildTrackScene(track, ground), buildScenery(track, ground));
 scene.add(world);
+const racingLine = createRacingLine(track);   // optional colour coded racing line (L key, Settings); the page ?line=1 turns it on
+scene.add(racingLine.group);
+if (params.get('line') === '1') settings.racingLine = true;
 const markers = debugMarkers(track);
 markers.visible = false;
 scene.add(markers);
 const rig = new CameraRig(innerWidth / innerHeight);
 let topDown = params.has('topdown');
 applyLook();
-const view = new CarView(GT, 0xffd21f);
+const playerId = localPlayerId(), myLivery = () => ownLivery(settings.livery, playerId);   // the paint the room sees (src/livery.js)
+const view = new CarView(GT, myLivery());
+view.setFlat(settings.blockout);
 scene.add(view.root);
 
 // ?view=x,y,z,tx,ty,tz pins the camera (for screenshots); ?viewat=s,d,height,lookahead places it by track position
@@ -81,7 +88,7 @@ const input = createInput(settings, { boardAllowed: () => panel.hidden && !repor
 const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthesised sound, starts at the first key press or touch
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
-const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search });   // multiplayer: idle until a room is opened
+const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search, getLivery: myLivery });   // multiplayer: idle until a room is opened
 const board = createBoard(document.getElementById('board'), { timer, lobby });
 const steerBar = document.getElementById('steer-bar'), steerMark = steerBar.firstElementChild;
 const IDLE = { steer: 0, throttle: 0, brake: 0.3, drs: false };
@@ -125,7 +132,7 @@ panel.addEventListener('click', e => {
   }
   if (b.dataset.steering) settings.steering = b.dataset.steering;
   if (b.dataset.debug) settings.debug = b.dataset.debug === 'true';
-  if (b.dataset.blockout) { settings.blockout = b.dataset.blockout === 'true'; applyLook(); }
+  if (b.dataset.blockout) { settings.blockout = b.dataset.blockout === 'true'; applyLook(); view.setFlat(settings.blockout); }
   if (b.dataset.topdown) { topDown = b.dataset.topdown === 'true'; applyLook(); }
   if (b.dataset.sound) settings.sound = b.dataset.sound === 'true';
   if (b.dataset.auto) autopilot = b.dataset.auto === 'true' ? new Autopilot(track, GT, { skill: 0.9 }) : null;
@@ -157,6 +164,7 @@ function frame(now) {
     if (a === 'board-on' && panel.hidden) board.show();     // hold Tab
     if (a === 'board-off') board.hide();
     if (a === 'board' && panel.hidden) board.toggle();      // the Times button on a touch screen
+    if (a === 'line') { settings.racingLine = !settings.racingLine; saveSettings(settings); hud.flash(settings.racingLine ? 'Racing line on' : 'Racing line off', simTime); }
     if (a === 'debug') { settings.debug = !settings.debug; saveSettings(settings); syncPanel(); }
     if (a === 'report' && !reportTool.opened) {
       restoreTopDown = topDown;
@@ -211,6 +219,8 @@ function frame(now) {
   audio.update(car, dt, paused);
   lobby.update(now);
   hud.update(car, timer, track, simTime);
+  racingLine.setVisible(settings.racingLine && window.lakeside?.session?.racingLine !== false);   // a race can forbid it
+  racingLine.update(car.loc.s);
   board.update(simTime, now);
   const cursorOn = settings.steering === 'cursor';
   steerBar.hidden = !cursorOn;
@@ -221,7 +231,15 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // for quick checks from the browser console
-window.lakeside = { car, track, timer, settings, reportTool, lobby, board, input };
+window.lakeside = { car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene };
+
+// ?garage opens the garage as an overlay (the main menu will host it later; this entry point is only for testing)
+if (params.has('garage')) {
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;inset:0;z-index:20;overflow:auto;background:rgb(14,17,20)';
+  document.body.appendChild(box);
+  import('./garage.js').then(({ mountGarage }) => mountGarage(box, { settings, save: () => saveSettings(settings), onChange: l => { view.setLivery(myLivery()); lobby.liveryChanged(); } }));
+}
 
 function skyTexture(top, bottom) {
   const c = document.createElement('canvas');

@@ -205,6 +205,7 @@ export class Multiplayer {
     this.reset();
     this.col = 1 + Math.floor(this.random() * 7);       // the colour we ask the others to use; they avoid clashes
     this.name = 'Driver';
+    this.livery = '';          // our livery as the wire string (src/livery.js encodeLivery), sent in the hello and again by sendLivery()
   }
 
   reset() {
@@ -301,6 +302,7 @@ export class Multiplayer {
       onPlayers: () => { if (this.relayRoom === room) this.onPlayers(); },
       onRtt: ms => { if (this.relayRoom === room) { this.rtt = ms; this.onRtt(ms); } },
     });
+    room.livery = this.livery;
     this.peers = room.peers;
     room.onControl = (m, id) => { if (this.relayRoom === room && this.onControl) this.onControl(m, id); };
     if (asHost) room.host(this.name); else room.join(code, this.name);
@@ -498,7 +500,7 @@ export class Multiplayer {
       if (gen !== this.gen) return;
       if (kind === 'ctl') {
         if (!outgoing && this.players >= MAX_PLAYERS && !p.hello) { this.sendTo(conn, { t: 'full' }); this.setT(() => { try { conn.close(); } catch (e) { /* closed */ } }, 300); this.peers.delete(id); return; }
-        this.sendTo(conn, { t: 'hi', n: this.name });
+        this.sendTo(conn, { t: 'hi', n: this.name, l: this.livery });
       }
     });
     conn.on('data', data => { if (gen === this.gen) this.receive(id, kind, data); });
@@ -530,7 +532,10 @@ export class Multiplayer {
         if (!this.isHost && id === hostId(this.code) && this.phase === 'connecting') { this.clearT(this.timer); this.status('joined', `Joined room ${this.code}.`); }
       }
       this.ghosts && this.ghosts.setName(id, p.name);
+      if (typeof data.l === 'string' && this.ghosts) this.ghosts.setLivery(id, data.l);
       this.changed();
+    } else if (data.t === 'lv') {
+      if (p.hello && typeof data.l === 'string' && this.ghosts) this.ghosts.setLivery(id, data.l);
     } else if (data.t === 'clk' || data.t === 'clkr' || data.t === 'race') {
       if (p.hello && this.onControl) this.onControl(data, id);      // clock samples and race starts (src/raceControl.js)
     } else if (data.t === 'name') {
@@ -593,6 +598,20 @@ export class Multiplayer {
     return sent;
   }
   broadcast(obj) { return this.sendControl(obj); }
+
+  // Our livery changed (str is encodeLivery's string): remember it for new players and tell everyone.
+  setLivery(str) {
+    this.livery = typeof str === 'string' ? str.slice(0, 64) : '';
+    this.sendLivery();
+  }
+
+  // Say again what we look like. The game calls this every 2 s while in a room, so a livery that was lost or arrived before the
+  // car did still gets there, and a repaint reaches everyone within 2 s.
+  sendLivery() {
+    if (!this.livery) return;
+    if (this.relayRoom) { this.relayRoom.livery = this.livery; this.relayRoom.sendLivery(); return; }
+    for (const p of this.peers.values()) if (p.hello) this.sendTo(p.ctl, { t: 'lv', l: this.livery });
+  }
 
   // Broadcast our car (an encoded state array). Called about 20 times a second; never waits.
   sendState(arr) {

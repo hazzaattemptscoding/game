@@ -1,5 +1,6 @@
 // Screenshots the game from a track position, for checking the look by eye.
 // node tools/shot.mjs out.png "viewat=s,d,height,ahead" [topdown] [blockout]
+// Add &line=1 to the view string to switch the racing line on, and &at=S to put the car at s=S (the line is drawn around the car): "viewat=330,0,1.8,40&line=1&at=300"
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
 const require = createRequire(import.meta.url);

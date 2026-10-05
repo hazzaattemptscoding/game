@@ -23,6 +23,8 @@
     "relay-live": "node tools/relay-live.mjs",
     "session": "node tools/session.js",
     "check": "node tools/check.js",
+    "racingline": "node tools/racingline.js",
+    "racingline-test": "node tools/racingline-test.js",
     "barrierlog": "node tools/barrierlog.mjs"
   },
   "dependencies": {

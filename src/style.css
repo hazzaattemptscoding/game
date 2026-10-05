@@ -194,3 +194,6 @@ body.report-mode #touch { display: none !important; }
   .report-tools output { width: 100%; }
   .report-details { left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); width: auto; }
 }
+
+/* gamepad navigation: the ring on the focused menu element (src/menuNav.js focusMove) */
+.pad-focus { outline: 3px solid var(--yel); outline-offset: 2px; }

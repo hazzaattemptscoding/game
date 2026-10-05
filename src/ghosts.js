@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { CarView } from './car.js';
 import { GT } from './cars.js';
+import { decodeLivery, defaultLivery, liveryEquals } from './livery.js';
 
 export const DELAY = 0.1;         // seconds behind real time that remote cars are drawn (the relay adds RELAY_EXTRA_DELAY, see below)
 export const RELAY_EXTRA_DELAY = 0.05;   // over the relay a state takes an extra hop, so remote cars are drawn 150 ms behind
@@ -19,12 +20,12 @@ export const FADE = 1;            // the last second before removal is a fade ou
 export const MAX_NAME = 16;
 export const MAX_PLAYERS = 8;
 
-// Car body colours. Index 0 is the player's own yellow, so remote cars use 1 to 7.
-export const PALETTE = [0xffd21f, 0xe23b3b, 0x2f8fe0, 0x3cc46a, 0xe8863a, 0xb15fe0, 0x2fd0c8, 0xf06fb0];
+// How a remote car looks comes from its livery (src/livery.js), which its player sends, and from nothing local: the same
+// car looks the same on every screen. `col` stays in the state packet only so old and new clients can talk; it is not used.
 
 // Fields of one state, in wire order. t is the sender's clock in ms, h the heading, vx/vz the velocity,
 // yr the yaw rate, st the steering angle, w the wheel angle, thr/brk the pedals, pz/rx the slope pitch and roll
-// of the body, col the colour index, lap and s the race progress (lap number and metres into the lap).
+// of the body, col an unused legacy colour index, lap and s the race progress (lap number and metres into the lap).
 export const FIELDS = ['t', 'x', 'y', 'z', 'h', 'vx', 'vz', 'yr', 'st', 'w', 'thr', 'brk', 'pz', 'rx', 'col', 'lap', 's'];
 
 export function cleanName(s) {
@@ -97,7 +98,7 @@ export function decodeState(a) {
   if (Math.abs(o.x) > 1e5 || Math.abs(o.y) > 1e4 || Math.abs(o.z) > 1e5 || Math.abs(o.vx) > 400 || Math.abs(o.vz) > 400 || Math.abs(o.yr) > 50) return null;
   if (Math.abs(o.h) > 1e3 || Math.abs(o.st) > 3 || Math.abs(o.pz) > 3 || Math.abs(o.rx) > 3) return null;
   o.thr = Math.max(0, Math.min(1, o.thr)); o.brk = Math.max(0, Math.min(1, o.brk));
-  o.col = Math.max(0, Math.min(PALETTE.length - 1, Math.round(o.col)));
+  o.col = Math.max(0, Math.min(7, Math.round(o.col)));
   o.lap = Math.max(0, Math.min(9999, Math.round(o.lap)));
   o.s = Math.max(0, Math.min(1e5, o.s));
   o.name = cleanName(a[FIELDS.length + 1]);
@@ -184,7 +185,8 @@ export const raceDistance = (lap, s, length) => lap * length + s;
 export class Ghosts {
   constructor(factory) {
     this.factory = factory;
-    this.map = new Map();    // id -> { id, buf, ent, name, col, info, opacity }
+    this.map = new Map();    // id -> { id, buf, ent, name, livery, info, opacity }
+    this.pending = new Map();   // id -> livery string that arrived before the first state of that player
     this._pose = {};
     this._solids = [];
     this.delay = DELAY;      // seconds behind real time that remote cars are drawn; the relay transport raises it to DELAY + RELAY_EXTRA_DELAY
@@ -197,16 +199,28 @@ export class Ghosts {
     let g = this.map.get(id);
     if (!g) {
       if (this.map.size >= MAX_PLAYERS - 1) return false;
-      const used = new Set([...this.map.values()].map(x => x.col));
-      let col = st.col || 1;
-      for (let k = 0; k < PALETTE.length && (used.has(col) || col === 0); k++) col = col % (PALETTE.length - 1) + 1;
-      g = { id, buf: new StateBuffer(this.delay), col, name: st.name, info: null, opacity: 1, ent: this.factory ? this.factory.create({ id, col, name: st.name }) : null };
+      // painted from the player's own livery if it has arrived, else from the default for that player id (the same on every client)
+      const livery = this.pending.has(id) ? decodeLivery(this.pending.get(id)) : defaultLivery(id);
+      this.pending.delete(id);
+      g = { id, buf: new StateBuffer(this.delay), livery, name: st.name, info: null, opacity: 1, ent: this.factory ? this.factory.create({ id, livery, name: st.name }) : null };
       this.map.set(id, g);
     }
     if (!g.buf.push(st, nowMs)) return false;
     if (st.name) g.name = st.name;
     g.info = st;
     return true;
+  }
+
+  // A livery string arrived from player `id` (hello, or the repeat every 2 s). Repaints the car if it changed. If the car does
+  // not exist yet the livery is kept for when it does. Anything that is not a valid livery string is ignored.
+  setLivery(id, str) {
+    if (typeof str !== 'string' || str.length > 64) return;
+    const g = this.map.get(id);
+    if (!g) { if (this.pending.size < 16 || this.pending.has(id)) this.pending.set(id, str); return; }
+    const l = decodeLivery(str);
+    if (liveryEquals(l, g.livery)) return;
+    g.livery = l;
+    if (g.ent && g.ent.setLivery) g.ent.setLivery(l);
   }
 
   setName(id, name) { const g = this.map.get(id); if (g) g.name = cleanName(name) || g.name; }
@@ -216,9 +230,13 @@ export class Ghosts {
     if (!g) return;
     if (g.ent) g.ent.dispose();
     this.map.delete(id);
+    this.pending.delete(id);
   }
 
-  clear() { for (const id of [...this.map.keys()]) this.remove(id); }
+  clear() { for (const id of [...this.map.keys()]) this.remove(id); this.pending.clear(); }
+
+  // the name shown for a player: the one painted on the car, else the one they joined with
+  nameOf(g) { return (g.livery && g.livery.name) || g.name || 'Player'; }
 
   // Call every frame. `project(x, y, z)` gives {x, y} in pixels or null if the point is off screen or behind the camera.
   update(nowMs, project) {
@@ -230,7 +248,7 @@ export class Ghosts {
       if (!pose || !g.ent) continue;
       g.ent.setPose(pose);
       g.ent.setOpacity(g.opacity);
-      g.ent.setLabel(project ? project(pose.x, pose.y + 2.1, pose.z) : null, g.name || 'Player', g.opacity);
+      g.ent.setLabel(project ? project(pose.x, pose.y + 2.1, pose.z) : null, this.nameOf(g), g.opacity, g.livery);
     }
   }
 
@@ -252,13 +270,13 @@ export class Ghosts {
   }
 
   // The standings: every player (you included) ranked by race distance, with the gap to the leader.
-  // own = { name, col, lap, s, speed }. A gap under a lap is in seconds at that player's speed, over a lap it is whole laps.
+  // own = { name, livery, lap, s, speed }. Rows carry colour (css body colour) and num (race number or -1). A gap under a lap is in seconds at that player's speed, over a lap it is whole laps.
   standings(own, length) {
-    const rows = [{ id: 'me', name: own.name || 'You', col: 0, lap: own.lap, dist: raceDistance(own.lap, own.s, length), speed: own.speed, me: true }];
+    const rows = [{ id: 'me', name: (own.livery && own.livery.name) || own.name || 'You', colour: own.livery ? own.livery.body : '#ffd21f', num: own.livery ? own.livery.number : -1, lap: own.lap, dist: raceDistance(own.lap, own.s, length), speed: own.speed, me: true }];
     for (const g of this.map.values()) {
       if (!g.info) continue;
       const v = Math.hypot(g.info.vx, g.info.vz);
-      rows.push({ id: g.id, name: g.name || 'Player', col: g.col, lap: g.info.lap, dist: raceDistance(g.info.lap, g.info.s, length), speed: v, me: false });
+      rows.push({ id: g.id, name: this.nameOf(g), colour: g.livery.body, num: g.livery.number, lap: g.info.lap, dist: raceDistance(g.info.lap, g.info.s, length), speed: v, me: false });
     }
     rows.sort((a, b) => b.dist - a.dist);
     const lead = rows[0].dist;
@@ -270,12 +288,12 @@ export class Ghosts {
   }
 
   // The lap time board: every player (you included) ordered by best lap, fastest first, players with no lap last.
-  // own = { name, laps, best, last } with times in seconds or null. Laps are completed laps. gap is to the fastest best lap.
+  // own = { name, livery, laps, best, last } with times in seconds or null. Laps are completed laps. gap is to the fastest best lap.
   board(own) {
-    const rows = [{ id: 'me', name: own.name || 'You', col: 0, laps: own.laps || 0, best: own.best || 0, last: own.last || 0, me: true }];
+    const rows = [{ id: 'me', name: (own.livery && own.livery.name) || own.name || 'You', colour: own.livery ? own.livery.body : '#ffd21f', num: own.livery ? own.livery.number : -1, laps: own.laps || 0, best: own.best || 0, last: own.last || 0, me: true }];
     for (const g of this.map.values()) {
       if (!g.info) continue;
-      rows.push({ id: g.id, name: g.name || 'Player', col: g.col, laps: Math.max(0, g.info.lap - 1), best: g.info.bl || 0, last: g.info.ll || 0, me: false });
+      rows.push({ id: g.id, name: this.nameOf(g), colour: g.livery.body, num: g.livery.number, laps: Math.max(0, g.info.lap - 1), best: g.info.bl || 0, last: g.info.ll || 0, me: false });
     }
     const key = r => r.best || 1e9;      // no lap yet sorts last
     rows.sort((a, b) => key(a) - key(b) || b.laps - a.laps || (a.me ? -1 : b.me ? 1 : 0));
@@ -288,34 +306,35 @@ export class Ghosts {
 // Browser side: one CarView per remote car, plus a CSS name tag.
 export function threeFactory(scene, tagRoot) {
   return {
-    create({ col, name }) {
-      const view = new CarView(GT, PALETTE[col] ?? PALETTE[1]);
+    create({ livery, name }) {
+      const view = new CarView(GT, livery);
       scene.add(view.root);
       const tag = document.createElement('div');
       tag.className = 'mp-tag';
       tag.hidden = true;
       tagRoot.appendChild(tag);
-      const mats = [];
-      view.root.traverse(o => { if (o.isMesh) mats.push(o.material); });
       // a stand-in for the physics car that CarView.update reads; the slope comes straight from the sender
       const fake = { prev: null, x: 0, y: 0, z: 0, heading: 0, steer: 0, wheelSpinAngle: 0, wheel: 0, ax: 0, ay: 0, brake: 0, fwdSpeed: 0, bump: 0,
         loc: { tx: 1, tz: 0, grade: 0 }, groundPitch: 0, groundRoll: 0 };
       fake.prev = fake;
       let shown = 1;
       return {
+        view,
         setPose(p) {
           fake.x = p.x; fake.y = p.y; fake.z = p.z; fake.heading = p.h; fake.steer = p.st; fake.wheelSpinAngle = fake.wheel = p.w;
           fake.fwdSpeed = p.vx * Math.cos(p.h) + p.vz * Math.sin(p.h); fake.ay = fake.fwdSpeed * p.yr; fake.brake = p.brk;
           fake.groundPitch = p.pz; fake.groundRoll = p.rx;
           view.update(fake, 1);
         },
+        setLivery(l) { view.setLivery(l); },
         setOpacity(o) {
           if (o === shown) return;
           shown = o;
-          for (const m of mats) { m.transparent = o < 1; m.opacity = o; m.needsUpdate = true; }
+          for (const m of view.materials()) { m.transparent = o < 1 || !!m.userData.alpha; m.opacity = o; m.needsUpdate = true; }
         },
-        setLabel(px, nm, o) {
+        setLabel(px, nm, o, l) {
           if (!px) { tag.hidden = true; return; }
+          if (l && l.number >= 0) nm = `#${l.number} ${nm}`;
           if (tag.textContent !== nm) tag.textContent = nm;
           tag.hidden = false;
           tag.style.opacity = o;
@@ -323,8 +342,7 @@ export function threeFactory(scene, tagRoot) {
         },
         dispose() {
           scene.remove(view.root);
-          view.root.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
-          for (const m of new Set(mats)) m.dispose();
+          view.dispose();
           tag.remove();
         },
       };

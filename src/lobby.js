@@ -4,7 +4,8 @@
 // With no room open every call is a no-op.
 
 import { Multiplayer, brokerFromSearch, loadConfig, cleanCode } from './multiplayer.js';
-import { Ghosts, PALETTE, threeFactory, makeProjector, stateFromCar, encodeState } from './ghosts.js';
+import { encodeLivery } from './livery.js';
+import { Ghosts, threeFactory, makeProjector, stateFromCar, encodeState } from './ghosts.js';
 
 const SEND_MS = 50;           // 20 Hz
 const NAME_KEY = 'lakeside-mp-name';
@@ -16,7 +17,8 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } },
 };
 
-// ctx: { scene, camera, car, timer, track, search }
+// ctx: { scene, camera, car, timer, track, search, getLivery } where getLivery() is the player's own livery (a normalised livery object)
+const LIVERY_MS = 2000;       // our livery goes out again every 2 s (the low rate control state)
 export function createLobby(ctx) {
   const $ = id => document.getElementById(id);
   const tagRoot = document.createElement('div');
@@ -46,7 +48,8 @@ export function createLobby(ctx) {
     el.status.textContent = 'This page is inside claude.ai, which blocks outside connections. Multiplayer only works when the game is on a real web host.';
   }
 
-  const name = () => (el.name.value.trim() || 'Driver');
+  const liveryNow = () => (ctx.getLivery ? ctx.getLivery() : null);
+  const name = () => ((liveryNow() && liveryNow().name) || el.name.value.trim() || 'Driver');
   el.name.addEventListener('change', () => { store.set(NAME_KEY, el.name.value.trim()); mp.setName(name()); });
   el.code.addEventListener('input', () => { el.code.value = cleanCode(el.code.value); });
   el.host.addEventListener('click', () => { store.set(NAME_KEY, name()); mp.host(name()); });
@@ -97,8 +100,8 @@ export function createLobby(ctx) {
   function drawStandings(now) {
     if (el.stand.hidden || now - lastStandAt < 250) return;
     lastStandAt = now;
-    const rows = ghosts.standings({ name: name(), lap: ctx.timer.currentLap(), s: ctx.car.loc.s, speed: ctx.car.speed }, ctx.track.length);
-    const key = collapsed + '|' + rows.map(r => `${r.id}${r.name}${r.lap}${r.gap}`).join('|');
+    const rows = ghosts.standings({ name: name(), livery: liveryNow(), lap: ctx.timer.currentLap(), s: ctx.car.loc.s, speed: ctx.car.speed }, ctx.track.length);
+    const key = collapsed + '|' + rows.map(r => `${r.id}${r.name}${r.colour}${r.num}${r.lap}${r.gap}`).join('|');
     if (key === lastStand) return;
     lastStand = key;
     head.textContent = `${collapsed ? '+' : '-'} Players ${rows.length}`;
@@ -107,8 +110,8 @@ export function createLobby(ctx) {
     list.replaceChildren(...rows.map((r, i) => {
       const d = document.createElement('div');
       d.className = r.me ? 'stand-row me' : 'stand-row';
-      const dot = document.createElement('i'); dot.style.background = '#' + PALETTE[r.col].toString(16).padStart(6, '0');
-      const nm = document.createElement('span'); nm.textContent = `${i + 1} ${r.name}`;
+      const dot = document.createElement('i'); dot.style.background = r.colour;
+      const nm = document.createElement('span'); nm.textContent = `${i + 1} ${r.num >= 0 ? '#' + r.num + ' ' : ''}${r.name}`;
       const lp = document.createElement('em'); lp.textContent = 'L' + r.lap;
       const gp = document.createElement('b'); gp.textContent = r.gap;
       d.append(dot, nm, lp, gp);
@@ -121,13 +124,19 @@ export function createLobby(ctx) {
   setInterval(() => {
     if (mp.players > 1) mp.sendState(encodeState(stateFromCar(ctx.car, ctx.timer.currentLap(), mp.col, name(), performance.now(), ctx.timer.best, ctx.timer.last)));
   }, SEND_MS);
+  // the livery goes with the hello and again every 2 s, so a late or lost one still arrives and a repaint reaches everyone
+  const sendLivery = () => { const l = liveryNow(); if (l) { mp.setLivery(encodeLivery(l)); } };
+  setInterval(() => { if (mp.players > 1) mp.sendLivery(); }, LIVERY_MS);
+  sendLivery();
   let size = { w: innerWidth, h: innerHeight }, project = null;
   return {
     get active() { return mp.active; },
     get joined() { return ghosts.size > 0; },
     ghosts,       // for tests and the console
     name,         // our name in the room
-    board(own) { return ghosts.board(own); },     // the lap time board rows, for the Tab board
+    board(own) { return ghosts.board({ ...own, livery: liveryNow() }); },
+    // the player changed their livery: tell the room now (the standings follow on their next redraw)
+    liveryChanged() { sendLivery(); lastStand = ''; },     // the lap time board rows, for the Tab board
     // the other cars for Car.collideCars at local time nowMs (performance.now() clock)
     solids(nowMs) { return ghosts.size ? ghosts.solids(nowMs) : NO_CARS; },
     update(nowMs) {
