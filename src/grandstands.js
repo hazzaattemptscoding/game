@@ -344,6 +344,7 @@ export function buildGrandstands(T, ground, extraBlockers = [], sponsorTex) {
     flagB: flagMaterial({ color: 0x1d4e9e }),
     crowd: new THREE.MeshLambertMaterial({ color: 0xffffff }),
   };
+  for (const k of ['concrete', 'seat', 'aisle', 'roof']) mats[k].userData.wet = 'surface';   // darker and glossier in the rain (src/environment.js)
   const torso = new THREE.BoxGeometry(0.42, 0.5, 0.26); torso.translate(0, 0.25, 0);
   const head = new THREE.OctahedronGeometry(0.13, 0);
   const all = new Kit(), M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler();

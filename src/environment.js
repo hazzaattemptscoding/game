@@ -20,6 +20,7 @@ const FADE_S = 1.2;
 const RAIN_MAX = 14000;
 const RAIN_BOX = 40;
 
+const FLASH_FOG = new THREE.Color(0.85, 0.9, 1.0);
 const col = (c, a) => new THREE.Color().setRGB(a[0], a[1], a[2], THREE.SRGBColorSpace);
 
 // ---- the sky dome -------------------------------------------------------------------------------------------------
@@ -30,7 +31,7 @@ const SKY_FRAG = `
 precision highp float;
 varying vec3 vDir;
 uniform vec3 uSunDir, uSunCol, uDiscCol, uCloudLight, uCloudShade, uGlowCol;
-uniform float uCloud, uStars, uTime, uDisc, uGlow;
+uniform float uCloud, uStars, uTime, uDisc, uGlow, uFlash;
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float hash3(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.x + p.y) * p.z); }
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -67,6 +68,7 @@ void main() {
     float s = star * uStars * smoothstep(0.02, 0.2, up) * (1.0 - cl);
     add += vec3(0.85, 0.9, 1.0) * s; alpha = max(alpha, s);
   }
+  if (uFlash > 0.001) { float fl = uFlash * smoothstep(-0.05, 0.3, up) * (0.4 + 0.6 * cl); add += vec3(0.78, 0.84, 1.0) * fl; alpha = max(alpha, fl * 0.9); }
   add += uDiscCol * discM * uDisc;
   alpha = max(alpha, discM * uDisc);
   gl_FragColor = vec4(add, clamp(alpha, 0.0, 1.0));
@@ -76,7 +78,7 @@ function makeSky() {
   const u = {
     uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color() }, uDiscCol: { value: new THREE.Color(1, 1, 1) },
     uCloudLight: { value: new THREE.Color(1, 1, 1) }, uCloudShade: { value: new THREE.Color(0.6, 0.65, 0.7) }, uGlowCol: { value: new THREE.Color(1, 0.8, 0.5) },
-    uCloud: { value: 0 }, uStars: { value: 0 }, uTime: { value: 0 }, uDisc: { value: 0 }, uGlow: { value: 0 },
+    uCloud: { value: 0 }, uStars: { value: 0 }, uTime: { value: 0 }, uDisc: { value: 0 }, uGlow: { value: 0 }, uFlash: { value: 0 },
   };
   const m = new THREE.ShaderMaterial({
     uniforms: u, vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, side: THREE.BackSide, transparent: true, depthWrite: false, depthTest: true, fog: false,
@@ -185,7 +187,14 @@ float puddleMask() { vec2 p = vWorldXYZ.xz; float n = wn(p * 0.045) * 0.55 + wn(
   m.customProgramCacheKey = () => 'wet-road';
 }
 
-export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera }) {
+// Lightning: two quick pulses and a fading tail over 0.8 s. 0..1.
+export function boltShape(t) {
+  const tri = (a, rise, fall) => (t < a ? 0 : t < a + rise ? (t - a) / rise : t < a + rise + fall ? 1 - (t - a - rise) / fall : 0);
+  return Math.max(tri(0, 0.04, 0.16), 0.7 * tri(0.22, 0.03, 0.22), 0.3 * tri(0.4, 0.05, 0.4));
+}
+
+// o.onLightning(delaySeconds, strength): called at each flash, so the sound can follow after the time sound takes to arrive.
+export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, onLightning }) {
   const sky = makeSky(), rain = makeRain(), spray = makeSpray(160);
   scene.add(sky.mesh, rain.mesh, spray.mesh);
   const bgCanvas = document.createElement('canvas');
@@ -198,6 +207,7 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera }
   const css = c => `rgb(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)})`;
   let target = { ...DEFAULT_ENV }, from = null, to = null, cur = resolveEnv(DEFAULT_ENV), t = 1, topDown = false, time = 0, shadowsWanted = true;
   let car = null, head = null, headTarget = null;
+  const bolt = { next: 6 + Math.random() * 14, t: -1, flash: 0, fogOn: false };
   const wetMats = [];       // { m, kind, color, rough }
   let pmrem = null, envRT = null, envKey = '';
   const out = { sun: new THREE.Color(), tmp: new THREE.Color() };
@@ -255,13 +265,13 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera }
 
   function wetMaterial(w, wet) {
     const { m, kind, color, rough } = w;
-    const k = kind === 'road' ? 1 : 0.4;
+    const k = kind === 'road' ? 1 : kind === 'surface' ? 0.85 : 0.4;     // 'surface': roofs and seats of the pit building and the stands, wet in the rain
     m.color.copy(color).multiplyScalar(1 - 0.34 * wet * k);
-    m.roughness = rough * (1 - (kind === 'road' ? 0.62 : 0.2) * wet);
-    if (kind === 'road') {
+    m.roughness = rough * (1 - (kind === 'road' ? 0.62 : kind === 'surface' ? 0.45 : 0.2) * wet);
+    if (kind !== 'other') {
       const on = wet > 0.04 && envRT;
       if (on && m.envMap !== envRT.texture) { m.envMap = envRT.texture; m.needsUpdate = true; } else if (!on && m.envMap) { m.envMap = null; m.needsUpdate = true; }
-      m.envMapIntensity = 0.04 + 0.4 * wet;
+      m.envMapIntensity = kind === 'road' ? 0.04 + 0.4 * wet : 0.03 + 0.3 * wet;
     }
   }
 
@@ -308,7 +318,7 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera }
         for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
           if (!m || seen.has(m) || !m.isMeshStandardMaterial || !m.color) continue;
           seen.add(m);
-          const kind = m.userData.wet === 'road' ? 'road' : 'other';
+          const kind = m.userData.wet === 'road' ? 'road' : m.userData.wet === 'surface' ? 'surface' : 'other';
           if (kind === 'road') patchRoad(m);
           wetMats.push({ m, kind, color: m.color.clone(), rough: m.roughness });
         }
@@ -328,6 +338,7 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera }
       }
     },
     setTopDown(v) { topDown = !!v; apply(cur); },
+    strike(delay = 1, strength = 0.8) { bolt.t = 0; if (onLightning) onLightning(delay, strength); },     // one flash now (heavy rain only shows it), for tests and the console
     // call every frame. carState (optional): { speed } of the player's car, for the spray
     update(dt, cam, carState) {
       time += dt;
@@ -341,6 +352,20 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera }
       }
       const c = cam || camera;
       sky.mesh.position.copy(c.position);
+      // lightning: only in heavy rain, never in the top-down view, and only when the setting allows it
+      const wantBolt = !topDown && cur.rain >= 0.95 && !(carState && carState.lightning === false);
+      if (wantBolt && bolt.t < 0) { bolt.next -= dt; if (bolt.next <= 0) { bolt.t = 0; bolt.next = 9 + Math.random() * 26; if (onLightning) onLightning(0.4 + Math.random() * 3.1, 0.35 + Math.random() * 0.65); } }
+      if (bolt.t >= 0) {
+        bolt.t += dt;
+        bolt.flash = wantBolt ? boltShape(bolt.t) : 0;
+        if (bolt.t > 0.85 || !wantBolt) { bolt.t = -1; bolt.flash = 0; }
+      }
+      const f = bolt.flash;
+      sky.u.uFlash.value = f;
+      if (f > 0) {
+        hemi.intensity = cur.hemiI + 2.6 * f * (1 - 0.5 * cur.night);
+        scene.fog.color.setRGB(cur.fog[0], cur.fog[1], cur.fog[2], THREE.SRGBColorSpace).lerp(FLASH_FOG, 0.3 * f); bolt.fogOn = true;
+      } else if (bolt.fogOn) { hemi.intensity = cur.hemiI; scene.fog.color.setRGB(cur.fog[0], cur.fog[1], cur.fog[2], THREE.SRGBColorSpace); bolt.fogOn = false; }
       if (rain.mesh.visible) { rain.u.uCam.value.copy(c.position); rain.u.uTime.value = time % 400; }
       if (spray.mesh.visible && car) {
         const sp = carState ? carState.speed : 0, r = cur;

@@ -70,7 +70,7 @@ const ground = createGround(track), terrain = ground.mesh();
 const world = new THREE.Group();
 world.add(terrain, buildTrackScene(track, ground), buildScenery(track, ground));
 scene.add(world);
-const env = createEnvironment({ renderer, scene, sun, hemi, sunDir: SUN_DIR });   // sky, light, fog, weather, wet road, lamps
+const env = createEnvironment({ renderer, scene, sun, hemi, sunDir: SUN_DIR, onLightning: (delay, k) => audio.thunder(delay, k) });   // sky, light, fog, weather, wet road, lamps
 const urlEnv = envFromParams(params);   // ?weather=rain&time=dusk wins over the settings and the room, for testing
 env.set(urlEnv || settings, { instant: true });
 env.registerWorld(world);
@@ -210,7 +210,7 @@ function frame(now) {
   sun.target.position.copy(p);
   sun.position.copy(p).addScaledVector(SUN_DIR, 150);
 
-  env.update(dt, rig.camera, { speed: car.speed });
+  env.update(dt, rig.camera, { speed: car.speed, lightning: settings.lightning });
   audio.update(car, dt, paused);
   lobby.update(now);
   hud.update(car, timer, track, simTime, playerInput);
@@ -230,7 +230,7 @@ requestAnimationFrame(frame);
   selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake;
   carFx.update(dt, rig.camera, lobby.ghosts.fx, selfFx, env.resolved, topDown);
 // for quick checks from the browser console
-window.lakeside = { car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer };
+window.lakeside = { car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx };
 
 function skyTexture(top, bottom) {
   const c = document.createElement('canvas');

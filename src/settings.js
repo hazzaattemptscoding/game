@@ -7,7 +7,7 @@ import { cleanWeather, cleanTime } from './weather.js';
 import { normaliseHudSettings } from './hudSettings.js';
 
 const KEY = 'lakeside-settings';
-const DEFAULTS = { units: 'mph', assistTc: true, assistAbs: true, assistEsc: true, steering: 'keyboard', steerSens: 1, debug: false, blockout: false, racingLine: false, sound: true, volume: 0.7, livery: null, weather: 'clear', timeOfDay: 'midday' };   // hud, hudScale and trackMap are filled in by migrateSettings (src/hudSettings.js)
+const DEFAULTS = { units: 'mph', assistTc: true, assistAbs: true, assistEsc: true, steering: 'keyboard', steerSens: 1, debug: false, blockout: false, racingLine: false, sound: true, volume: 0.7, livery: null, weather: 'clear', timeOfDay: 'midday', lightning: true };   // hud, hudScale and trackMap are filled in by migrateSettings (src/hudSettings.js)
 
 // Older saves had one `assists` switch for all three. If that is all there is, it sets the three; then it goes.
 export function migrateSettings(saved) {
@@ -20,6 +20,7 @@ export function migrateSettings(saved) {
   if (s.livery && typeof s.livery === 'object') s.livery = normaliseLivery(s.livery); else delete s.livery;   // the player's own car paint (src/livery.js); null = the default for their id
   if ('weather' in s) s.weather = cleanWeather(s.weather);   // visual only (src/weather.js)
   if ('timeOfDay' in s) s.timeOfDay = cleanTime(s.timeOfDay);
+  if ('lightning' in s) s.lightning = s.lightning !== false;   // cosmetic flashes and thunder in heavy rain; anything but false is on
   if (s.steering !== 'keyboard' && s.steering !== 'cursor') delete s.steering;
   if (typeof s.steerSens !== 'number' || !(s.steerSens >= 0.5 && s.steerSens <= 2)) delete s.steerSens;
   return normaliseHudSettings(s);   // the HUD switches, scale and track map options: missing or invalid parts take the defaults

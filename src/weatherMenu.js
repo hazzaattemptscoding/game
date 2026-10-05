@@ -15,3 +15,10 @@ export function weatherRows({ settings, save, api }, segRow, h) {
   const note = h('p', 'm-note', locked() ? 'The host chooses the weather and time of day for the room.' : 'Looks only. Grip and handling do not change. In an online room everybody sees the host\'s choice. ?weather=rain&time=dusk in the address also works.');
   return [h('div', 'm-group', h('div', 'm-gtitle', 'Weather and time of day'), ...rows, note)];
 }
+
+// Settings > Weather only: the cosmetic lightning and thunder in heavy rain. Saved as settings.lightning (default on).
+export function lightningRows({ settings, save }, segRow, h) {
+  return [h('div', 'm-group', h('div', 'm-gtitle', 'Lightning'),
+    segRow('Lightning and thunder', [[true, 'On'], [false, 'Off']], () => settings.lightning !== false, v => { settings.lightning = v; save(settings); },
+      { note: 'In heavy rain, now and then a flash lights the sky and thunder follows a moment later. Looks and sound only.' }))];
+}

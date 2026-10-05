@@ -187,9 +187,31 @@ export class CarAudio {
     n.thumpLP = filter('lowpass', 800, 0.7); n.thumpNoise = gain(0);
     n.noiseB.connect(n.thumpLP); n.thumpLP.connect(n.thumpNoise); n.thumpNoise.connect(n.master);
 
+    // --- thunder: low noise with a gain that thunder() shapes (nothing is created per clap) ---
+    n.thLP = filter('lowpass', 150, 0.7); n.thGain = gain(0);
+    n.noiseA.connect(n.thLP); n.thLP.connect(n.thGain); n.thGain.connect(n.master);
+
     for (const o of n.oscs) o.start();
     for (const [s, off] of n.sources) s.start(0, off);
     this.nodeCount = this.all.length;
+  }
+
+  // A clap of thunder `delay` seconds from now (the time the sound takes to arrive after the flash), strength 0..1. A rolling
+  // rumble: a sharp rise, two lesser bursts and a long fall, with the low-pass sweeping down. Only changes parameters of nodes made at setup.
+  thunder(delay = 1, strength = 0.7) {
+    if (this.disabled || !this.ctx || !this.n) return;
+    try {
+      const c = this.ctx, n = this.n, k = clamp(num(strength, 0.7), 0, 1), t0 = c.currentTime + clamp(num(delay, 1), 0, 8), lvl = 0.35 + 0.75 * k;
+      const g = n.thGain.gain, f = n.thLP.frequency;
+      g.cancelScheduledValues(t0); f.cancelScheduledValues(t0);
+      f.setTargetAtTime(380 + 200 * k, t0, 0.05);
+      f.setTargetAtTime(95, t0 + 0.5, 0.9);
+      g.setTargetAtTime(lvl, t0, 0.07);
+      g.setTargetAtTime(lvl * 0.45, t0 + 0.45, 0.12);
+      g.setTargetAtTime(lvl * 0.8, t0 + 0.95, 0.1);
+      g.setTargetAtTime(lvl * 0.35, t0 + 1.35, 0.2);
+      g.setTargetAtTime(0, t0 + 1.8, 0.8 + 1.2 * k);
+    } catch (e) { this.disable(); }
   }
 
   // Once a frame. car is read only. paused = settings panel or report screen open.

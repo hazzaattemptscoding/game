@@ -2,7 +2,7 @@
 // Registered on the menu by registerScreens(menu). The game's side of each button is `ctx.api` (director.js).
 
 import { LAP_CHOICES } from './session.js';
-import { weatherRows } from './weatherMenu.js';
+import { weatherRows, lightningRows } from './weatherMenu.js';
 import { HUD_ELEMENTS, MAP_SIZES, MAP_POSITIONS, PRESET_ORDER, PRESET_NAMES, SCALE_MIN, SCALE_MAX, MAP_OPACITY_MIN, detectPreset, applyPreset } from './hudSettings.js';
 
 export const h = (tag, cls, ...kids) => {
@@ -219,7 +219,7 @@ function settingsScreen() {
           mrow(segRow('Corner numbers', [['off', 'Off'], ['numbers', 'On']], () => tm.labels, v => set('labels', v)));
           p.append(mg);
         },
-        Weather(p) { p.append(...weatherRows(ctx, segRow, h)); },
+        Weather(p) { p.append(...weatherRows(ctx, segRow, h), ...lightningRows(ctx, segRow, h)); },
         Sound(p) {
           p.append(segRow('Sound', [[true, 'On'], [false, 'Off']], () => settings.sound !== false, v => { settings.sound = v; persist(); }));
           p.append(sliderRow('Volume', { min: 0, max: 100, step: 1, get: () => Math.round(settings.volume * 100), set: v => { settings.volume = Math.max(0, Math.min(1, v / 100)); persist(); }, fmt: v => `${Math.round(v)}%` }));

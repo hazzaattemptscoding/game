@@ -187,6 +187,16 @@ check(frame > seqStart + 1000, 'sequence did not run');
 }
 
 // --- nothing created per frame ---
+// --- thunder: delayed, bounded, nothing created, harmless with garbage and before audio exists ---
+{
+  const g = a.n.thGain.gain, before = g.writes;
+  a.thunder(2.5, 0.8); a.thunder(0.5, 1); a.thunder(-5, 7); a.thunder(NaN, NaN); a.thunder(1e9, -3); a.thunder();
+  check(g.writes > before + 20, 'thunder writes the gain envelope');
+  check(a.n.thGain.gain.last >= 0 && a.n.thGain.gain.last <= 2, 'thunder gain stays in bounds');
+  for (let i = 0; i < 60; i++) step(car({ rpm: 3000, throttle: 0.5, speed: 40 }));
+  const off = new CarAudio({ sound: true, volume: 0.7 }, { ctor: FakeContext, muted: true, rand });
+  off.thunder(1, 1);   // muted: no context, no error
+}
 check(ctx.created.length === setupCount, `nodes created after setup: ${setupCount} -> ${ctx.created.length}`);
 check(setupCount <= 70, `too many nodes: ${setupCount}`);
 

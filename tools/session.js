@@ -10,6 +10,7 @@ import { buildTrack } from '../src/track.js';
 import { createRaceControl, cleanRaceMessage } from '../src/raceControl.js';
 import { TIMES, WEATHERS, resolveEnv, blendEnv, cleanEnv, cleanWeather, cleanTime, envFromParams, shadowsOn, DEFAULT_ENV } from '../src/weather.js';
 import { migrateSettings } from '../src/settings.js';
+import { boltShape } from '../src/environment.js';
 
 const fails = [];
 const check = (ok, msg) => { if (!ok) fails.push(msg); };
@@ -24,7 +25,7 @@ console.log('SESSIONS');
   check(makeSession('race').laps === 5, 'race defaults to 5 laps');
   check(makeSession('race', { laps: 500 }).laps === 99 && makeSession('race', { laps: 0 }).laps === 1, 'custom laps are clamped to 1 to 99');
   check(makeSession('race', { slot: 3 }).slot === 3 && makeSession('race', { slot: -2 }).slot === 0, 'grid slot');
-  check(makeSession('race', { ai: 5 }).ai === 0, 'AI is not available yet');
+  check(makeSession('race', { ai: 5 }).ai === 5 && makeSession('online', { ai: 5 }).ai === 0 && makeSession('timetrial', { ai: 5 }).ai === 0 && makeSession('race').ai === 0, 'AI opponents are for the offline race and practice only, off by default');
   check(makeSession('nonsense').mode === 'practice', 'unknown mode falls back to practice');
   check(makeSession('practice', { start: 'standing' }).start === 'standing', 'practice may start on the grid');
   check(p.weather === 'clear' && p.time === 'midday' && makeSession('race', { weather: 'heavyrain', time: 'night' }).weather === 'heavyrain' && makeSession('race', { weather: 'x', time: 9 }).time === 'midday', 'weather and time are part of the session, bad values fall back to clear midday');
@@ -318,6 +319,11 @@ console.log('WEATHER AND TIME OF DAY');
   check(cleanEnv({ weather: 'fog', timeOfDay: 'dusk' }).time === 'dusk' && cleanEnv(null).weather === 'clear', 'settings style environments are accepted');
   const ms = migrateSettings({ weather: 'blizzard', timeOfDay: 'teatime' });
   check(ms.weather === 'clear' && ms.timeOfDay === 'midday' && migrateSettings({ weather: 'fog', timeOfDay: 'night' }).weather === 'fog' && !('weather' in migrateSettings({})), 'saved settings are cleaned and old saves are left alone');
+  // lightning is optional and cosmetic: saved as a boolean, anything but false counts as on; the flash is two pulses and a tail inside 0.85 s
+  check(!('lightning' in migrateSettings({})) && migrateSettings({ lightning: false }).lightning === false && migrateSettings({ lightning: 'no' }).lightning === true && migrateSettings({ lightning: true }).lightning === true, 'the lightning setting is cleaned and old saves keep the default');
+  let peak = 0, ok = true;
+  for (let t = -0.2; t < 1.2; t += 0.005) { const v = boltShape(t); if (!(v >= 0 && v <= 1)) ok = false; if (t >= 0 && t < 0.1) peak = Math.max(peak, v); }
+  check(ok && peak > 0.95 && boltShape(-0.1) === 0 && boltShape(0.9) === 0 && boltShape(0.3) > 0.3, 'the lightning flash is 0 to 1, peaks at once and is over in under a second');
 }
 
 console.log(fails.length ? `FAILED\n  ${fails.join('\n  ')}` : 'session: all checks passed');

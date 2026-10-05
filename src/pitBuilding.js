@@ -77,6 +77,7 @@ export function buildPitDetail(T, ground) {
     plant: new THREE.MeshStandardMaterial({ color: 0x9aa0a4, roughness: 0.6, metalness: 0.4 }),
     dark: new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.8 }),
   };
+  for (const k of ['parapet', 'plant']) mats[k].userData.wet = 'surface';   // darker and glossier in the rain (src/environment.js)
   const mesh = kit.build(mats);
   mesh.traverse(o => { if (o.isMesh) o.userData.debug = 'building'; });
   g.add(mesh);

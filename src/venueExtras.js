@@ -329,6 +329,7 @@ export function buildExtras(T, ground, plan) {
     screen: lampScreen,
     flagR: flagMaterial({ color: 0xc8102e }), flagB: flagMaterial({ color: 0x1d4e9e }), flagY: flagMaterial({ color: 0xffd21f }), flagW: flagMaterial({ color: 0xf2f2ee }),
   };
+  for (const k of ['concrete', 'roof']) mats[k].userData.wet = 'surface';   // darker and glossier in the rain (src/environment.js)
   tent.forEach((c, k) => { mats['tent' + k] = new THREE.MeshStandardMaterial({ color: c, roughness: 0.8, side: THREE.DoubleSide }); });
   const all = new Kit(), M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler();
   const torso = new THREE.BoxGeometry(0.42, 0.5, 0.26); torso.translate(0, 0.25, 0);
