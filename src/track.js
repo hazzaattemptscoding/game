@@ -135,6 +135,7 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   track.corners = corners;
   buildSides(track, corners);
   smoothKerbs(track);
+  buildVRunoff(track);
   buildReach(track);
 
   // Road height under a point beside sample n: that sample's height, carried along the grade.
@@ -519,6 +520,20 @@ function smoothKerbs(T) {
   }
 }
 
+// V-shaped run-off beside a street wall (layout.vrunoff). The wall steps out square to the track at the start, which is why this
+// runs after the wall has been eased and the kerbs smoothed, and comes back to the track limits in a straight line.
+function buildVRunoff(T) {
+  for (const [from, side, width, length] of T.layout.vrunoff || []) {
+    const sd = side === 'L' ? 0 : 1, i0 = Math.round(T.sAtPointRaw(from) / T.ds);
+    for (let k = 0; k <= length; k++) {
+      const i = wrap(i0 + k, T.N), w = width * (1 - k / length);
+      const edge = T.hw[i] + T.kerb[sd][i] + T.sausage[sd][i];
+      T.runoff[sd][i] = Math.max(T.runoff[sd][i], w);
+      T.wall[sd][i] = Math.max(T.wall[sd][i], edge + T.runoff[sd][i] + STREET_GAP);
+    }
+  }
+}
+
 // How far out each band may go before the offset curve would fold over itself on the inside of a
 // bend (a distance past about 90% of the corner radius). Bands are drawn no further out than this.
 function buildReach(T) {
@@ -680,7 +695,16 @@ function buildBarriers(T, corners) {
       while (b > a && out(run[b])) b--;
       const keep = out(run[a]) ? [] : run.slice(a, b + 1);   // a street zone whose wall is wholly out on the containment line has no street wall
       for (const i of keep) streetWall[i] = 1;
-      if (keep.length > 1) follow(BARRIER.CONCRETE, sd, keep, i => g * T.wall[sd][i], 3, { fence: true, why: 'street section: a wall at the track edge (the walls zones in layout.js)' });
+      if (keep.length > 1) {
+        // one point every 3 m, plus a square step (two points on one sample's normal) wherever the wall line jumps out or back
+        const pts = [];
+        for (let k = 0; k < keep.length; k++) {
+          const i = keep[k], prev = keep[k - 1];
+          if (k > 0 && Math.abs(T.wall[sd][i] - T.wall[sd][prev]) > 3) { pts.push(P(prev, g * T.wall[sd][prev]), P(prev, g * T.wall[sd][i]), P(i, g * T.wall[sd][i])); }
+          else if (k % 3 === 0 || k === keep.length - 1) pts.push(P(i, g * T.wall[sd][i]));
+        }
+        add(BARRIER.CONCRETE, sd, pts, { fence: true, why: 'street section: a wall at the track edge (the walls zones in layout.js)' });
+      }
     }
     // 3. bridge parapets
     // the parapet runs BRIDGE_APPROACH metres either side of the deck too, following the barrier line as it
@@ -776,7 +800,12 @@ function buildBarriers(T, corners) {
         let nx = -(bz - az) / len, nz = (bx - ax) / len;
         // face the track this barrier was laid out from (or the pit lane, for the pit side of the pit wall)
         const g = b.side ? 1 : -1, inx = -g * T.nx[i], inz = -g * T.nz[i];
-        if ((nx * inx + nz * inz) * f.towards < 0) { nx = -nx; nz = -nz; }
+        if (Math.abs(nx * inx + nz * inz) < 0.3 && f.towards > 0) {
+          // a step square to the track faces the open side: the side where the wall is further out
+          const da = Math.abs((ax - T.x[i]) * T.nx[i] + (az - T.z[i]) * T.nz[i]), db = Math.abs((bx - T.x[i]) * T.nx[i] + (bz - T.z[i]) * T.nz[i]);
+          const face = db > da ? 1 : -1;
+          nx = face * T.tx[i]; nz = face * T.tz[i];
+        } else if ((nx * inx + nz * inz) * f.towards < 0) { nx = -nx; nz = -nz; }
         T.segs.push({ ax, az, bx, bz, nx, nz, len, y: ay, type: b.type });
       }
     }

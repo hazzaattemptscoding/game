@@ -105,7 +105,6 @@ export const LAYOUT = {
     [16.8, 17.6, 'L', 5],
     [19.5, 21, 'L', 5],
     [22, 23.2, 'R', 5],
-    [24.2, 25.0, 'L', 12],     // paved extension beside the Sandbag street wall
     [27.5, 29, 'L', 8],
     [29.6, 30.6, 'R', 6],
     [34.6, 35.6, 'L', 7],
@@ -120,6 +119,12 @@ export const LAYOUT = {
   // back to `width` above over the ease lengths (a smooth ramp, no step in the edge). Kerbs, run-off and the wall line follow the edge.
   narrow: [
     [56.1, 59.1, 10.5, 60, 50],  // Guardroom Chicane: 2.5 m narrower than the rest of the lap, more punishing
+  ],
+
+  // V-shaped run-off beside a street wall: [from point, side, width m, length m]. At `from` the wall steps out square to the
+  // track, leaving a paved apron `width` wide, and the wall line then runs back to the track limits in a straight line over `length`.
+  vrunoff: [
+    [24.45, 'L', 11, 75],      // Sandbag exit, the long left wall
   ],
 
   // Raised sausage kerbs on the inside of the chicane, to stop cars cutting it.
