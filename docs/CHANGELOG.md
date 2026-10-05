@@ -11,6 +11,20 @@ Things that are liked and must not change. `npm run check` does not test these; 
 - The Blockout setting.
 - Keyboard handling and the keyboard tuning from fix pass 2.
 
+## Menu, sessions, garage, controller (wired in)
+
+- The game opens on the main menu over a slow orbit of the start straight: Free practice, Time trial, Race, Online, Garage, Settings (`src/menu.js`, `src/menuScreens.js`). Arrows and Enter, mouse, touch or a pad; Esc or B goes back.
+- `src/director.js` joins the menu, `src/session.js` (state machine, lap counting, results order), `src/start.js` and `src/sessionHud.js` to the game. Esc, P or the pad's Start pause in a session and open the pause menu (Resume, Restart session, Settings, Report a problem, Back to main menu). Offline the game stops; in an online room the car keeps rolling behind the menu.
+- Race: setup screen (laps 3, 5, 10, 20 or custom, assists any or all off, racing line allowed or not), then the grid, the start camera, five lights and a random hold. Jumping the start is +5 s. The race ends at the chequered flag and the results screen (`src/results.js`) comes up 3 s later. AI opponents are shown as "Coming soon" and disabled.
+- Time trial: starts at the pit exit with a 3, 2, 1 count and a lap list. Free practice has no rules and can start from the pit or the grid.
+- Online: the lobby block moved into the Online screen. The host sets laps, assists and the racing line and starts the race; guests start from the host's message on their own clocks (`src/raceControl.js`). A late joiner drives freely.
+- Settings (one screen, five tabs): Driving (units, the three assists, steering, cursor sensitivity, racing line), Display, Sound (on or off, volume), Controls (controller, `src/gamepad.js`), Online (name). The old settings panel is gone.
+- Garage (`src/garage.js`) is the Garage screen. `settings.livery` paints the player's own car, the garage preview and the standings, and goes out with the hello and every 2 s, so every screen shows each car with the same paint. A player with no saved livery gets the default for their player id.
+- Racing line: `createRacingLine(track)` is in the scene; the L key, `settings.racingLine` and the Settings switch drive it, and a race can forbid it.
+- Page parameters: `?menu=0` skips the menu and starts free practice (also implied by `?viewat=`, `?view=`, `?topdown` and `?autopilot`). `?menu=race|practice|settings|garage|online|main` opens that screen, `?start=race|timetrial|practice` starts that session, `?garage` opens the garage, `?mute` and `?at=` as before. `node tools/shot.mjs out.png "menu=race"` takes a picture of a screen.
+- Fixed: the first frame could carry a time stamp from before the loop started, giving a negative step that wound the keyboard inputs up. The step is now never below zero.
+- Tests: `tools/smoke.mjs` opens 11 views (drive, top-down, fixed view, menu, race setup, settings, garage, online, race start, time trial). `tools/cursor.js` expected an empty object for damaged saved settings; `migrateSettings` now always adds the controller defaults, so it expects nothing else. No laptest limit was changed.
+
 ## Optional racing line
 
 Off by default. L key, `settings.racingLine`, or the page parameter `?line=1`; a session can forbid it with `session.racingLine === false`.
