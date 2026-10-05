@@ -1,45 +1,82 @@
 // The start / finish line: gantry over the straight, the painted chequered line and the grid boxes.
 //
-// The gantry stands 4 m outside the white lines (the legs are well clear of the pit wall, which is 13 m out) and
-// everything on it is 6 m or more above the road, so a car, a mirror or a roll hoop can never touch it.
+// The gantry spans the track AND the pit lane: the left tower stands behind the low wall on the garage side of the pit
+// lane, the right tower behind the containment wall, so nothing a car can reach is anywhere near a leg. Everything over
+// the road is 6.25 m or more above it, so a car, a mirror or a roll hoop can never touch it.
 // Frame, in local axes: x along the direction of travel, y up from the road at the centre line, z to the right.
 //
-// The main screen displays the PowerMedia video loop (3840 x 128, 30:1 aspect), letterboxed across the full width.
-// A companion text board shows LAKESIDE START / FINISH in a bold condensed display font.
-// The structure includes a deep truss, lighting rig, camera pods, and a catwalk along the top.
+// Seen by the cars coming down the straight (the -x face): the start lights, a 30:1 LED ribbon with the PowerMedia loop
+// over the track and sponsor panels either side, and a LAKESIDE crown on top. The back (+x) face carries a second ribbon
+// and a START / FINISH crown, for the cars leaving and the stands.
 
 import * as THREE from 'three';
 import { bannerVideo } from './bannerVideo.js';
 import * as tex from './textures.js';
-import { Kit, sponsorRow, trackPoint } from './meshKit.js';
+import { Kit, sponsorRow, trackPoint, beam } from './meshKit.js';
 
 export const GANTRY_S = 2;          // metres past the start line, the lights hang just before it
 export const GANTRY_CLEAR = 7.0;    // underside of the truss above the road
 export const GANTRY_LOWEST = 6.25;  // lowest point of anything hanging from it (the lamp housing)
-export const GANTRY_LEG = 4.0;      // legs stand this far outside the white line
+export const TOWER_HALF = 1.2;      // half the tower footprint across the track, metres
+const TOWER_BEHIND = 0.8;           // clear space between a wall and the tower, metres
 
 const DECAL = 0.006;
+const DEPTH = 2.6, TRUSS_H = 3.0;   // box truss: front to back, bottom chord to top chord
+const RIBBON_W = 30, RIBBON_H = 1.0; // the LED ribbon, the loop's own 30:1
 
+// Where the two towers stand (d of their centres, left negative): behind the pit lane's outer wall on the left and
+// behind the containment wall on the right.
+export function gantryLegs(T) {
+  const i = trackPoint(T, GANTRY_S, 0).i;
+  const leftWall = T.pitOut[i] ? T.pitOut[i] + (T.pitGarage[i] ? 2 : 0.5) + 0.3 : T.wall[0][i] + 0.8;
+  return [-(leftWall + TOWER_BEHIND + TOWER_HALF), T.wall[1][i] + 0.8 + TOWER_BEHIND + TOWER_HALF];
+}
 
-// Canvas texture with START / FINISH text in a bold condensed display font
-function gantryTextTexture() {
-  const c = document.createElement('canvas');
-  c.width = 1920; c.height = 512;
+// A crown board: a heavy, slanted display word with a white keyline, chequers at both ends and speed stripes.
+function crownTexture(word, sub) {
+  const W = 2048, H = 320, c = document.createElement('canvas');
+  c.width = W; c.height = H;
   const x = c.getContext('2d');
-  x.fillStyle = '#1a1a1e';
-  x.fillRect(0, 0, 1920, 512);
-  x.fillStyle = '#ffd21f';
-  x.font = 'italic 900 180px "Arial Narrow", "Roboto Condensed", Arial, sans-serif';
+  const bg = x.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#1b1f27'); bg.addColorStop(1, '#0b0d11');
+  x.fillStyle = bg; x.fillRect(0, 0, W, H);
+  const sq = 26;
+  for (const x0 of [0, W - 4 * sq]) for (let a = 0; a < 4; a++) for (let b = 0; b < Math.ceil(H / sq); b++) {
+    x.fillStyle = (a + b) % 2 ? '#f2f2ee' : '#14161a'; x.fillRect(x0 + a * sq, b * sq, sq, sq);
+  }
+  x.fillStyle = '#ffd21f'; x.fillRect(4 * sq, 0, W - 8 * sq, 10); x.fillRect(4 * sq, H - 10, W - 8 * sq, 10);
+  // speed stripes behind the word, slanted like the type
+  x.save(); x.beginPath(); x.rect(4 * sq, 10, W - 8 * sq, H - 20); x.clip();
+  x.fillStyle = 'rgba(255,210,31,0.13)';
+  for (let k = 0; k < 14; k++) { const x0 = 160 + k * 135; x.beginPath(); x.moveTo(x0, H); x.lineTo(x0 + 70, H); x.lineTo(x0 + 160, 0); x.lineTo(x0 + 90, 0); x.fill(); }
+  x.restore();
+  x.save();
+  x.translate(W / 2, H / 2 + (sub ? -18 : 6));
+  x.transform(1, 0, -0.22, 1, 0, 0);   // italic by shear, whatever font the device has
   x.textAlign = 'center'; x.textBaseline = 'middle';
-  x.fillText('LAKESIDE', 480, 256);
-  x.fillText('START / FINISH', 1440, 256);
-  x.fillStyle = 'rgba(255, 210, 31, 0.3)';
-  x.strokeStyle = '#ffd21f';
-  x.lineWidth = 3;
-  x.strokeRect(20, 20, 880, 472);
-  x.strokeRect(1020, 20, 880, 472);
+  x.font = `900 ${sub ? 200 : 230}px Impact, "Arial Black", "Helvetica Neue", Arial, sans-serif`;
+  const tracking = sub ? 18 : 26, letters = [...word];
+  const widths = letters.map(ch => x.measureText(ch).width), total = widths.reduce((a, b) => a + b, 0) + tracking * (letters.length - 1);
+  let px = -total / 2;
+  for (let k = 0; k < letters.length; k++) {
+    const cx = px + widths[k] / 2;
+    x.lineJoin = 'round';
+    x.lineWidth = 16; x.strokeStyle = '#0b0d11'; x.strokeText(letters[k], cx + 8, 8);          // drop shadow
+    x.lineWidth = 9; x.strokeStyle = '#f2f2ee'; x.strokeText(letters[k], cx, 0);               // keyline
+    const fill = x.createLinearGradient(0, -100, 0, 100);
+    fill.addColorStop(0, '#ffe46b'); fill.addColorStop(0.55, '#ffd21f'); fill.addColorStop(1, '#e09a00');
+    x.fillStyle = fill; x.fillText(letters[k], cx, 0);
+    px += widths[k] + tracking;
+  }
+  if (sub) {
+    x.font = '700 54px "Arial Narrow", "Roboto Condensed", Arial, sans-serif';
+    x.fillStyle = '#f2f2ee';
+    x.fillText(sub.split('').join(String.fromCharCode(8202)), 0, 128);
+  }
+  x.restore();
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
   return t;
 }
 
@@ -51,143 +88,149 @@ function faceX(kit, key, x, y0, y1, z0, z1, dir, vb = 0, vt = 1, u0 = 0, u1 = 1)
 
 export function buildGantry(T, sponsorTex) {
   const g = new THREE.Group();
-  const hw = T.halfWidth, span = hw + GANTRY_LEG;
   const c = trackPoint(T, GANTRY_S, 0), i = c.i;
   const roadY = T.groundAt(c.x, c.z, i);
-  const kit = new Kit();
-  const bankY0 = GANTRY_CLEAR, topY = GANTRY_CLEAR + 2.4, half = span + 0.7;
+  const [zL, zR] = gantryLegs(T);
+  const kit = new Kit(), screens = new Kit();
+  const y0 = GANTRY_CLEAR, y1 = GANTRY_CLEAR + TRUSS_H, hx = DEPTH / 2;
+  const zA = zL - TOWER_HALF + 0.3, zB = zR + TOWER_HALF - 0.3;   // the truss runs into both towers
 
-  // legs: a pair of columns each side, braced on concrete plinths
-  for (const sd of [-1, 1]) {
-    const z = sd * span, p = trackPoint(T, GANTRY_S, z);
-    const base = T.groundAt(p.x, p.z, i) - roadY - 0.5;
-    for (const dx of [-0.6, 0.6]) kit.column('steel', 0.48, 0.48, base, topY + 0.2, dx, z);
-    kit.column('concrete', 2.2, 2.2, base, base + 1.0, 0, z);
-    // heavy cross-bracing on the legs: X-pattern with thicker diagonal members
-    for (let y = base + 2.4; y < topY; y += 2.8) {
-      kit.box('steel', 1.2, 0.14, 0.14, 0, y, z);
-      const len = Math.hypot(1.2, 2.8);
-      for (const sx of [-1, 1]) {
-        kit.box('steel', 0.12, len, 0.12, sx * 0.6, y + 1.4, z, 0, 0, 0, sx * Math.atan2(1.2, 2.8));
-      }
+  // --- towers: four box-section posts on a concrete plinth, ringed every 2.5 m, X-braced on every face ------------
+  const towerTop = y1 + 1.4;
+  for (const zc of [zL, zR]) {
+    const p = trackPoint(T, GANTRY_S, zc), base = T.groundAt(p.x, p.z, p.i) - roadY;
+    const ax = hx + 0.2, az = TOWER_HALF - 0.25;
+    kit.column('concrete', DEPTH + 1.6, TOWER_HALF * 2 + 1.0, base - 0.6, base + 1.1, 0, zc, 0, 2);
+    kit.column('concrete', DEPTH + 1.9, TOWER_HALF * 2 + 1.3, base + 1.1, base + 1.25, 0, zc, 0, 2);   // plinth lip
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) kit.column('steel', 0.42, 0.42, base + 1.1, towerTop, sx * ax, zc + sz * az);
+    const rings = []; for (let y = base + 1.1; y < towerTop - 0.5; y += 2.5) rings.push(y);
+    rings.push(towerTop - 0.1);
+    for (const y of rings) {
+      for (const sx of [-1, 1]) kit.box('steel', 0.2, 0.2, az * 2, sx * ax, y, zc);
+      for (const sz of [-1, 1]) kit.box('steel', ax * 2, 0.2, 0.2, 0, y, zc + sz * az);
     }
-    // timing loop cabinet and speaker mounted on the inside face
-    kit.box('housing', 0.6, 1.0, 0.4, 1.1, base + 1.8, z - sd * 0.15);
-    kit.box('housing', 0.35, 0.35, 0.35, -0.8, topY - 1.1, z - sd * 0.6);
+    for (let r = 0; r < rings.length - 1; r++) {
+      const ya = rings[r], yb = rings[r + 1];
+      for (const sx of [-1, 1]) { beam(kit, 'steel', [sx * ax, ya, zc - az], [sx * ax, yb, zc + az], 0.12); beam(kit, 'steel', [sx * ax, ya, zc + az], [sx * ax, yb, zc - az], 0.12); }
+      for (const sz of [-1, 1]) { beam(kit, 'steel', [-ax, ya, zc + sz * az], [ax, yb, zc + sz * az], 0.12); beam(kit, 'steel', [ax, ya, zc + sz * az], [-ax, yb, zc + sz * az], 0.12); }
+    }
+    kit.box('housing', ax * 2 + 0.6, 0.35, az * 2 + 0.6, 0, towerTop + 0.1, zc);    // cap
+    // sponsor wrap round the foot of each tower, all four sides
+    const wy0 = base + 1.35, wy1 = base + 4.1, k = zc < 0 ? 0 : 1;
+    const [b0, t0] = sponsorRow(0), [b1, t1] = sponsorRow(tex.MODERN_SPONSORS[(k * 5 + 3) % tex.MODERN_SPONSORS.length]);
+    faceX(kit, 'sponsor', -ax - 0.23, wy0, wy1, zc - az - 0.2, zc + az + 0.2, -1, b0, t0);
+    faceX(kit, 'sponsor', ax + 0.23, wy0, wy1, zc - az - 0.2, zc + az + 0.2, 1, b1, t1);
+    const sg = zc < 0 ? 1 : -1, zf = zc + sg * (az + 0.23), e = ax + 0.2;   // the face towards the track, facing sg * z
+    const uv = [[0, b1], [1, b1], [1, t1], [0, t1]];
+    if (sg > 0) kit.quad('sponsor', [-e, wy0, zf], [e, wy0, zf], [e, wy1, zf], [-e, wy1, zf], uv);
+    else kit.quad('sponsor', [e, wy0, zf], [-e, wy0, zf], [-e, wy1, zf], [e, wy1, zf], uv);
+    // a maintenance ladder up the back of the tower, and a timing cabinet at its foot
+    for (const lz of [-0.25, 0.25]) kit.column('steel', 0.05, 0.05, base + 1.25, towerTop, ax + 0.45, zc + lz);
+    for (let y = base + 1.5; y < towerTop; y += 0.35) kit.box('steel', 0.04, 0.04, 0.5, ax + 0.45, y, zc);
+    kit.box('housing', 0.9, 1.4, 0.6, -ax - 0.2, base + 1.95, zc - sg * (az + 0.5));
   }
 
-  // deep truss between the legs: outer and inner chords plus a center beam
-  for (const x of [-0.65, 0, 0.65]) for (const y of [bankY0 + 0.15, topY]) {
-    kit.box('steel', 0.24, 0.24, half * 2, x, y, 0);
-  }
-  // vertical uprights and diagonals in bay sections
-  const bays = Math.round(half * 2 / 1.6), bay = half * 2 / bays;
+  // --- the box truss: four chords, verticals, diagonals on both faces and on top -------------------------------------
+  for (const sx of [-1, 1]) for (const y of [y0, y1]) kit.box('steel', 0.3, 0.3, zB - zA, sx * hx, y, (zA + zB) / 2);
+  const bays = Math.round((zB - zA) / 2.2), bay = (zB - zA) / bays;
   for (let k = 0; k <= bays; k++) {
-    const z = -half + k * bay;
-    for (const x of [-0.65, 0, 0.65]) {
-      kit.box('steel', 0.12, topY - bankY0 - 0.15, 0.12, x, (topY + bankY0 + 0.15) / 2, z);
-    }
-    kit.box('steel', 1.3, 0.12, 0.12, 0, topY, z);
-    kit.box('steel', 1.3, 0.12, 0.12, 0, bankY0 + 0.15, z);
+    const z = zA + k * bay;
+    for (const sx of [-1, 1]) kit.column('steel', 0.16, 0.16, y0, y1, sx * hx, z);
+    kit.box('steel', DEPTH, 0.14, 0.14, 0, y1, z);
+    kit.box('steel', DEPTH, 0.14, 0.14, 0, y0, z);
     if (k < bays) {
-      const h = topY - bankY0 - 0.15, len = Math.hypot(bay, h);
-      for (const x of [-0.65, 0.65]) {
-        kit.box('steel', 0.10, len, 0.10, x, (topY + bankY0 + 0.15) / 2, z + bay / 2, 0, 0, (k % 2 ? 1 : -1) * Math.atan2(bay, h));
+      for (const sx of [-1, 1]) beam(kit, 'steel', [sx * hx, k % 2 ? y0 : y1, z], [sx * hx, k % 2 ? y1 : y0, z + bay], 0.12);
+      beam(kit, 'steel', [-hx, y1, z], [hx, y1, z + bay], 0.1);
+      beam(kit, 'steel', [-hx, y0, z + bay], [hx, y0, z], 0.1);
+    }
+  }
+  // catwalk grating along the top with a handrail on the back edge
+  kit.box('grate', DEPTH - 0.6, 0.06, zB - zA - 1, 0, y1 + 0.2, (zA + zB) / 2);
+  for (let z = zA + 0.5; z <= zB - 0.4; z += 2.2) kit.column('steel', 0.05, 0.05, y1 + 0.2, y1 + 1.25, hx - 0.15, z);
+  kit.box('steel', 0.06, 0.06, zB - zA - 1, hx - 0.15, y1 + 1.25, (zA + zB) / 2);
+
+  // --- fascia: dark cladding on both faces, the LED ribbon over the track, sponsor panels over the pit lane and run-off --
+  const fy0 = y0 + 0.35, fy1 = y1 - 0.35, ry0 = (fy0 + fy1) / 2 - RIBBON_H / 2, ry1 = ry0 + RIBBON_H;
+  const rz0 = -RIBBON_W / 2, rz1 = RIBBON_W / 2;
+  for (const dir of [-1, 1]) {
+    const fx = dir * (hx + 0.17);
+    kit.box('housing', 0.12, fy1 - fy0, zB - zA - 0.6, dir * (hx + 0.08), (fy0 + fy1) / 2, (zA + zB) / 2);
+    faceX(screens, 'ribbon', fx + dir * 0.02, ry0, ry1, rz0, rz1, dir);
+    // a lit frame round the ribbon
+    for (const [ya, yb] of [[ry1, ry1 + 0.08], [ry0 - 0.08, ry0]]) faceX(kit, 'trim', fx + dir * 0.01, ya, yb, rz0 - 0.08, rz1 + 0.08, dir);
+    for (const [za, zb] of [[rz0 - 0.08, rz0], [rz1, rz1 + 0.08]]) faceX(kit, 'trim', fx + dir * 0.01, ry0, ry1, za, zb, dir);
+    // sponsor panels beyond the ribbon, as many as fit at a 3:1 board shape
+    let n = 0;
+    for (const [za, zb] of [[zA + 0.8, rz0 - 0.6], [rz1 + 0.6, zB - 0.8]]) {
+      const len = zb - za, h = fy1 - fy0 - 0.3, count = Math.max(1, Math.round(len / (h * 3.2))), w = len / count;
+      for (let q = 0; q < count; q++, n++) {
+        const [b0, t0] = sponsorRow(tex.MODERN_SPONSORS[(n * 3 + (dir > 0 ? 5 : 0)) % tex.MODERN_SPONSORS.length]);
+        faceX(kit, 'sponsor', fx, fy0 + 0.15, fy1 - 0.15, za + q * w + 0.15, za + (q + 1) * w - 0.15, dir, b0, t0);
       }
     }
   }
 
-  // main screens and text board on top: PowerMedia video on front, START/FINISH text on back
-  const sw = 10.0, sy0 = topY + 0.4, sy1 = sy0 + 1.2;
-  kit.box('steel', 0.28, sy1 - sy0 + 0.12, sw * 2 + 0.25, 0, (sy0 + sy1) / 2, 0);
-  for (const z of [-sw + 0.6, -sw / 2, 0, sw / 2, sw - 0.6]) kit.box('steel', 0.24, sy0 - topY, 0.22, 0, (topY + sy0) / 2, z);
-  // back face: text panel
-  faceX(kit, 'text', -0.16, sy0, sy1, -sw, sw, -1);
-  // front face: will hold still board (video mesh added separately)
-  faceX(kit, 'banner', 0.16, sy0, sy1, -sw, sw, 1, 0, 1);
-  // top edge cap with detail
-  kit.box('steel', 0.4, 0.12, sw * 2 + 0.35, 0, sy1 + 0.08, 0);
-  kit.box('steel', 0.14, 0.08, sw * 2 + 0.25, 0, sy1 + 0.26, 0);
+  // --- crowns on top: LAKESIDE to the cars arriving, START / FINISH to the cars leaving -------------------------------
+  const cw = 17, ch = cw * 320 / 2048, cy0 = y1 + 1.5, cy1 = cy0 + ch;
+  for (const z of [-cw / 2 + 1.5, -cw / 6, cw / 6, cw / 2 - 1.5]) {
+    kit.column('steel', 0.2, 0.2, y1, cy0 + 0.2, -0.35, z);
+    beam(kit, 'steel', [-0.35, y1, z], [0.6, y1 + 1.3, z], 0.1);
+  }
+  kit.box('housing', 0.4, ch + 0.3, cw + 0.3, -0.15, (cy0 + cy1) / 2, 0);
+  kit.box('trim', 0.42, 0.08, cw + 0.34, -0.15, cy1 + 0.17, 0);
+  faceX(kit, 'crownFront', -0.36, cy0, cy1, -cw / 2, cw / 2, -1);
+  faceX(kit, 'crownBack', 0.06, cy0, cy1, -cw / 2, cw / 2, 1);
 
-  // sponsor boards on both sides of the truss (visible from the sides)
-  const rows = tex.MODERN_SPONSORS;
-  const panels = [[-9.2, -4.6], [4.6, 9.2]];
-  panels.forEach(([z0, z1], k) => {
-    const [b0, t0] = sponsorRow(rows[(k + 1) % rows.length]);
-    faceX(kit, 'sponsor', -0.8, bankY0 + 0.3, topY - 0.12, z0, z1, -1, b0, t0);
-  });
-  [[-9.2, -4.8], [-4.6, 0], [0.2, 4.8], [4.6, 9.2]].forEach(([z0, z1], k) => {
-    const [b0, t0] = sponsorRow(rows[(k + 4) % rows.length]);
-    faceX(kit, 'sponsor', 0.8, bankY0 + 0.3, topY - 0.12, z0, z1, 1, b0, t0);
-  });
-
-  // lighting rig: long bar on the grid side with five modules
+  // --- start lights: five pods under the truss on the grid side, a bar of red lamps each -----------------------------
   const hy = 7.0;
-  kit.box('housing', 0.7, 1.15, 9.8, -1.1, hy, 0);
+  kit.box('housing', 0.7, 0.3, 11.2, -0.9, y0 - 0.12, 0);
   const lamp = new THREE.CircleGeometry(0.22, 24);
   const lights = [];
   for (let k = 0; k < 5; k++) {
-    const z = (k - 2) * 1.9;
-    kit.box('housing', 0.16, 1.05, 1.5, -1.5, hy, z);
-    // structural pod frame
-    kit.box('steel', 0.08, 0.7, 0.08, -0.9, hy - 0.3, z);
+    const z = (k - 2) * 2.1;
+    kit.box('housing', 0.5, 1.15, 1.5, -1.2, hy, z);
+    kit.box('steel', 0.1, y0 - hy - 0.5, 0.1, -1.0, (hy + 0.55 + y0) / 2, z);
     const pair = [];
-    for (const y of [-0.3, 0.3]) {
+    for (const y of [-0.28, 0.28]) {
       const m = new THREE.Mesh(lamp, new THREE.MeshStandardMaterial({ color: 0x5a0f0f, emissive: 0xff1a1a, emissiveIntensity: 0, roughness: 0.4 }));
       m.position.set(-1.5, hy + y, z);
       m.rotation.y = -Math.PI / 2;
       g.add(m);
       pair.push(m);
-      kit.box('housing', 0.14, 0.04, 0.54, -1.6, hy + y + 0.25, z);
+      kit.box('housing', 0.16, 0.04, 0.54, -1.58, hy + y + 0.25, z);   // visor
     }
     lights.push(pair);
   }
-  // camera pods: on the back of the lamp housing and on the wing positions
-  for (const z of [-5.7, 0, 5.7]) kit.box('housing', 0.48, 0.48, 0.48, -1.0, hy + 0.9, z);
-  // catwalk structure along the top of the truss
-  kit.box('steel', 0.08, 0.05, sw * 2 + 0.4, 0, topY + 0.05, 0);
-  for (let k = 0; k <= bays; k++) {
-    const z = -half + k * bay;
-    kit.box('steel', 0.08, 0.05, 0.16, 0, topY + 0.1, z);
-  }
+  // TV camera pods on the front chord, aimed down the straight
+  for (const z of [-11, 11]) { kit.box('housing', 0.7, 0.5, 0.5, -hx - 0.5, y0 + 0.4, z); kit.box('housing', 0.3, 0.3, 0.3, -hx - 1.0, y0 + 0.4, z); }
 
-  // Build materials
-  const steel = new THREE.MeshStandardMaterial({ color: 0x2a2e34, roughness: 0.52, metalness: 0.6 });
-  const textMat = new THREE.MeshStandardMaterial({ map: gantryTextTexture(), roughness: 0.4 });
-  const stillBannerMat = new THREE.MeshStandardMaterial({ map: tex.gantryBannerTexture(), roughness: 0.4, toneMapped: false });
+  // --- materials -----------------------------------------------------------------------------------------------------
+  const steel = new THREE.MeshStandardMaterial({ color: 0x2a2e34, roughness: 0.5, metalness: 0.6 });
   const mats = {
     steel,
-    housing: new THREE.MeshStandardMaterial({ color: 0x0f1114, roughness: 0.6, metalness: 0.15 }),
+    housing: new THREE.MeshStandardMaterial({ color: 0x111317, roughness: 0.55, metalness: 0.2 }),
+    grate: new THREE.MeshStandardMaterial({ color: 0x3a3e44, roughness: 0.7, metalness: 0.5 }),
     concrete: new THREE.MeshStandardMaterial({ map: tex.standConcreteTexture(), roughness: 0.92 }),
-    text: textMat,
-    banner: stillBannerMat,
+    trim: new THREE.MeshStandardMaterial({ color: 0xffd21f, emissive: 0xffd21f, emissiveIntensity: 0.25, roughness: 0.4 }),
+    crownFront: new THREE.MeshStandardMaterial({ map: crownTexture('LAKESIDE', 'S T A R T  /  F I N I S H'), roughness: 0.45 }),
+    crownBack: new THREE.MeshStandardMaterial({ map: crownTexture('FINISH', null), roughness: 0.45 }),
     sponsor: new THREE.MeshStandardMaterial({ map: sponsorTex, roughness: 0.48 }),
   };
+  for (const k of ['steel', 'grate', 'concrete']) mats[k].userData.wet = 'surface';
   const body = kit.build(mats);
   body.traverse(o => { if (o.isMesh) o.userData.debug = 'building'; });
   g.add(body);
 
-  // Video screen: create a separate mesh for the PowerMedia video, layered over the still board
-  // Build it the same way as bridge.js does: create geometry separately, add with video texture
-  const videoGeom = new THREE.BufferGeometry();
-  const pos = [0.16, sy0, -sw, 0.16, sy0, sw, 0.16, sy1, sw, 0.16, sy1, -sw];
-  videoGeom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  videoGeom.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
-  videoGeom.setIndex([0, 1, 2, 0, 2, 3]);
-  videoGeom.computeVertexNormals();
-
-  const videoMat = new THREE.MeshBasicMaterial({ toneMapped: false });
-  const videoTex = bannerVideo(() => {
-    videoMesh.visible = true;
-  });
-  videoMat.map = videoTex || null;
-  const videoMesh = new THREE.Mesh(videoGeom, videoMat);
-  videoMesh.visible = false;
-  videoMesh.userData.debug = 'building';
-  g.add(videoMesh);
+  // The ribbons show the still board until the shared video can play, then the same material switches to the video.
+  // One mesh per face and a texture swap, never two meshes in one place, so nothing can flicker however cull.js merges.
+  const ribbonMat = new THREE.MeshBasicMaterial({ map: tex.gantryBannerTexture(), toneMapped: false });
+  const videoTex = bannerVideo(() => { ribbonMat.map = videoTex; ribbonMat.needsUpdate = true; });
+  const ribbons = screens.build({ ribbon: ribbonMat });
+  ribbons.traverse(o => { if (o.isMesh) o.userData.debug = 'building'; });
+  g.add(ribbons);
 
   g.userData.lights = lights;
-  g.userData.bounds = { s: GANTRY_S, span, legs: [-span, span], clear: GANTRY_LOWEST };
+  g.userData.bounds = { s: GANTRY_S, span: Math.max(-zA, zB), legs: [zL, zR], clear: GANTRY_LOWEST };
   g.position.set(c.x, roadY, c.z);
   g.rotation.y = -Math.atan2(c.tz, c.tx);
   for (const l of lights) for (const m of l) m.castShadow = false;

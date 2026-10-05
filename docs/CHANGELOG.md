@@ -1,5 +1,20 @@
 # Changelog
 
+## Start gantry rebuilt over the track and the pit lane
+
+From the reports at s=3824 (supports too close, too basic) and the owner's choice of a span over the pit lane.
+
+- Two four-post lattice towers on concrete plinths, X-braced on every face, ladders, sponsor wraps at the foot. The left tower stands behind the low wall on the garage side of the pit lane (30.0 m from the centre line), the right one behind the containment wall (31.3 m). `gantryLegs(T)` works them out; `tools/venue.js` checks that each is behind its wall, clear of every barrier and off the stands.
+- A 61 m box truss (2.6 m deep, 3 m tall) with chords, verticals, diagonals on both faces and the top, and a catwalk with a handrail.
+- Both faces: dark cladding, a 30 m x 1 m LED ribbon over the track (the PowerMedia loop at its own 30:1) in a lit yellow frame, sponsor panels over the pit lane and the run-off.
+- Crowns on top: LAKESIDE with START / FINISH under it, facing the cars arriving; FINISH on the back. Heavy slanted display type (Impact or Arial Black, sheared, gold gradient, white keyline, drop shadow), chequers at both ends, speed stripes.
+- Start lights unchanged in position (five pods, red lamps, 6.25 m lowest point), with black faces.
+- The old video quad sat on the back face and faced into the steel, so it never showed. The ribbons are now one mesh per face whose material swaps from the still board to the video when it can play: there is never a second mesh in the same place to flicker.
+
+## Footbridge screens no longer flicker
+
+Reports at s=818 and s=2862: the still board and the video drew in the same place. `cull.js` merges small static meshes and hides the originals, so hiding the still did nothing once it was merged. The footbridge screens are now marked `noMerge`.
+
 ## Footbridge video the right way up
 
 The PowerMedia loop under each footbridge deck was one plane turned by an Euler rotation that only lay flat for a bridge square to the X axis; on Footbridge East it stood near vertical and faced away. It is now two upright screens hung under the deck edge (30:1, in a dark housing), one facing the cars coming towards the bridge and one facing the way they go, both reading left to right.

@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { bannerVideo } from './bannerVideo.js';
 import * as tex from './textures.js';
-import { Kit, metreUV, sponsorPanel, trackPoint, hash01 } from './meshKit.js';
+import { Kit, metreUV, sponsorPanel, trackPoint, hash01, beam } from './meshKit.js';
 import { frame, checkStand, wallClearance, standDepth, GAP } from './grandstands.js';
 import { lampMaterial, flagMaterial, addFlag, onLampLevel } from './lamps.js';
 
@@ -166,12 +166,6 @@ export function planSmall(T, ground, blockers, obstacles) {
 // ---- drawing ----------------------------------------------------------------------------------------------------------
 
 // a box from point A to point B (any direction), `t` and `t2` thick
-function beam(kit, key, a, b, t = 0.1, t2 = t) {
-  const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz);
-  if (L < 1e-4) return;
-  kit.box(key, L, t, t2, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, Math.atan2(-dz, dx), 0, 0, Math.atan2(dy, Math.hypot(dx, dz)));
-}
-
 let signAtlas = null;
 function signTexture() {
   if (signAtlas) return signAtlas;
@@ -309,6 +303,7 @@ function footbridge(kit, b, videoGroup) {
         mesh.position.set(p[0], vy, p[2]);
         mesh.rotation.y = yaw + (sg > 0 ? Math.PI : 0);
         mesh.userData.debug = 'building';
+        mesh.userData.noMerge = true;   // cull.js must not batch the still: it is hidden once the video plays
         list.push(mesh); videoGroup.add(mesh);
       }
       kit.box('steel', vw + 0.3, vh + 0.2, 0.1, p[0] - c.tx * sg * 0.06, vy, p[2] - c.tz * sg * 0.06, yaw);   // the screen housing

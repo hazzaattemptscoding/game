@@ -11,7 +11,7 @@
 import { buildTrack } from '../src/track.js';
 import { createGround, sceneryFootprints } from '../src/scenery.js';
 import { planStands, trackBlockers, wallClearance, SITES, GAP } from '../src/grandstands.js';
-import { GANTRY_CLEAR, GANTRY_LOWEST, GANTRY_LEG, GANTRY_S } from '../src/gantry.js';
+import { GANTRY_CLEAR, GANTRY_LOWEST, GANTRY_S, TOWER_HALF, gantryLegs } from '../src/gantry.js';
 import { planPiers, pierBlocked } from '../src/bridge.js';
 import { trackPoint } from '../src/meshKit.js';
 import { planExtras, footBlockers, footprintPoints, SMALL_RULES } from '../src/venueExtras.js';
@@ -101,16 +101,19 @@ console.log(`  ${small.signs.length} signs, ${small.bins.length} bins, ${small.f
 
 // ---- gantry
 {
-  const c = trackPoint(T, GANTRY_S, 0), i = c.i, span = T.halfWidth + GANTRY_LEG;
+  const c = trackPoint(T, GANTRY_S, 0), i = c.i, legs = gantryLegs(T);
   if (GANTRY_LOWEST < 6) fail(`gantry clearance ${GANTRY_LOWEST} m is under 6 m`);
   if (GANTRY_CLEAR < GANTRY_LOWEST) fail('gantry truss is lower than what hangs from it');
-  for (const sd of [-1, 1]) {
-    const side = sd < 0 ? 0 : 1, edge = T.halfWidth + T.kerb[side][i] + T.sausage[side][i];
-    if (span - 0.9 < edge + 1) fail(`gantry leg ${side ? 'right' : 'left'} is only ${(span - 0.9 - edge).toFixed(1)} m from the kerb`);
-    const p = trackPoint(T, GANTRY_S, sd * span);
-    for (const sg of T.segs) if (segDist(p.x, p.z, sg) < 1.6 + 0.9) { fail(`gantry leg ${side ? 'right' : 'left'} is ${segDist(p.x, p.z, sg).toFixed(1)} m from a barrier`); break; }
-    if (side === 0 && T.pitIn[i] && span + 0.9 > T.pitIn[i] - 0.6 - 1) fail('gantry leg stands too close to the pit wall');
+  for (const d of legs) {
+    const side = d < 0 ? 0 : 1, inner = Math.abs(d) - TOWER_HALF;
+    // a tower stands behind a wall: beyond the containment wall on the right, beyond the pit lane's outer wall on the left
+    const wall = side === 0 && T.pitOut[i] ? T.pitOut[i] : T.wall[side][i];
+    if (inner < wall + 0.5) fail(`gantry tower ${side ? 'right' : 'left'} is not behind the wall (${inner.toFixed(1)} m out, wall ${wall.toFixed(1)} m)`);
+    const p = trackPoint(T, GANTRY_S, d);
+    for (const sg of T.segs) if (segDist(p.x, p.z, sg) < TOWER_HALF + 0.4) { fail(`gantry tower ${side ? 'right' : 'left'} is ${segDist(p.x, p.z, sg).toFixed(1)} m from a barrier`); break; }
+    if (inObstacle(p.x, p.z)) fail(`gantry tower ${side ? 'right' : 'left'} stands on a stand or building`);
   }
+  console.log(`  start gantry: towers ${legs.map(d => d.toFixed(1)).join(' and ')} m from the centre line, span ${(legs[1] - legs[0]).toFixed(1)} m`);
 }
 
 // ---- bridge piers

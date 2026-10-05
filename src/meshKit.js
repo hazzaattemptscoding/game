@@ -73,6 +73,13 @@ export function metreUV(g, tile) {
 }
 
 // row of the sponsor atlas as [vBottom, vTop]
+// a square-section member from point a to point b ([x, y, z]), t thick (t2 deep)
+export function beam(kit, key, a, b, t = 0.1, t2 = t) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz);
+  if (L < 1e-4) return;
+  kit.box(key, L, t, t2, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, Math.atan2(-dz, dx), 0, 0, Math.atan2(dy, Math.hypot(dx, dz)));
+}
+
 export function sponsorRow(row) {
   const rows = tex.SPONSORS.length;
   return [1 - (row + 1) / rows, 1 - row / rows];
