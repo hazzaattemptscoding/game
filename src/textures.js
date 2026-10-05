@@ -603,3 +603,7 @@ export function numberSheet() {
   }
   return finish(c, { repeat: false });
 }
+
+// One sponsor atlas shared by everything that draws boards (the canvas is big, and logo files are fetched into it once).
+let sharedAtlas = null;
+export function sharedSponsorAtlas() { return (sharedAtlas ||= sponsorAtlas()); }

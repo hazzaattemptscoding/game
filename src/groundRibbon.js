@@ -13,7 +13,7 @@
 
 const MAX_PIECE = 6;
 const BANDS = 9;                       // kerb, sausage up, sausage down, apron, gravel, grass A, pit, grass B, outer grass
-const U_SCALE = { kerb: 2, sausage: 1.6, apron: 8, concrete: 15, gravel: 6, grass: 40, pit: 16, road: 8, island: 4 };
+const U_SCALE = { kerb: 2, sausage: 1.6, apron: 8, concrete: 15, gravel: 6, grass: 40, meadow: 24, pit: 16, road: 8, island: 4 };
 const PIT_FADE = 10, TARMAC_TONE = 0.76;   // the pit asphalt takes its own tone over 10 m after the mouth
 
 const wrap = (i, n) => ((i % n) + n) % n;
@@ -46,7 +46,7 @@ export function buildGroundRibbon(T, strips, P, G) {
         if (sd === 0 && T.pitMouth[i] && T.pitOut[i] > 0) { push(0, 'grass'); push(T.pitOut[i] - c, 'road'); push(wall - c, 'grass'); }
         else if (sd === 0 && T.pitOut[i] > 0) { push(T.pitIn[i] - c, T.pitIsland[i] ? 'island' : 'grass'); push(T.pitOut[i] - c, 'pit'); push(wall - c, 'grass'); }
         else { push(wall - c, 'grass'); push(0, 'pit'); push(0, 'grass'); }
-        push(Math.min(wall + 15, T.room[sd][i]) - c, 'grass');
+        push(Math.min(wall + 15, T.room[sd][i]) - c, 'meadow');   // beyond the containment wall: longer, rougher grass
       }
       E.push(e); MAT.push(m);
     }

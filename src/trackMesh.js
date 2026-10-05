@@ -12,6 +12,7 @@ import * as tex from './textures.js';
 import { buildGroundRibbon } from './groundRibbon.js';
 import { buildGantry, buildStartPaint } from './gantry.js';
 import { buildBridge } from './bridge.js';
+import { meadowMaterial } from './scenery.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
 const DECAL = 0.006;          // paint sits this far above the surface, drawn with polygonOffset so it never fights
@@ -45,7 +46,7 @@ export function buildTrackScene(T, ground) {
   const sOf = (i, j, idx) => (j === idx.length - 1 && i === idx[0] && j > 0 ? T.length : T.s[i]);
   const off = (factor = -2) => ({ polygonOffset: true, polygonOffsetFactor: factor, polygonOffsetUnits: factor * 2 });
 
-  const sponsorTex = tex.sponsorAtlas();
+  const sponsorTex = tex.sharedSponsorAtlas();
   const mat = {
     road: new THREE.MeshStandardMaterial({ map: tex.tarmacTexture(), roughness: 0.9 }),
     line: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.6, ...off(-3) }),
@@ -54,7 +55,8 @@ export function buildTrackScene(T, ground) {
     apron: new THREE.MeshStandardMaterial({ map: tex.runoffTexture(), roughness: 0.9, ...off(-2) }),
     concrete: new THREE.MeshStandardMaterial({ map: tex.runwayTexture(), roughness: 0.95, ...off(-2) }),
     rumble: new THREE.MeshStandardMaterial({ map: tex.rumbleTexture(), roughness: 0.85, ...off(-3) }),
-    grass: new THREE.MeshStandardMaterial({ map: tex.grassTexture(), roughness: 1 }),
+    grass: new THREE.MeshStandardMaterial({ map: tex.mownGrassTexture(), roughness: 1 }),
+    meadow: meadowMaterial(),
     gravel: new THREE.MeshStandardMaterial({ map: tex.gravelTexture(), roughness: 1, ...off(-2) }),
     gravelEdge: new THREE.MeshStandardMaterial({ color: 0x6e5a3c, roughness: 1, ...off(-3) }),
     pit: new THREE.MeshStandardMaterial({ map: tex.pitAsphaltTexture(), vertexColors: true, roughness: 0.85, ...off(-2) }),
@@ -78,7 +80,7 @@ export function buildTrackScene(T, ground) {
   const DEBUG_OF = {
     road: 'road', line: 'line', kerb: 'kerb', sausage: 'sausage', apron: 'runoff', concrete: 'runoff', rumble: 'rumble', grass: 'grass',
     gravel: 'gravel', gravelEdge: 'gravel', pit: 'pit', island: 'island', armco: 'armco', armcoSingle: 'armcoSingle',
-    wallConcrete: 'pitwall', street: 'street', parapet: 'parapet', sponsor: 'tyres', tyre: 'tyres', white: 'tyres',
+    wallConcrete: 'pitwall', meadow: 'grass', street: 'street', parapet: 'parapet', sponsor: 'tyres', tyre: 'tyres', white: 'tyres',
     fence: 'fence', garage: 'building', glass: 'building', roof: 'building', attenuator: 'pitwall', pitOuter: 'pitwall',
   };
 
@@ -117,7 +119,7 @@ export function buildTrackScene(T, ground) {
   for (const sd of [0, 1]) {
     const g = sd ? 1 : -1;
     for (const run of runs(T.N, i => !T.isBridge[i])) {
-      strips('grass').strip(run, i => P(i, g * T.wall[sd][i], -1.5), i => P(i, g * T.wall[sd][i]), (i, j) => sOf(i, j, run) / 40, 0, 0.1);
+      strips('meadow').strip(run, i => P(i, g * T.wall[sd][i], -1.5), i => P(i, g * T.wall[sd][i]), (i, j) => sOf(i, j, run) / 24, 0, 0.1);
     }
   }
 

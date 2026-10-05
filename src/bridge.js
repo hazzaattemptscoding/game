@@ -167,7 +167,7 @@ export function buildBridge(T, ground, mat, { Strips }) {
         const q = trackPoint(T, s + dir * along, lat);
         let lo = Infinity, hi = -Infinity;
         for (const [ax, az] of [[0.4, 0], [-0.4, 0], [0, 0.4], [0, -0.4]]) { const y = ground.meshHeight(q.x + ax, q.z + az); lo = Math.min(lo, y); hi = Math.max(hi, y); }
-        return { q, lo, ok: hi - lo < 0.5 };
+        return { q, lo, ok: hi - lo < 0.3 };
       };
       for (let lat = -wL + 0.6; lat <= wR - 0.6; lat += 0.74) {
         let along = 1.0;

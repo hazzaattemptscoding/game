@@ -9,6 +9,33 @@
 import * as THREE from 'three';
 import { wrap } from './track.js';
 import * as tex from './textures.js';
+import { buildGrandstands } from './grandstands.js';
+
+// Longer, rougher grass for everything beyond the containment wall: one texture, one tint, shared by the ground ribbon's
+// outer band and the terrain mesh, so the two meet without a seam. A second look at the same texture at another scale
+// and offset breaks up the repeat.
+const MEADOW_NEAR = [0.62, 0.8, 0.5];   // tint (linear) of the meadow beside the circuit
+let meadowTex = null;
+export function meadowMaterial(vertexColors = false) {
+  meadowTex ||= tex.meadowTexture();
+  const m = new THREE.MeshStandardMaterial({ map: meadowTex, roughness: 1, vertexColors });
+  if (!vertexColors) m.color.setRGB(...MEADOW_NEAR, THREE.LinearSRGBColorSpace);
+  m.onBeforeCompile = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+#ifdef USE_MAP
+      diffuseColor.rgb *= 0.7 + 1.0 * texture2D(map, vMapUv * 0.173 + vec2(0.37, 0.21)).g;
+#endif`);
+  };
+  m.customProgramCacheKey = () => 'meadow-detail';
+  return m;
+}
+
+// smooth value noise in 0..1, for tint variation across the terrain
+const lattice = (a, b) => { let h = Math.imul(a, 374761393) ^ Math.imul(b, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+function vnoise(x, z) {
+  const a = Math.floor(x), b = Math.floor(z), u = x - a, v = z - b, su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v);
+  return lattice(a, b) * (1 - su) * (1 - sv) + lattice(a + 1, b) * su * (1 - sv) + lattice(a, b + 1) * (1 - su) * sv + lattice(a + 1, b + 1) * su * sv;
+}
 
 // Ground height anywhere, matching the track near it and rolling away from it.
 const TERRAIN_SINK = 1.0;   // metres the terrain lies under the surface strips
@@ -90,7 +117,7 @@ export function createGround(T) {
     x0 -= pad; x1 += pad; z0 -= pad; z1 += pad;
     const nx = Math.ceil((x1 - x0) / cell) + 1, nz = Math.ceil((z1 - z0) / cell) + 1;
     const pos = new Float32Array(nx * nz * 3), uv = new Float32Array(nx * nz * 2), col = new Float32Array(nx * nz * 3), ind = [];
-    const c1 = new THREE.Color(0x4f7a3a), c2 = new THREE.Color(0x7c8a4a), tmp = new THREE.Color();
+    const lush = MEADOW_NEAR, dry = [0.92, 0.86, 0.5];
     for (let j = 0; j < nz; j++) for (let k = 0; k < nx; k++) {
       const x = x0 + k * cell, z = z0 + j * cell, n = j * nx + k;
       // The terrain is never cut. Under the circuit it sits TERRAIN_SINK below the surface
@@ -100,10 +127,10 @@ export function createGround(T) {
       const dist = info.dist;
       uv[n * 2] = x / 24; uv[n * 2 + 1] = z / 24;
       lowest = Math.min(lowest, pos[n * 3 + 1]);
-      // mown near the circuit, rougher meadow further out
-      const rough = Math.min(1, Math.max(0, (dist - 60) / 200)) * (0.6 + 0.4 * Math.sin(x * 0.013) * Math.cos(z * 0.011));
-      tmp.copy(c1).lerp(c2, rough);
-      col[n * 3] = tmp.r; col[n * 3 + 1] = tmp.g; col[n * 3 + 2] = tmp.b;
+      // the same tint as the meadow beside the circuit, drifting further out into patches of lush and dry grass
+      const away = Math.min(1, Math.max(0, (dist - 50) / 90)), wide = vnoise(x / 110, z / 110) * 0.6 + vnoise(x / 320 + 9, z / 320) * 0.4;
+      const dryness = away * Math.min(1, Math.max(0, (wide - 0.3) * 2.2)), shade = 1 - away * 0.18 + away * 0.22 * vnoise(x / 28, z / 28);
+      for (let c = 0; c < 3; c++) col[n * 3 + c] = (lush[c] + (dry[c] - lush[c]) * dryness * 0.8) * shade;
       if (j && k) { const a = (j - 1) * nx + k - 1, b = a + 1, c = j * nx + k - 1, d = c + 1; ind.push(a, c, b, b, c, d); }
     }
     const g = new THREE.BufferGeometry();
@@ -112,8 +139,7 @@ export function createGround(T) {
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setIndex(ind);
     g.computeVertexNormals();
-    const grass = tex.grassTexture(31);
-    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: grass, roughness: 1 }));
+    const m = new THREE.Mesh(g, meadowMaterial(true));
     m.receiveShadow = true;
     // last resort: a huge dark earth plane well below everything, so a hole can never show the sky
     const earth = new THREE.Mesh(new THREE.PlaneGeometry(60000, 60000).rotateX(-Math.PI / 2),
@@ -170,6 +196,51 @@ function footing(ground, g, rect, mat, extra = 0.3) {
   return m;
 }
 
+// Where the buildings go, as numbers only (no meshes), so other scenery (grandstands, trees, props) can keep clear of them.
+// s along the lap, d to the side (negative is the pit side).
+export function sceneryLayout(T) {
+  const L = {};
+  const pitRun = [];
+  for (let i = 0; i < T.N; i++) if (T.pitLimiter[i]) pitRun.push(i);
+  L.pitRun = pitRun;
+  if (pitRun.length) {
+    const mid = T.s[pitRun[Math.floor(pitRun.length * 0.5)]], dd = -(T.wall[0][pitRun[0]] + 12);
+    L.watch = { s: mid - 85, d: dd };
+    L.huts = [];
+    for (let k = 0; k < 6; k++) L.huts.push({ s: mid + 90 + k * 11, d: -(T.wall[0][pitRun[0]] + 10) });
+  }
+  L.timekeepers = { s: 4, d: T.wall[1][4] + 4 };
+  L.oldWall = { s0: T.length - 170, s1: T.length - 50 };
+  L.hangar = T.fromSketch(600, 382);
+  L.tower = T.fromSketch(470, 332);
+  L.runway = { a: T.fromSketch(250, 392), b: T.fromSketch(480, 506) };
+  L.perimeter = { s0: T.sAtPointRaw(53.4), s1: T.sAtPointRaw(57.2) };
+  return L;
+}
+
+// Circles (x, z, r) that cover every building and slab above, for keeping other things clear of them.
+export function sceneryFootprints(T) {
+  const L = sceneryLayout(T), out = [];
+  const at = (s, d) => {
+    const i = wrap(Math.round(s / T.ds), T.N);
+    return { x: T.x[i] + T.nx[i] * d, z: T.z[i] + T.nz[i] * d };
+  };
+  const add = (p, r, name) => out.push({ x: p.x, z: p.z, r, name });
+  if (L.watch) add(at(L.watch.s, L.watch.d), 9, 'watch office');
+  if (L.huts) L.huts.forEach((h, k) => add(at(h.s, h.d), 7, 'hut ' + k));
+  add(at(L.timekeepers.s, L.timekeepers.d), 3.5, 'timekeepers');
+  for (let s = L.oldWall.s0; s < L.oldWall.s1; s += 6) add(at(s, T.wall[1][wrap(Math.round(s / T.ds), T.N)] + 8), 3.5, 'old pit wall');
+  add(L.hangar, 32, 'hangar');
+  add(L.tower, 6, 'water tower');
+  const { a, b } = L.runway, len = Math.hypot(b.x - a.x, b.z - a.z);
+  for (let t = 0; t <= len; t += 20) add({ x: a.x + (b.x - a.x) * t / len, z: a.z + (b.z - a.z) * t / len }, 27, 'old runway');
+  for (let s = L.perimeter.s0; s <= L.perimeter.s1; s += 8) {
+    const i = wrap(Math.round(s), T.N), d = T.wall[1][i] + 12;
+    add({ x: T.x[i] + T.nx[i] * d, z: T.z[i] + T.nz[i] * d }, 9, 'old perimeter track');
+  }
+  return out;
+}
+
 export function buildScenery(T, ground) {
   const g = new THREE.Group();
   const M = {
@@ -205,9 +276,11 @@ export function buildScenery(T, ground) {
     return { x, z, y: ground.height(x, z), yaw: -Math.atan2(T.tz[i], T.tx[i]), i };
   };
 
+  const L = sceneryLayout(T);
+
   // --- old runway: 45 m wide, 7.5 m slabs, broken up wherever the new circuit cuts it
   {
-    const a = T.fromSketch(250, 392), b = T.fromSketch(480, 506);
+    const { a, b } = L.runway;
     const len = Math.hypot(b.x - a.x, b.z - a.z), ux = (b.x - a.x) / len, uz = (b.z - a.z) / len;
     const vx = -uz, vz = ux, slab = 7.5, half = 22.5;
     const pos = [], uv = [], ind = [];
@@ -242,7 +315,7 @@ export function buildScenery(T, ground) {
 
   // --- old perimeter track behind the gravel at Mess Straight (12 m wide, cracked)
   {
-    const s0 = T.sAtPointRaw(53.4), s1 = T.sAtPointRaw(57.2), pos = [], uv = [], ind = [];
+    const s0 = L.perimeter.s0, s1 = L.perimeter.s1, pos = [], uv = [], ind = [];
     for (let s = s0; s <= s1; s += 2) {
       const i = wrap(Math.round(s), T.N), d0 = T.wall[1][i] + 6, d1 = d0 + 12;
       const base = pos.length / 3;
@@ -265,24 +338,17 @@ export function buildScenery(T, ground) {
   }
 
   // --- behind the Operations Block: the Watch Office (Race Control) and Dispersal
-  const pitRun = [];
-  for (let i = 0; i < T.N; i++) if (T.pitLimiter[i]) pitRun.push(i);
-  if (pitRun.length) {
-    const mid = T.s[pitRun[Math.floor(pitRun.length * 0.5)]];
-    const wo = at(mid - 85, -(T.wall[0][pitRun[0]] + 12));
-    g.add(watchOffice(M, wo, ground));
+  if (L.watch) {
+    g.add(watchOffice(M, at(L.watch.s, L.watch.d), ground));
     // six Nissen huts in a row, ends facing the paddock road
-    for (let k = 0; k < 6; k++) {
-      const p = at(mid + 90 + k * 11, -(T.wall[0][pitRun[0]] + 10));
-      g.add(nissenHut(M, p, ground));
-    }
+    for (const h of L.huts) g.add(nissenHut(M, at(h.s, h.d), ground));
   }
 
   // --- right side of Runway Straight: the timekeepers' box and the old painted pit wall
   {
-    const tk = at(18, T.wall[1][18] + 4);
+    const tk = at(L.timekeepers.s, L.timekeepers.d);
     g.add(timekeepersBox(M, tk, ground));
-    const s0 = T.length - 170, s1 = T.length - 50;
+    const s0 = L.oldWall.s0, s1 = L.oldWall.s1;
     for (let s = s0; s < s1; s += 3) {
       const p = at(s, T.wall[1][wrap(Math.round(s), T.N)] + 8);
       // each block runs down to the lowest terrain drawn under it
@@ -298,12 +364,14 @@ export function buildScenery(T, ground) {
 
   // --- infield: a Bellman hangar north of Scramble, and the water tower
   {
-    const h = T.fromSketch(600, 382);
+    const h = L.hangar;
     const yaw = -Math.atan2(T.tz[0], T.tx[0]);
     g.add(bellmanHangar(M, { x: h.x, z: h.z, y: ground.height(h.x, h.z), yaw }, ground));
-    const w = T.fromSketch(470, 332);
+    const w = L.tower;
     g.add(waterTower(M, { x: w.x, z: w.z, y: ground.height(w.x, w.z) }, ground));
   }
+
+  g.add(buildGrandstands(T, ground, sceneryFootprints(T)));
 
   return g;
 }
