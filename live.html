@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lakeside Live</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/src/live/live.css">
+</head>
+<body>
+<header id="top">
+  <button id="back" type="button" hidden>All lobbies</button>
+  <h1>Lakeside <span>Live</span></h1>
+  <div id="status"></div>
+</header>
+
+<main id="lobbies">
+  <div id="lobby-list"></div>
+</main>
+
+<main id="live" hidden>
+  <canvas id="gl"></canvas>
+  <div id="tags"></div>
+  <div id="shot"></div>
+  <div id="cams" role="toolbar" aria-label="Camera"></div>
+  <div id="freepad" hidden>
+    <button type="button" data-k="w">Forward</button><button type="button" data-k="a">Left</button><button type="button" data-k="s">Back</button><button type="button" data-k="d">Right</button>
+  </div>
+  <div id="notice" hidden></div>
+  <nav id="tabs" aria-label="Panels">
+    <button type="button" data-tab="tower" class="on">Timing</button>
+    <button type="button" data-tab="tele">Driver</button>
+    <button type="button" data-tab="map">Map</button>
+    <button type="button" data-tab="feed">Events</button>
+  </nav>
+  <section id="tower" class="panel on" data-panel="tower" aria-label="Timing tower"></section>
+  <div id="side">
+    <section id="tele" class="panel" data-panel="tele" aria-label="Driver telemetry"></section>
+    <section id="map" class="panel" data-panel="map" aria-label="Track map"><canvas id="map-canvas"></canvas></section>
+    <section id="feed" class="panel" data-panel="feed" aria-label="Events"></section>
+  </div>
+</main>
+<script type="module" src="/src/live/main.js"></script>
+</body>
+</html>

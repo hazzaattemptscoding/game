@@ -9,7 +9,7 @@ import { createMenu } from './menu.js';
 import { registerScreens } from './menuScreens.js';
 import { resultsScreen } from './results.js';
 import { createSessionHud } from './sessionHud.js';
-import { Flow, PHASE, makeSession, timeTrialRows, raceDistance } from './session.js';
+import { Flow, PHASE, makeSession, timeTrialRows, raceDistance, MODE_NAMES } from './session.js';
 import { START, gridSlot, pitSlot, orbitPose, cinematicPose } from './start.js';
 import { createRaceControl } from './raceControl.js';
 
@@ -186,6 +186,7 @@ export function createDirector(g) {
       const mpPhase = mp.phase;
       if (mpPhase !== lastMpPhase) { lastMpPhase = mpPhase; if (mpPhase === 'joined' && !mp.isHost) rc.syncClock(); }
       rc.tick();
+      if (session && lobby.active) lobby.setMeta({ mode: MODE_NAMES[session.mode] || 'Free practice', laps: session.laps || 0, started: flow.phase === PHASE.RUN || flow.phase === PHASE.START ? session.mode === 'online' || session.mode === 'race' : false });
       if (flow.phase === PHASE.START) {
         if (!menu.isOpen && flow.seq && playerInput) {
           const j = flow.seq.check(now, playerInput.throttle, car.speed * 3.6);

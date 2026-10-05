@@ -10,6 +10,8 @@
   Cache-Control: public, max-age=0, must-revalidate
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
+/live.html
+  Cache-Control: public, max-age=0, must-revalidate
 
 # the built scripts and styles have a content hash in the file name (index-CcO3MopZ.js), so a changed file is a new name
 /assets/*

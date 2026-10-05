@@ -613,6 +613,11 @@ export class Multiplayer {
     for (const p of this.peers.values()) if (p.hello) this.sendTo(p.ctl, { t: 'lv', l: this.livery });
   }
 
+  // Spectators of the room (the live timing page): only over the relay. Telemetry and the room details go out only over the relay too.
+  get spectators() { return this.relayRoom ? this.relayRoom.spectators : 0; }
+  sendTelemetry(bytes) { if (this.relayRoom) this.relayRoom.sendTelemetry(bytes); }
+  sendMeta(m) { return this.relayRoom ? this.relayRoom.sendMeta(m) : false; }
+
   // Broadcast our car (an encoded state array). Called about 20 times a second; never waits.
   sendState(arr) {
     if (this.relayRoom) { this.relayRoom.sendState(arr); return; }

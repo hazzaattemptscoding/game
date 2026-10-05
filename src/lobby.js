@@ -6,6 +6,7 @@
 import { Multiplayer, brokerFromSearch, loadConfig, cleanCode } from './multiplayer.js';
 import { encodeLivery } from './livery.js';
 import { Ghosts, threeFactory, makeProjector, stateFromCar, encodeState } from './ghosts.js';
+import { encodeTelemetry, telemetryFromCar, TELEMETRY_HZ } from './shared/telemetry.js';
 
 const SEND_MS = 50;           // 20 Hz
 const NAME_KEY = 'lakeside-mp-name';
@@ -122,11 +123,20 @@ export function createLobby(ctx) {
   // --- per frame ---
   // the car goes out 20 times a second on a timer, not on the frame, so a slow frame rate does not make us look silent
   setInterval(() => {
-    if (mp.players > 1) mp.sendState(encodeState(stateFromCar(ctx.car, ctx.timer.currentLap(), mp.col, name(), performance.now(), ctx.timer.best, ctx.timer.last)));
+    if (mp.players > 1 || mp.spectators > 0) mp.sendState(encodeState(stateFromCar(ctx.car, ctx.timer.currentLap(), mp.col, name(), performance.now(), ctx.timer.best, ctx.timer.last)));
   }, SEND_MS);
   // the livery goes with the hello and again every 2 s, so a late or lost one still arrives and a repaint reaches everyone
   const sendLivery = () => { const l = liveryNow(); if (l) { mp.setLivery(encodeLivery(l)); } };
-  setInterval(() => { if (mp.players > 1) mp.sendLivery(); }, LIVERY_MS);
+  setInterval(() => { if (mp.players > 1 || mp.spectators > 0) mp.sendLivery(); }, LIVERY_MS);
+  // telemetry for the live timing page, only while somebody is watching; the room details for the lobby list (host only, repeated every 5 s)
+  setInterval(() => { if (mp.spectators > 0) mp.sendTelemetry(encodeTelemetry(telemetryFromCar(ctx.car))); }, 1000 / TELEMETRY_HZ);
+  let meta = { mode: 'Free practice', laps: 0, started: false }, metaSent = '', metaAt = 0;
+  const sendMeta = () => {
+    if (!mp.active || !mp.isHost) { metaSent = ''; return; }
+    const key = JSON.stringify(meta), now = performance.now();
+    if (key !== metaSent || now - metaAt > 5000) { if (mp.sendMeta(meta)) { metaSent = key; metaAt = now; } }
+  };
+  setInterval(sendMeta, 1000);
   sendLivery();
   let size = { w: innerWidth, h: innerHeight }, project = null;
   return {
@@ -135,6 +145,8 @@ export function createLobby(ctx) {
     ghosts,       // for tests and the console
     mp,           // the Multiplayer: the director reads its phase and sends the race start through it
     name,         // our name in the room
+    // what the room is doing, for the lobby list: { mode (a name), laps (0 = open), started (a race is on) }. Host only; sent at once and then every 5 s.
+    setMeta(m) { if (m.mode !== meta.mode || m.laps !== meta.laps || m.started !== meta.started) { meta = { mode: m.mode, laps: m.laps, started: m.started }; sendMeta(); } },
     board(own) { return ghosts.board({ ...own, livery: liveryNow() }); },
     // the player changed their livery: tell the room now (the standings follow on their next redraw)
     liveryChanged() { sendLivery(); lastStand = ''; },     // the lap time board rows, for the Tab board

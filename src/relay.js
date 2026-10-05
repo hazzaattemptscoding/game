@@ -47,10 +47,10 @@ export class RelayClient {
 
   openSocket() {
     let ws;
-    try { ws = new this.WS(`${this.url}/room/${this.code}`); } catch (e) { this.lost(); return; }
+    try { ws = new this.WS(`${this.url}/room/${this.code}${this.spectator ? '?spectator=1' : ''}`); } catch (e) { this.lost(); return; }
     this.ws = ws;
     try { ws.binaryType = 'arraybuffer'; } catch (e) { /* fixed by the implementation */ }
-    ws.onopen = () => { if (this.ws === ws) { this.lastRecv = this.t.now(); this.send({ t: 'join', name: this.name, id: this.token, host: this.host }); } };
+    ws.onopen = () => { if (this.ws === ws) { this.lastRecv = this.t.now(); this.send(this.spectator ? { t: 'join', name: this.name, spectator: true } : { t: 'join', name: this.name, id: this.token, host: this.host }); } };
     ws.onmessage = e => { if (this.ws === ws) this.receive(e.data); };
     ws.onerror = () => { /* a failed socket is followed by close */ };
     ws.onclose = () => { if (this.ws === ws) { this.ws = null; this.lost(); } };
@@ -171,6 +171,7 @@ export class RelayRoom {
     this.me = null;
     this.reconnecting = false;
     this.rtt = null;
+    this.spectators = 0;       // how many people are watching (the live timing page): while it is above 0 we send state and telemetry even when alone
     this.gen++;
     this.timers.clearTimeout(this.timer);
   }
@@ -239,6 +240,7 @@ export class RelayRoom {
   welcome(m, first) {
     this.timers.clearTimeout(this.timer);
     this.me = m.you; this.reconnecting = false;
+    this.spectators = Math.max(0, Math.min(50, Math.round(+m.spectators || 0)));
     const seen = new Set();
     for (const p of Array.isArray(m.players) ? m.players.slice(0, MAX_PLAYERS) : []) {
       if (!p || typeof p.id !== 'number' || p.id === m.you) continue;
@@ -259,6 +261,8 @@ export class RelayRoom {
       this.peers.set(id, { id, name: cleanName(m.name) || 'Player', hello: true });
       this.changed();
       this.sendLivery();      // the newcomer has not seen our paint yet
+    } else if (m.t === 'spec') {
+      this.spectators = Math.max(0, Math.min(50, Math.round(+m.n || 0)));
     } else if (m.t === 'bye' && typeof m.id === 'number') {
       this.dropPeer(peerId(m.id), true);
     } else if (m.t === 'lv' && typeof m.from === 'number' && typeof m.l === 'string') {
@@ -306,11 +310,17 @@ export class RelayRoom {
     return Number.isInteger(n) ? this.client.send({ ...obj, to: n }) : false;
   }
 
-  sendLivery() { if (this.client && this.livery && this.peers.size) this.client.send({ t: 'lv', l: this.livery }); }
+  sendLivery() { if (this.client && this.livery && (this.peers.size || this.spectators)) this.client.send({ t: 'lv', l: this.livery }); }
+
+  // the host's room details for the lobby directory (the relay ignores them from anybody else); m is { mode, laps, started }
+  sendMeta(m) { return !!this.client && this.isHost && this.client.send({ t: 'meta', mode: m.mode, laps: m.laps, started: m.started }); }
+
+  // a telemetry frame (src/shared/telemetry.js): the relay passes it to spectators only, so send it only while somebody watches
+  sendTelemetry(bytes) { if (this.client && this.spectators > 0) this.client.sendBinary(bytes); }
 
   // Broadcast our car (the array from encodeState) as one binary frame. About 20 times a second; never waits.
   sendState(arr) {
-    if (this.client && this.peers.size) this.client.sendBinary(packState(arr));
+    if (this.client && (this.peers.size || this.spectators)) this.client.sendBinary(packState(arr));
   }
 
   teardown() {

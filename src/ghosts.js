@@ -183,8 +183,10 @@ export const raceDistance = (lap, s, length) => lap * length + s;
 // The set of remote cars in the scene. `factory.create(info)` returns an entity with setPose(pose), setOpacity(o),
 // setLabel(screen or null, name, opacity) and dispose(); the browser one is threeFactory below, the test uses a stub.
 export class Ghosts {
-  constructor(factory) {
+  // opts.max: how many cars at most (the game shows the other 7; the live page, a spectator, all 8)
+  constructor(factory, opts = {}) {
     this.factory = factory;
+    this.max = opts.max || MAX_PLAYERS - 1;
     this.map = new Map();    // id -> { id, buf, ent, name, livery, info, opacity }
     this.pending = new Map();   // id -> livery string that arrived before the first state of that player
     this._pose = {};
@@ -198,7 +200,7 @@ export class Ghosts {
   receive(id, st, nowMs) {
     let g = this.map.get(id);
     if (!g) {
-      if (this.map.size >= MAX_PLAYERS - 1) return false;
+      if (this.map.size >= this.max) return false;
       // painted from the player's own livery if it has arrived, else from the default for that player id (the same on every client)
       const livery = this.pending.has(id) ? decodeLivery(this.pending.get(id)) : defaultLivery(id);
       this.pending.delete(id);
