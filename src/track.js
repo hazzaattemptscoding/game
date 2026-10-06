@@ -58,6 +58,21 @@ const PIT_WALL_CLEAR = 6;   // pit wall face at least this far from the track ed
 const PIT_ISLAND = 25;      // painted chevron island at the entry, metres long
 const PIT_APRON = 2;        // apron between the pit lane and the garage doors, metres
 
+// Just the smoothed centreline of a layout, without sides, barriers or pit.
+// The track maker uses it for its live preview. u[i] is the control point
+// parameter at sample i (point 3.5 is halfway between points 3 and 4).
+export function previewCentreline(layout) {
+  const nPts = layout.points.length;
+  let cx = 0, cy = 0;
+  for (const p of layout.points) { cx += p[0]; cy += p[1]; }
+  cx /= nPts; cy /= nPts;
+  const ctrl = layout.points.map(p => ({ x: (p[0] - cx) * layout.scale, z: (p[1] - cy) * layout.scale, h: (p[2] || 0) * layout.heightScale }));
+  let c = catmullRom(ctrl, 40);
+  c = resample(c, DS, nPts);
+  c = openTightCorners(c, layout.minRadius, nPts);
+  return { x: c.x, z: c.z, h: c.h, u: c.u, length: c.length, N: c.x.length, centre: { x: cx, y: cy } };
+}
+
 export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   const nPts = layout.points.length;
 
@@ -112,7 +127,7 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   track.sAtPoint = p => sAtParam(track, p, nPts);
   track.sectors = [0, ...layout.sectors.map(track.sAtPoint)];
   track.drs = layout.drs.map(([a, b]) => [track.sAtPoint(a), track.sAtPoint(b)]);
-  track.bridge = [track.sAtPoint(layout.bridge[0]), track.sAtPoint(layout.bridge[1])];
+  track.bridge = layout.bridge ? [track.sAtPoint(layout.bridge[0]), track.sAtPoint(layout.bridge[1])] : null;   // null: no bridge
   track.sAtPointRaw = p => sAtParam(track, p, nPts);
   track.fromSketch = (px, py) => ({ x: (px - cx) * layout.scale, z: (py - cy) * layout.scale });
 
@@ -126,7 +141,7 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   track.locate = (px, pz, hint, out) => locate(track, px, pz, hint, out);
   track.surfaceAt = (i, d) => surfaceAt(track, i, d);
   track.inDRS = sv => track.drs.some(([a, b]) => inRange(sv, a, b, track.length));
-  track.onBridge = sv => inRange(sv, track.bridge[0], track.bridge[1], track.length);
+  track.onBridge = sv => !!track.bridge && inRange(sv, track.bridge[0], track.bridge[1], track.length);
   track.findNearest = (px, pz, py) => findNearest(track, px, pz, py);
   track.inPitLimiter = (i, d) => !!track.pitLimiter[i] && -d > track.pitIn[i] - 0.5;
   track.collide = (px, pz, cx, cz, py) => collide(track, px, pz, cx, cz, py);
@@ -229,7 +244,7 @@ function buildSides(T, corners) {
   T.concrete = [new Uint8Array(N), new Uint8Array(N)];
   T.street = [new Uint8Array(N), new Uint8Array(N)];
   T.isBridge = new Uint8Array(N);
-  for (let i = 0; i < N; i++) T.isBridge[i] = inRange(T.s[i], T.bridge[0], T.bridge[1], T.length) ? 1 : 0;
+  for (let i = 0; i < N; i++) T.isBridge[i] = T.bridge && inRange(T.s[i], T.bridge[0], T.bridge[1], T.length) ? 1 : 0;
   buildGrid(T);
   buildRoom(T);
   buildPit(T);

@@ -17,12 +17,18 @@ import { CameraRig } from './cameras.js';
 import { createInput } from './input.js';
 import { Hud } from './hud.js';
 import { loadSettings, saveSettings } from './settings.js';
+import { LAYOUT } from './layout.js';
+import { CORNERS } from './corners.js';
+import { getTrack, getActiveId } from './trackStore.js';
+import { openTrackMaker, isMakerOpen } from './editor.js';
 
 const params = new URLSearchParams(location.search);
 const settings = loadSettings();
 
 // --- world ---
-const track = buildTrack();
+// Lakeside by default; a circuit from the track maker if one is chosen (?track=id, or the one last driven)
+const made = getTrack(params.get('track') || getActiveId());
+const track = made ? buildTrack(made.layout, []) : buildTrack(LAYOUT, CORNERS);
 const car = new Car(GT, track);
 car.assists = settings.assists;
 car.placeAt(params.has('at') ? +params.get('at') : -20, 0);  // ?at=1500 starts the car 1500 m into the lap
@@ -55,7 +61,8 @@ const SUN_DIR = new THREE.Vector3(-0.5, 0.75, 0.42).normalize();
 
 const ground = createGround(track);
 const world = new THREE.Group();
-world.add(ground.mesh(), buildTrackScene(track, ground), buildScenery(track, ground));
+world.add(ground.mesh(), buildTrackScene(track, ground));
+if (!made) world.add(buildScenery(track, ground));   // the RAF Stanmere remnants are placed for Lakeside only
 scene.add(world);
 const markers = debugMarkers(track);
 markers.visible = false;
@@ -104,6 +111,7 @@ panel.addEventListener('click', e => {
   if (b.dataset.topdown) { topDown = b.dataset.topdown === 'true'; applyLook(); }
   if (b.dataset.auto) autopilot = b.dataset.auto === 'true' ? new Autopilot(track, GT, { skill: 0.9 }) : null;
   if (b.id === 'close') togglePanel(false);
+  if (b.id === 'trackmaker') { togglePanel(false); openTrackMaker(made); }
   saveSettings(settings);
   syncPanel();
 });
@@ -118,13 +126,14 @@ function frame(now) {
   last = now;
 
   for (const a of input.takeActions()) {
+    if (isMakerOpen()) break;   // the track maker has the keyboard
     if (a === 'reset') car.resetToTrack();
     if (a === 'camera') rig.next();
     if (a === 'settings') togglePanel();
     if (a === 'debug') { settings.debug = !settings.debug; saveSettings(settings); syncPanel(); }
   }
 
-  const paused = !panel.hidden;
+  const paused = !panel.hidden || isMakerOpen();
   const playerInput = input.read(dt, car.speed);
   if (!paused) {
     acc += dt;
@@ -159,6 +168,7 @@ requestAnimationFrame(frame);
 
 // for quick checks from the browser console
 window.lakeside = { car, track, timer, settings };
+if (params.has('maker')) openTrackMaker(made);   // ?maker opens the track maker at start
 
 function skyTexture(top, bottom) {
   const c = document.createElement('canvas');

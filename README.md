@@ -33,6 +33,12 @@ Touch: drag anywhere on the left half of the screen to steer, pedals and DRS bot
 
 URL options: `?autopilot` watches the autopilot drive, `?at=1500` starts 1500 m into the lap, `?topdown` opens the top-down debug view.
 
+## Track maker
+
+Settings, Track maker (or `?maker` in the URL) opens a top-down editor. Drag points to reshape the loop, double-click the track to add a point, then use the tools to set sectors, DRS zones, a bridge, the pit lane and the gravel, street wall, run-off and sausage kerb zones, with side and width. Height, track width, size and hills are sliders. Save keeps it in the browser, Drive it reloads the game on that circuit, Export and Import share a track as a JSON file, and Back to Lakeside returns to the default circuit.
+
+Made tracks have no per-corner data (`src/corners.js` is measured for Lakeside only), so kerbs and run-off come from the zones you paint, with plain grass and barriers elsewhere. The RAF Stanmere scenery is Lakeside only.
+
 Debug view: Settings, View, Top-down debug. Same colours as `npm run trackmap`.
 
 ## Where to tune things
@@ -57,6 +63,8 @@ src/
   cars.js       car tuning (edit this)
   timing.js     laps and sectors
   autopilot.js  racing line and autopilot
+  trackStore.js made tracks: save, load, export, import
+  editor.js     the track maker
   trackMesh.js  the circuit: surfaces, kerbs, barriers, fences, pit lane, bridge, gantry, boards
   scenery.js    terrain and the RAF Stanmere remnants
   textures.js   all textures and sponsor boards, drawn in code
