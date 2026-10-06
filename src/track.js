@@ -308,7 +308,7 @@ function locate(T, px, pz, hint, out) {
   out.h = lerp(T.h[i], T.h[j], t);
   out.grade = lerp(T.grade[i], T.grade[j], t);
   out.vcurv = lerp(T.vcurv[i], T.vcurv[j], t);
-  out.tx = -nzv; out.tz = nxv;
+  out.tx = nzv; out.tz = -nxv;     // the direction of travel, as T.tx/T.tz (it once pointed backwards, which turned the hill force round)
   out.nx = nxv; out.nz = nzv;
   return out;
 }

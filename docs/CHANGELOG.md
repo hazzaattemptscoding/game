@@ -1,5 +1,9 @@
 # Changelog
 
+## Hills push the right way
+
+`track.locate` gave the direction of travel backwards (`loc.tx`, `loc.tz`), so the hill force in `physics.js` slowed the car going downhill and helped it uphill. It now points along the lap, like `T.tx`/`T.tz` (nothing else read it). The autopilot's braking plan now counts the slope too (downhill takes from the brakes, uphill helps), or it arrived at downhill corners too fast. Assisted autopilot laps: quick 1:30.942, steady 1:33.667; keyboard profiles within their limits; racing line regenerated. The assists-off autopilot now sometimes spins at the exit of Boundary Loop into the gravel and stays there (reported by laptest, not failed, as before).
+
 ## Live delta
 
 A running gap to your best lap this session, under the lap timer: green and a bar to the left when you are ahead, red and a bar to the right when you are behind (a full half-bar at 2 s). It appears from the lap after your first full lap.

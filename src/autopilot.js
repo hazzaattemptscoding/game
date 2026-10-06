@@ -55,7 +55,8 @@ export function speedProfile(T, line, cfg, skill) {
   for (let pass = 0; pass < 2; pass++) {
     for (let k = N - 1; k >= 0; k--) {
       const i = k, j = wrap(k + 1, N);
-      const decel = mu * brakeShare * (G + q * v[j] * v[j]) + dragK * v[j] * v[j];
+      // uphill (grade > 0) helps the brakes, downhill takes from them
+      const decel = Math.max(0.5, mu * brakeShare * (G + q * v[j] * v[j]) + dragK * v[j] * v[j] + G * (T.grade ? T.grade[i] : 0));
       v[i] = Math.min(v[i], Math.sqrt(v[j] * v[j] + 2 * decel * ds));
     }
   }
