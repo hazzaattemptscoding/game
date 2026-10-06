@@ -122,6 +122,7 @@ const markers = debugMarkers(track);
 markers.visible = false;
 scene.add(markers);
 const rig = new CameraRig(innerWidth / innerHeight);
+rig.groundAt = (x, z) => track.groundAt(x, z);   // the chase camera keeps clear of the ground and aims at the road ahead
 let topDown = params.has('topdown');
 applyLook();
 const playerId = localPlayerId(), myLivery = () => ownLivery(settings.livery, playerId);   // the paint the room sees (src/livery.js)

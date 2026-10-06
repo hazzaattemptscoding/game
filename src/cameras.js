@@ -5,8 +5,11 @@ import * as THREE from 'three';
 import { ease } from './loop.js';
 
 const CHASE_DISTANCE = 6.2;   // metres behind the car
-const CHASE_HEIGHT = 1.9;     // metres above it
+const CHASE_HEIGHT = 2.1;     // metres above it
 const CHASE_LAG = 7;          // how quickly the camera swings round behind the car. Lower = lazier.
+const CHASE_RISE = 14;        // how quickly the camera's height follows the car's (quick: on a long climb it never trails below)
+const CHASE_AHEAD = 18;       // metres ahead along the road the camera aims at, so it tips up for a climb and down for a drop
+const CHASE_CLEAR = 1.3;      // the camera stays at least this far above the ground under it
 const BASE_FOV = 60;
 const SPEED_FOV = 10;         // extra field of view at top speed
 // Free look (Settings > Display): drag with the mouse or push the right stick to look round the car; let go and it eases back.
@@ -66,19 +69,29 @@ export class CameraRig {
       const d = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
       this.yaw += d * ease(CHASE_LAG, dt);
       if (this.height === null) this.height = pos.y;
-      this.height += (pos.y - this.height) * ease(4, dt);
+      this.height += (pos.y - this.height) * ease(CHASE_RISE, dt);
 
       const cx = Math.cos(this.yaw), cz = Math.sin(this.yaw);
-      const rise = Math.tan(pitch) * CHASE_DISTANCE;
+      // the camera does not tip down with a climb (it would sit low behind the car, looking up at it, with the car covering
+      // the road): it keeps its height over the car, never closer than CHASE_CLEAR to the ground, and aims at the road ahead
+      const ground = this.groundAt || (() => -Infinity);
+      const bx = pos.x - cx * CHASE_DISTANCE, bz = pos.z - cz * CHASE_DISTANCE;
+      const camY = Math.max(this.height + CHASE_HEIGHT, ground(bx, bz) + CHASE_CLEAR);
+      const gAhead = ground(pos.x + cx * CHASE_AHEAD, pos.z + cz * CHASE_AHEAD);
+      const aimRise = Number.isFinite(gAhead) ? Math.max(-6, Math.min(6, gAhead - (pos.y - 0.3))) : Math.tan(pitch) * CHASE_AHEAD;
+      if (this.aim == null) this.aim = aimRise;
+      this.aim += (aimRise - this.aim) * ease(5, dt);
+      const lookAt = (k) => this._look.set(pos.x + cx * 4 * k, pos.y + 0.9 + this.aim * (4 / CHASE_AHEAD) * k + this.aim * 0.12 * k, pos.z + cz * 4 * k);
       if (this.lookYaw || this.lookPitch) {
         // orbit the car at the chase distance, looking at its middle
         const a = this.yaw + this.lookYaw, up = this.lookPitch, r = CHASE_DISTANCE * Math.cos(up);
-        cam.position.set(pos.x - Math.cos(a) * r, this.height + CHASE_HEIGHT - rise * 0.8 + CHASE_DISTANCE * Math.sin(up), pos.z - Math.sin(a) * r);
+        const ox = pos.x - Math.cos(a) * r, oz = pos.z - Math.sin(a) * r;
+        cam.position.set(ox, Math.max(this.height + CHASE_HEIGHT + CHASE_DISTANCE * Math.sin(up), ground(ox, oz) + CHASE_CLEAR), oz);
         const blend = Math.min(1, (Math.abs(this.lookYaw) + Math.abs(this.lookPitch)) * 3);   // from looking ahead of the car to looking at it
-        this._look.set(pos.x + cx * 4 * (1 - blend), pos.y + 0.9 + Math.tan(pitch) * 4 * (1 - blend), pos.z + cz * 4 * (1 - blend));
+        lookAt(1 - blend);
       } else {
-        cam.position.set(pos.x - cx * CHASE_DISTANCE, this.height + CHASE_HEIGHT - rise * 0.8, pos.z - cz * CHASE_DISTANCE);
-        this._look.set(pos.x + cx * 4, pos.y + 0.9 + Math.tan(pitch) * 4, pos.z + cz * 4);
+        cam.position.set(bx, camY, bz);
+        lookAt(1);
       }
       cam.lookAt(this._look);
     } else {

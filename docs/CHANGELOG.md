@@ -1,5 +1,9 @@
 # Changelog
 
+## Chase camera on hills
+
+On a climb the chase camera sat low behind the car and the car hid the road ahead: its height trailed the car's (eased at 4 per second, a metre behind on a long climb at speed) and it was lowered further by the slope. Now it keeps its height over the car (eased at 14 per second, never closer than 1.3 m to the ground under it), sits a little higher (2.1 m, was 1.9 m), and aims at the road 18 m ahead, so it tips up for a climb and down for a drop. New test `tools/camera.js` (in the check): at 60 m/s up the steepest climb (8 %) the road shows 7 m past the car (with the old camera it never did); on the steepest descent 8.5 m.
+
 ## Pit entry before the Guardroom Chicane
 
 The pit entry now leaves the track on the left at 3433 m, before the Guardroom Chicane, and runs straight past it behind a pit wall, joining the pit lane after Final Approach. The old entry after the chicane is gone. Between the track and the pit wall there is tarmac run-off all the way (up to 20 m wide beside the chicane). The pit limiter starts 25 m before the first garage instead of at the start of the pit wall.

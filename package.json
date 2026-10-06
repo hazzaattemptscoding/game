@@ -26,6 +26,7 @@
     "session": "node tools/session.js",
     "hudsettings": "node tools/hudsettings.js",
     "minisectors": "node tools/minisectors.js",
+    "camera": "node tools/camera.js",
     "perf": "node tools/perf.js",
     "screencontrol": "node tools/screencontrol.js",
     "check": "node tools/check.js",
