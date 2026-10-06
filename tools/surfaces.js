@@ -5,14 +5,14 @@
 //   z-fight      two different layers within 3 cm of each other (paint decals excepted)
 // Run with `npm run surfaces`. Fails if any count is above its limit.
 
-import { buildWorld, surfaceIndex } from './lib/headless.js';
+import { buildWorld, surfaceIndex, GROUND } from './lib/headless.js';
 
 const DECAL = new Set(['line', 'rumble', 'island']);          // paint: allowed to sit on a surface
 const LIMITS = { holes: 0, terrainTop: 0, onRoad: 0, zfight: 0 };
 const STEP_S = 2, STEP_D = 0.5;
 
 const { T, root } = await buildWorld();
-const idx = surfaceIndex(root);
+const idx = surfaceIndex(root, [...GROUND, 'runoff']);     // the run-off band too: on a banked corner's high side it is the strip over the terrain
 const found = globalThis.__found = { holes: [], terrainTop: [], onRoad: [], zfight: [] };
 const pairs = new Map();
 

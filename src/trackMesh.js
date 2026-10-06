@@ -91,7 +91,10 @@ export function buildTrackScene(T, ground) {
   const S = {};
   const strips = name => (S[name] ||= new Strips());
 
-  strips('road').strip(all, i => P(i, -HW[i]), i => P(i, HW[i]), (i, j) => sOf(i, j, all) / 8, i => -HW[i] / 8, i => HW[i] / 8);
+  // the tarmac in four strips across, so a cambered road on a tight bend has no crease from one long quad diagonal
+  for (const [f0, f1] of [[-1, -0.5], [-0.5, 0], [0, 0.5], [0.5, 1]]) {
+    strips('road').strip(all, i => P(i, HW[i] * f0), i => P(i, HW[i] * f1), (i, j) => sOf(i, j, all) / 8, i => HW[i] * f0 / 8, i => HW[i] * f1 / 8);
+  }
   for (const g of [-1, 1]) {
     const lineRuns = g < 0 ? runs(T.N, i => !T.pitMouth[i]) : [all];
     for (const run of lineRuns) strips('line').strip(run, i => P(i, g * (HW[i] - 0.15), DECAL), i => P(i, g * HW[i], DECAL), () => 0, 0, 1);

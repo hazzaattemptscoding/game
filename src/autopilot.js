@@ -48,7 +48,9 @@ export function speedProfile(T, line, cfg, skill) {
   const dragK = 0.5 * AIR * cfg.dragArea / cfg.mass;
   for (let i = 0; i < N; i++) {
     const k = Math.abs(line.curv[i]);
-    v[i] = k > mu * q ? Math.min(85, Math.sqrt(mu * G / (k - mu * q))) : 85;
+    // camber: a bank towards the inside of the bend adds to the grip, off-camber takes from it (T.curv < 0 turns towards -d)
+    const help = T.bank ? Math.max(-0.5 * mu, -T.bank[i] * Math.sign(T.curv[i])) : 0;
+    v[i] = k > (mu + help) * q ? Math.min(85, Math.sqrt((mu + help) * G / (k - (mu + help) * q))) : 85;
   }
   // braking zones, worked backwards from each corner
   const brakeShare = 0.82 * skill;

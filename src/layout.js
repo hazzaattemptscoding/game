@@ -10,7 +10,7 @@
 
 export const LAYOUT = {
   scale: 2.0,         // metres per sketch unit. Bigger = longer lap.
-  heightScale: 0.3,   // metres per sketch height unit. Bigger = hillier.
+  heightScale: 0.36,  // metres per sketch height unit. Bigger = hillier.
   width: 13,          // tarmac width in metres
   minRadius: 16,      // any corner tighter than this (centreline radius, metres) is opened up
 
@@ -60,6 +60,13 @@ export const LAYOUT = {
     width: 12,          // pit lane width: 4 m fast lane plus 8 m working lane
     blend: 110,         // length of the entry and exit roads, metres
     speedLimit: 60,     // km/h
+  },
+
+  // Camber per corner, degrees across the road: positive is banked (the outside higher, gravity helps the car round),
+  // negative is off-camber (the outside lower, the car wants to slide wide). Eased in and out over BANK_TAPER metres.
+  bank: {
+    'Scramble': 3, 'Hurricane Sweep': -2.5, 'Windsock Hairpin': 7, 'Pen Alley': -2, 'Nissen Hairpin': 4, 'Searchlight': 3,
+    'Station Corner': -3, 'Chandelle': 5, 'Aileron': 1.5, 'Rudder': 1.5, 'Boundary Loop': 5, 'Final Approach': 3,
   },
 
   // Corner names (reference/LAKESIDE_REFERENCE_PACK.md). [from point, to point, name]

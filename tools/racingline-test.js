@@ -85,11 +85,13 @@ const geo = buildLineGeometry(T, data.d, data.c);
     if (Math.abs(w - LINE_WIDTH) > 0.02) wBad++;
     const y = pos.getY(a + 1) - T.groundAt(pos.getX(a + 1), pos.getZ(a + 1), i);
     if (Math.abs(y - 0.006) > 1e-4) hBad++;
-    if (Math.abs(pos.getY(a + 1) - pos.getY(b + 1)) > 0.08) gap++;
+    // a seam or step shows as a sudden change in the line's slope; a steady 8 % hill does not
+    const c = ((i + n - 1) % n) * 4, slopeIn = pos.getY(a + 1) - pos.getY(c + 1), slopeOut = pos.getY(b + 1) - pos.getY(a + 1);
+    if (Math.abs(slopeOut - slopeIn) > 0.03) gap++;
   }
   ok(wBad === 0, `${wBad} samples where the ribbon is not ${LINE_WIDTH} m wide`);
   ok(hBad === 0, `${hBad} samples where the ribbon is not 6 mm above T.groundAt`);
-  ok(gap === 0, `${gap} samples where the ribbon height jumps more than 8 cm in a metre`);
+  ok(gap === 0, `${gap} samples where the ribbon's slope changes by more than 3 cm a metre between neighbouring metres (a seam or step)`);
   ok(col.itemSize === 4, 'vertex colours need an alpha channel for the soft edge');
 }
 {

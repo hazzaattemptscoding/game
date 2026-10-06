@@ -1,5 +1,15 @@
 # Changelog
 
+## Camber and more elevation
+
+Twelve corners are banked or off-camber (`layout.bank`, degrees, + banks into the corner, - leans away): Windsock Hairpin 7, Chandelle 5, Boundary Loop 5, Nissen Hairpin 4, Scramble 3, Searchlight 3, Final Approach 3, Aileron and Rudder 1.5, and off-camber Station Corner -3, Hurricane Sweep -2.5, Pen Alley -2. The bank eases in and out over 30 m. Elevation is 20 % steeper (`heightScale` 0.3 to 0.36; 0.42 put the ground over the end of the Scramble gravel, where a higher stretch of the lap runs 50 m away).
+
+- `track.bank` (cross slope per sample) and `track.bankRise(i, lateral)`: the road, kerbs and run-off tilt with it; the terrain stays under the low edge.
+- Physics: the sideways pull of a cross slope (`car.slopeRight`, from the ground under each wheel), so a banked turn holds the car and an off-camber one pushes it wide. The autopilot counts the bank in its corner speeds.
+- The road is drawn in four strips across, so a cambered tight bend has no crease.
+- Racing line regenerated (reference 1:30.117). Laptest references re-baselined for the faster laps: quick 1:30.1, steady 1:33.0 (the excursion and average limits are unchanged).
+- Tests: bumps measures from the cambered road; surfaces indexes the run-off band (on a banked high side it is the strip over the terrain); the racing line ribbon check looks for a sudden change of slope, not a slope over 8 %, since the descent to Searchlight is now 8 %.
+
 ## Hills push the right way
 
 `track.locate` gave the direction of travel backwards (`loc.tx`, `loc.tz`), so the hill force in `physics.js` slowed the car going downhill and helped it uphill. It now points along the lap, like `T.tx`/`T.tz` (nothing else read it). The autopilot's braking plan now counts the slope too (downhill takes from the brakes, uphill helps), or it arrived at downhill corners too fast. Assisted autopilot laps: quick 1:30.942, steady 1:33.667; keyboard profiles within their limits; racing line regenerated. The assists-off autopilot now sometimes spins at the exit of Boundary Loop into the gravel and stays there (reported by laptest, not failed, as before).

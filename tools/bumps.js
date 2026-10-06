@@ -23,7 +23,7 @@ for (const [name, d] of tracks) {
   for (let s = 0; s < T.length; s += STEP) {
     // a point between two samples, so the quads between the vertices are tested too
     const i = Math.min(T.N - 1, Math.floor(s / T.ds)), j = (i + 1) % T.N, t = s / T.ds - i, L = (a, b) => a + (b - a) * t;
-    const x = L(T.x[i], T.x[j]) + L(T.nx[i], T.nx[j]) * d, z = L(T.z[i], T.z[j]) + L(T.nz[i], T.nz[j]) * d, hRoad = L(T.h[i], T.h[j]);
+    const x = L(T.x[i], T.x[j]) + L(T.nx[i], T.nx[j]) * d, z = L(T.z[i], T.z[j]) + L(T.nz[i], T.nz[j]) * d, hRoad = L(T.h[i], T.h[j]) + (T.bankRise ? L(T.bankRise(i, d), T.bankRise(j, d)) : 0);   // the road surface, camber included
     if (T.isBridge[i]) { prev = null; continue; }
     const hit = idx.at(x, z).filter(q => !PAINT.has(q.cat) && Math.abs(q.y - hRoad) < 1)[0];
     if (!hit) { prev = null; continue; }

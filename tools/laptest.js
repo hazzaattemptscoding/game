@@ -39,11 +39,11 @@ const track = buildTrack();
 const line = computeRacingLine(track);
 
 console.log(`Lakeside: ${(track.length / 1000).toFixed(2)} km\n`);
-console.log('PHYSICS REGRESSION, analog autopilot (lap 2, flying; targets 1:31.0, 1:33.9, 1:35.5 within 0.3 s)');
+console.log('PHYSICS REGRESSION, analog autopilot (lap 2, flying; targets 1:30.1, 1:33.0, 1:35.5 within 0.3 s)');
 
 const runs = [
-  { name: 'quick driver, assists on ', skill: 0.9, assists: true, target: 91.0 },
-  { name: 'steady driver, assists on', skill: 0.8, assists: true, target: 93.9 },
+  { name: 'quick driver, assists on ', skill: 0.9, assists: true, target: 90.1 },
+  { name: 'steady driver, assists on', skill: 0.8, assists: true, target: 93.0 },
   { name: 'quick driver, assists off', skill: 0.86, assists: false, target: 95.5 },
 ];
 // The aim is 10 or fewer. It was 20 at cb28eb1. The count is chaotic: a 2 cm change to the width of a rumble band

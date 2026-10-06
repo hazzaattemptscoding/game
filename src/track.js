@@ -47,6 +47,7 @@ const DS = 1;              // sample spacing, metres
 const KERB_WIDTH = 1.0;    // flat kerbs, metres
 const STREET_KERB = 0.7;   // narrower kerbs in the walled street section
 const SAUSAGE_WIDTH = 0.45; // raised kerb behind the flat kerb
+const BANK_TAPER = 30;
 const INSIDE_DEPTH = 0.6;   // flat ground on the inside of a curve reaches at most this share of the radius
 const LINE_WIDTH = 0.15;   // painted edge line, metres
 const PLAIN_RUNOFF = 22;   // flat grass beside the track where no corner needs more, metres
@@ -148,14 +149,36 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   // 6. What is either side of the tarmac: kerbs, run-off, gravel, the pit
   // lane, and the placed barriers and boards.
   track.corners = corners;
+  // Camber: tan of the road's cross slope at each sample, positive where the road rises towards +d (the right).
+  // It tilts the road and its kerbs; the run-off and the pit lane carry on level from the kerb's outer edge.
+  const bank = track.bank = new Float64Array(N);
+  for (const c of corners) {
+    const deg = (layout.bank || {})[c.name];
+    if (!deg) continue;
+    const t = Math.tan(deg * Math.PI / 180) * (c.outside === 'R' ? 1 : -1);
+    const a = track.sAtPoint(c.points[0]), b = track.sAtPoint(c.points[1]);
+    const len = ((b - a) % track.length + track.length) % track.length;
+    for (let k = -BANK_TAPER; k <= len + BANK_TAPER; k += ds) {
+      const i = wrap(Math.round((a + k) / ds), N), e = Math.min(1, Math.max(0, Math.min(k + BANK_TAPER, len + BANK_TAPER - k) / BANK_TAPER));
+      bank[i] += t * e * e * (3 - 2 * e);
+    }
+  }
   buildSides(track, corners);
   smoothKerbs(track);
   buildVRunoff(track);
   buildReach(track);
   buildBridgeGround(track);
 
-  // Road height under a point beside sample n: that sample's height, carried along the grade.
-  const roadAt = (n, px, pz) => h[n] + grade[n] * Math.max(-ds, Math.min(ds, (px - x[n]) * tx[n] + (pz - z[n]) * tz[n]));
+  // the camber's rise at `lat` metres across sample n: the plane of the road out to the kerb's outer edge, level beyond it
+  const bankRise = (n, lat) => {
+    if (!bank[n] || track.isBridge[n]) return 0;
+    const lim = track.hw[n] + track.kerb[lat < 0 ? 0 : 1][n];
+    return bank[n] * Math.max(-lim, Math.min(lim, lat));
+  };
+  track.bankRise = bankRise;
+  // Road height under a point beside sample n: that sample's height, carried along the grade, plus the camber.
+  const roadAt = (n, px, pz) => h[n] + grade[n] * Math.max(-ds, Math.min(ds, (px - x[n]) * tx[n] + (pz - z[n]) * tz[n]))
+    + bankRise(n, (px - x[n]) * nx[n] + (pz - z[n]) * nz[n]);
 
   // Ground height at (px, pz). With `hint` (a sample index) and a point on that sample's normal that
   // is within the paved width, as every mesh vertex of the tarmac, kerb and apron is, the height
@@ -170,7 +193,7 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
         const lat = dx * nx[n0] + dz * nz[n0], sd = lat < 0 ? 0 : 1, a = Math.abs(lat);
         let pv = track.hw[n0] + track.kerb[sd][n0] + track.sausage[sd][n0] + track.runoff[sd][n0];
         if (sd === 0 && track.pitOut[n0]) pv = Math.max(pv, track.pitOut[n0]);
-        if (a <= pv) return h[n0];
+        if (a <= pv) return h[n0] + bankRise(n0, lat);
       }
     }
     if (Number.isInteger(hint)) near = wrap(hint, N);
@@ -207,7 +230,7 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
     const blend = far * far * (3 - 2 * far);
     const hills = 18 * Math.max(0, Math.min(1, (dist - 250) / 400)) * (0.6 + 0.4 * Math.sin(px * 0.004 + 1.3) * Math.cos(pz * 0.005));
     let land = h[landNear] * (1 - blend) + landSmooth / (landWeight || 1) * blend + hills - 0.35;
-    if (dist < corridor) land = Math.min(land, h[landNear] - 0.35);
+    if (dist < corridor) land = Math.min(land, h[landNear] - Math.abs(bank[landNear]) * (track.hw[landNear] + 1.5) - 0.35);   // under the low edge of a cambered road too
     const bridgeHint = Number.isInteger(hint) && track.isBridge[near];
     if (!bridgeHint) near = landNear;
     // beside the bridge deck the land comes from the bridge ground blend (buildBridgeGround), which fades in over BRIDGE_ZONE_FAR

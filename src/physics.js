@@ -91,7 +91,7 @@ export class Car {
     this.loc = { i, h: this.y };
     this.track.locate(this.x, this.z, i, this.loc);
     this.y = T.groundAt ? T.groundAt(this.x, this.z, i) : this.loc.h;
-    this.groundY = this.y; this.relY = 0; this.groundRoll = 0; this.groundPitch = 0; this.bumpSpacing = 4;
+    this.groundY = this.y; this.relY = 0; this.groundRoll = 0; this.groundPitch = 0; this.bumpSpacing = 4; this.slopeRight = 0;
     this.savePrev();
   }
 
@@ -233,7 +233,8 @@ export class Car {
     // --- total forces on the body ---
     const resist = (c.rollingResistance + surfDrag) * weight;
     let Fx = front.fx * cd - front.fy * sd + rear.fx - dir * (drag + resist) - m * G * slope;
-    const Fy = front.fx * sd + front.fy * cd + rear.fy;
+    // across a sloping road (camber, a bank) gravity pulls the car towards the low side: slopeRight is last step's rise to the right
+    const Fy = front.fx * sd + front.fy * cd + rear.fy - m * G * (this.slopeRight || 0);
     let Mz = this.a * (front.fx * sd + front.fy * cd) - this.b * rear.fy;
 
     // --- stability control: stops the car rotating faster than its path, and
@@ -292,6 +293,8 @@ export class Car {
       wheelY2[w] = (T.groundAt ? T.groundAt(wx, wz, loc.i) : loc.h) + wheelRel[w];
     }
     const roll = Math.atan(((wheelY2[1] + wheelY2[3]) - (wheelY2[0] + wheelY2[2])) / 2 / (2 * hwt));
+    // the ground's own rise to the right under the car (no kerb relief), for the sideways pull of gravity next step
+    this.slopeRight = ((wheelY2[1] - wheelRel[1] + wheelY2[3] - wheelRel[3]) - (wheelY2[0] - wheelRel[0] + wheelY2[2] - wheelRel[2])) / 2 / (2 * hwt);
     const pitch = Math.atan(((wheelY2[0] + wheelY2[1]) - (wheelY2[2] + wheelY2[3])) / 2 / (this.a + this.b));
     const ease = 1 - Math.exp(-dt / 0.05);
     this.groundY += (groundY - this.groundY) * ease;
