@@ -47,7 +47,10 @@ export function cornerMarks(track, corners = CORNERS) {
   }));
 }
 
-export function createMiniMap(root, { track, car, lobby, settings, ownColour }) {
+// minisector colours on the outline (src/minisectors.js)
+export const MINI_COLOURS = { purple: '#b36bff', green: '#3ddc84', yellow: '#ffd21f' };
+
+export function createMiniMap(root, { track, car, lobby, settings, ownColour, timer }) {
   const bounds = trackBounds(track), marks = cornerMarks(track);
   const el = document.createElement('div');
   el.id = 'trackmap';
@@ -60,7 +63,7 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour }) 
   const pt = {}, pose = {};
 
   // the outline, drawn in the cache's own pixel space: pixel = (world - (x0, z0)) * kc + margin
-  function buildBase(mode, sizeCss, ratio) {
+  function buildBase(mode, sizeCss, ratio, colours) {
     const k0 = viewTransform({ mode, rotate: false, size: sizeCss, bounds, car }).k;
     const wm = bounds.x1 - bounds.x0, hm = bounds.z1 - bounds.z0, margin = 24;
     const kc = Math.min(k0 * ratio, (2048 - 2 * margin) / Math.max(wm, hm));
@@ -76,6 +79,22 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour }) 
     const wide = mode === 'local';
     bg.strokeStyle = 'rgba(242,239,230,.9)'; bg.lineWidth = (wide ? 7 : 5.5) * per; bg.stroke();
     bg.strokeStyle = 'rgba(20,24,29,.95)'; bg.lineWidth = (wide ? 4.5 : 3) * per; bg.stroke();
+    // minisectors of this lap (the last lap's colours for the ones not reached yet) over the dark centre of the outline;
+    // the timer counts in lap order, which is mirrored in reverse
+    if (colours) {
+      const B = timer.minis.bounds, L = track.length, rev = timer.reverse;
+      bg.lineCap = 'butt'; bg.lineWidth = (wide ? 4.5 : 3) * per;
+      colours.forEach((c, k) => {
+        if (!c) return;
+        const a = rev ? L - B[k + 1] : B[k], b = rev ? L - B[k] : B[k + 1];
+        const i0 = Math.round(a / track.ds), i1 = Math.round(b / track.ds);
+        bg.beginPath();
+        for (let i = i0; i <= i1; i += step) (i === i0 ? bg.moveTo : bg.lineTo).call(bg, px(track.x[i % track.N]), pz(track.z[i % track.N]));
+        bg.lineTo(px(track.x[i1 % track.N]), pz(track.z[i1 % track.N]));
+        bg.strokeStyle = MINI_COLOURS[c]; bg.stroke();
+      });
+      bg.lineCap = 'round';
+    }
     // a cross mark over the road at sample i, `len` CSS pixels long
     const tick = (i, len, col, w) => {
       const x = track.x[i], z = track.z[i], nx = track.nx[i] * len / 2 / k0, nz = track.nz[i] * len / 2 / k0;
@@ -100,8 +119,9 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour }) 
     const cls = 'pos-' + st.position;
     if (cls !== posClass) { if (posClass) el.classList.remove(posClass); el.classList.add(cls); posClass = cls; }
     el.style.opacity = st.opacity;
-    const key = st.zoom + '|' + size + '|' + dpr;
-    if (key !== baseKey) { baseKey = key; buildBase(st.zoom, size, dpr); }
+    const colours = settings.hud.minisectors && timer ? timer.minis.display() : null;
+    const key = st.zoom + '|' + size + '|' + dpr + '|' + (colours ? colours.join() : '') + '|' + (timer && timer.reverse);
+    if (key !== baseKey) { baseKey = key; buildBase(st.zoom, size, dpr, colours); }
   }
 
   const dot = (x, y, r, fill, ring, rw) => {

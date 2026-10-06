@@ -384,6 +384,7 @@ export function buildScenery(T, ground) {
   const allB = [...all, ...footBlockers(extras.bridges)];
   g.add(stands, buildExtras(T, ground, extras), buildProps(T, ground, allB, obstacles), buildPitDetail(T, ground));
   g.add(buildFloodlights(T, ground, planMasts(T, allB, obstacles)));
+  g.userData.keepClear = { obstacles, blockers: allB };   // for the marshal posts (src/marshal.js), planned after the scenery
 
   return g;
 }

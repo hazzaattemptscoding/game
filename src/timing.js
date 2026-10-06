@@ -2,6 +2,7 @@
 // headless lap test and the browser give the same numbers.
 
 import { TrackLimits } from './trackLimits.js';
+import { MinisectorTracker } from './minisectors.js';
 
 export class LapTimer {
   constructor(track) {
@@ -29,6 +30,7 @@ export class LapTimer {
     this.traceAt = -1;       // the last whole metre written
     this.traceOK = false;    // false once the lap jumps (a reset, the pit lane cut short): such a lap never becomes the reference
     this.bestTrace = null;
+    this.minis = new MinisectorTracker(this.track, this.reverse);   // the 25 minisector times and colours (src/minisectors.js), in lap order like everything here
   }
 
   // live delta: time into this lap minus the session's best lap at the same distance; null on the out lap or with no best yet
@@ -71,6 +73,7 @@ export class LapTimer {
     if (crossedLine && ds > 0) this.finishLap(time);
     else if (this.lapStart !== null) {
       if (ds > 0) this.recordTrace(s, time);
+      this.minis.update(this.prevS, s, ds, time - this.lapStart);
       const next = sectors[this.sector + 1];
       if (this.sector < 2 && this.prevS < next && s >= next && ds > 0) this.finishSector(time);
     }
@@ -91,6 +94,7 @@ export class LapTimer {
     if (this.lapStart !== null && this.sector === 2) {
       this.finishSector(time);
       const lapTime = time - this.lapStart;
+      this.minis.finishLap(lapTime, true);
       const isBest = this.best === null || lapTime < this.best;
       this.last = lapTime;
       this.lastSectors = this.current.slice();
@@ -107,6 +111,7 @@ export class LapTimer {
       this.history.push({ lap: this.lap, time: lapTime, sectors: this.lastSectors, warnings, valid: warnings === 0 });
       this.events.push({ type: 'lap', time: lapTime, best: isBest, sectors: this.lastSectors });
     }
+    else this.minis.finishLap(0, false);   // the out lap or a lap that skipped a sector: nothing to keep
     this.lapStart = time;
     this.sector = 0;
     this.current = [];
