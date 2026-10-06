@@ -1,5 +1,15 @@
 # Changelog
 
+## Pit building finished
+
+Report (s=6): "Pit building has no sidewall, looks pretty unfinished", and "just a touch up on the pit building". The garage block was a rough box with an open end and a bare back. It is now a finished building on the same footprint, drawn in `src/pitBuilding.js` as 8 merged meshes (one more than before; `trackMesh.js` now only draws the concrete forecourt).
+
+- Both ends have walls, and so does the back, which has pilasters and service doors. The start end has a glass corner on the first floor, the LAKESIDE sign facing the start straight, and a stair head on the roof. The far end has a fire door and a downpipe.
+- Ground floor: a roller door in every bay (eleven bays), a dark frame, a team colour board over it with the garage number, and some doors open on a garage with a team colour back wall and a lit ceiling.
+- First floor: a glazed strip with mullions, a canopy that reaches 2.4 m over the pit lane apron with a light strip under it, and a roof terrace with a railing at the front and plant behind. Glass and garage lights glow at dusk and night.
+- Footprint and height are unchanged, so the gantry, pit wall, stands and pit lane are untouched.
+- Draw calls: 679 to 678 in the crowded stretch of `tools/perf.js` (the building is mostly out of view there); the building itself is 8 meshes and about 6800 triangles.
+
 ## Live delta
 
 A running gap to your best lap this session, under the lap timer: green and a bar to the left when you are ahead, red and a bar to the right when you are behind (a full half-bar at 2 s). It appears from the lap after your first full lap.

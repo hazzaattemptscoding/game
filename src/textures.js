@@ -224,6 +224,32 @@ export function garageTexture() {
   return finish(c);
 }
 
+// One sheet for the pit building front (src/pitBuilding.js), 1024 x 512: two roller doors (top left, 256 px each), the end sign
+// (top right) and eight team colour boards (the bottom half, 128 px each, a stripe low on the board).
+export function pitFacadeTexture() {
+  const [c, x] = canvas(1024, 512);
+  x.fillStyle = '#d8d8d4'; x.fillRect(0, 0, 1024, 512);
+  [['#9a9ea3', '#6f7378'], ['#cfd1cc', '#9ea29d']].forEach(([a, b], k) => {
+    const x0 = k * 256;
+    x.fillStyle = a; x.fillRect(x0, 0, 256, 256);
+    for (let y = 0; y < 256; y += 12) { x.fillStyle = b; x.fillRect(x0, y + 9, 256, 3); x.fillStyle = 'rgba(255,255,255,.16)'; x.fillRect(x0, y, 256, 2); }
+    x.fillStyle = '#3a3d41'; x.fillRect(x0, 240, 256, 16);
+    x.fillStyle = 'rgba(0,0,0,.12)'; x.fillRect(x0, 0, 256, 6);
+  });
+  x.fillStyle = '#1b1e22'; x.fillRect(512, 0, 512, 128);
+  x.fillStyle = '#f2f2ee'; x.font = 'bold 88px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  if ('letterSpacing' in x) x.letterSpacing = '6px';
+  x.fillText('LAKESIDE', 768, 68);
+  const team = ['#1d4e9e', '#c8102e', '#111111', '#f2b705', '#0d7a4f', '#6b2c91', '#e85d04', '#2b2d42'];
+  team.forEach((col, k) => {
+    const x0 = k * 128;
+    x.fillStyle = col; x.fillRect(x0, 256, 128, 256);
+    x.fillStyle = 'rgba(255,255,255,.85)'; x.fillRect(x0, 256 + 196, 128, 28);
+    x.fillStyle = 'rgba(0,0,0,.25)'; x.fillRect(x0, 256, 128, 24);
+  });
+  return finish(c, { repeat: false });
+}
+
 // Sponsor sheet: one board per row, 1024 x 128 each. PowerMedia is the
 // title partner; the rest are the invented brands from the reference pack.
 // Rows 6 and 7 are 1950s and 60s brands, faded, for the old circuit.
