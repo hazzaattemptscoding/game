@@ -11,7 +11,7 @@
 // Wide bands are cut across their width into pieces of at most MAX_PIECE metres, each corner
 // taking its own ground height, so a 60 m grass band follows a bank instead of cutting a chord.
 
-const MAX_PIECE = 6;
+const MAX_PIECE = 8;
 const BANDS = 10;                      // kerb, sausage up, sausage down, apron, grass before gravel, gravel, grass A, pit, grass B, outer grass
 const U_SCALE = { kerb: 2, sausage: 1.6, apron: 8, concrete: 15, gravel: 6, grass: 40, meadow: 24, pit: 16, road: 8, island: 4 };
 const PIT_FADE = 10, TARMAC_TONE = 0.76;   // the pit asphalt takes its own tone over 10 m after the mouth

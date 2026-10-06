@@ -1,5 +1,13 @@
 # Changelog
 
+## Back under the triangle budget, and browser tests that test the right code
+
+The browser tests (smoke, perf, shot) stopped only `npx`, not the Vite server it starts, so every run left a server on its port and the next run, from any checkout, quietly loaded that server's code. Today's perf passes were all measured on a stale server. `tools/lib/vite.mjs` now starts Vite in its own process group, stops the whole group, and refuses a port that is already taken.
+
+Measured properly, the camber put the crowded stretch over the 700,000 triangle budget (686,698 to 708,548; the pit building and pit entry added 12,000 more, to 721,751). Now 653,211:
+- The road is drawn in one strip where it is level, two where it is cambered, four on cambered bends tighter than 80 m or where the camber changes faster than 0.003 per metre. Each metre is stitched from one row to the next (`Strips.stitch`), so there is no crack where the count changes. Bumps: worst 6.9 mm in 25 m.
+- The ground ribbon's wide bands are cut every 8 m across, not 6 m. Surfaces all clear.
+
 ## Chase camera on hills
 
 On a climb the chase camera sat low behind the car and the car hid the road ahead: its height trailed the car's (eased at 4 per second, a metre behind on a long climb at speed) and it was lowered further by the slope. Now it keeps its height over the car (eased at 14 per second, never closer than 1.3 m to the ground under it), sits a little higher (2.1 m, was 1.9 m), and aims at the road 18 m ahead, so it tips up for a climb and down for a drop. New test `tools/camera.js` (in the check): at 60 m/s up the steepest climb (8 %) the road shows 7 m past the car (with the old camera it never did); on the steepest descent 8.5 m.

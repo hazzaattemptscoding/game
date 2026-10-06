@@ -5,7 +5,6 @@
 //   4. the source: the physics step is only called from the fixed step loop, no 60 Hz constants in the frame code
 //   5. draw calls and triangles of the real page against a budget (headless Chromium, skipped if it is not installed)
 import { createRequire } from 'node:module';
-import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { buildTrack } from '../src/track.js';
@@ -16,6 +15,7 @@ import { Autopilot, computeRacingLine } from '../src/autopilot.js';
 import { FixedStep, FrameStats, frameTime, ease, MAX_FRAME } from '../src/loop.js';
 import { CameraRig } from '../src/cameras.js';
 import { Scaler, TIERS, baseTier, cleanQuality, snapShadowCentre, SCALE_MIN } from '../src/quality.js';
+import { startVite } from './lib/vite.mjs';
 
 export const DRAW_CALL_BUDGET = 700, TRIANGLE_BUDGET = 700000;
 const fails = [];
@@ -111,8 +111,7 @@ async function pageBudget() {
   if (!existsSync(chromePath) || !existsSync(pw)) { console.log('  Chromium or Playwright not found, skipped'); return; }
   const { chromium } = createRequire(import.meta.url)(pw);
   const PORT = process.env.PERF_PORT || '5340';
-  const server = spawn('npx', ['vite', '--port', PORT, '--strictPort'], { stdio: 'ignore' });
-  await new Promise(r => setTimeout(r, 3500));
+  const server = await startVite(PORT);
   const browser = await chromium.launch({ executablePath: chromePath, args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 960, height: 480 } });
   page.on('pageerror', e => fails.push('page error: ' + e.message));
@@ -127,7 +126,7 @@ async function pageBudget() {
     check(r.auto === false && r.q === 'auto', 'the shadow map is refreshed from the loop and the quality setting defaults to auto');
     worst = { calls: Math.max(worst.calls, r.calls), tris: Math.max(worst.tris, r.tris) };
   }
-  await browser.close(); server.kill();
+  await browser.close(); server.stop();
 }
 console.log(`PAGE BUDGET (draw calls <= ${DRAW_CALL_BUDGET}, triangles <= ${TRIANGLE_BUDGET})`);
 await pageBudget();

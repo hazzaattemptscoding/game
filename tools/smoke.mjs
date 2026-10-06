@@ -1,13 +1,12 @@
 // Smoke test: opens the game in headless Chromium and fails on any page error. Skips if Chromium is not installed.
 import { createRequire } from 'node:module';
-import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { startVite } from './lib/vite.mjs';
 const chromePath = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const pw = process.env.PLAYWRIGHT_PATH || '/opt/node22/lib/node_modules/playwright';
 if (!existsSync(chromePath) || !existsSync(pw)) { console.log('smoke: Chromium or Playwright not found, skipped'); process.exit(0); }
 const { chromium } = createRequire(import.meta.url)(pw);
-const server = spawn('npx', ['vite', '--port', '5198', '--strictPort'], { stdio: 'ignore' });
-await new Promise(r => setTimeout(r, 3500));
+const server = await startVite(5198);
 const browser = await chromium.launch({ executablePath: chromePath, args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
 const errors = [];
 const map = o => ({ 'lakeside-settings': JSON.stringify({ trackMap: o }) });
@@ -52,6 +51,6 @@ async function run([q, o = {}]) {
 // three pages at a time: the page load (shader compile in software GL) dominates
 let next = 0;
 await Promise.all([0, 1, 2].map(async () => { while (next < views.length) await run(views[next++]); }));
-await browser.close(); server.kill();
+await browser.close(); server.stop();
 console.log(errors.length ? 'smoke FAILED:\n  ' + errors.join('\n  ') : `smoke: no page errors in ${views.length} views (drive, top-down, fixed view, menus, race start, weather and night, track map options, phone)`);
 process.exitCode = errors.length ? 1 : 0;

@@ -16,6 +16,8 @@ import { meadowMaterial } from './scenery.js';
 import { garageBay } from './pitBuilding.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
+const ROAD_TIGHT = 80;       // metres: a cambered bend tighter than this gets four road strips across, not two
+const ROAD_TWIST = 0.003;    // ...and so does a stretch where the camber changes faster than this per metre (it twists the road)
 const DECAL = 0.006;          // paint sits this far above the surface, drawn with polygonOffset so it never fights
 const POWERMEDIA_SHARE = 0.15;   // share of the sponsor panels that are PowerMedia (the start gantry and bridge banners are always PowerMedia)
 const SPONSOR_CHUNK = 9;      // length of one sponsor panel, metres (three 3 m wall units)
@@ -87,9 +89,23 @@ export function buildTrackScene(T, ground) {
   const S = {};
   const strips = name => (S[name] ||= new Strips());
 
-  // the tarmac in four strips across, so a cambered road on a tight bend has no crease from one long quad diagonal
-  for (const [f0, f1] of [[-1, -0.5], [-0.5, 0], [0, 0.5], [0.5, 1]]) {
-    strips('road').strip(all, i => P(i, HW[i] * f0), i => P(i, HW[i] * f1), (i, j) => sOf(i, j, all) / 8, i => HW[i] * f0 / 8, i => HW[i] * f1 / 8);
+  // the tarmac: where the road is cambered, two points across between the edges (four on a bend tighter than ROAD_TIGHT m or
+  // where the camber changes quickly),
+  // so the road has no crease from one long quad diagonal; where it is level, the edges alone draw it exactly. Each metre is
+  // stitched from one row to the next whatever their counts (Strips.stitch), so no crack where the count changes.
+  const cutsAt = i => {
+    if (!T.bank || !T.bank[i]) return 1;
+    for (let k = -8; k <= 8; k++) {
+      const j = (i + k + T.N) % T.N, twist = Math.abs(T.bank[(j + 1) % T.N] - T.bank[(j - 1 + T.N) % T.N]) / (2 * T.ds);
+      if (Math.abs(T.curv[j]) > 1 / ROAD_TIGHT || twist > ROAD_TWIST) return 4;   // a tight bend, or the camber easing in or out quickly
+    }
+    return 2;
+  };
+  const fracs = n => Array.from({ length: n + 1 }, (_, k) => -1 + 2 * k / n);
+  const rowAt = (i, u) => { const f = fracs(cutsAt(i)); return { f, row: f.map(x => ({ p: P(i, HW[i] * x), uv: [u, HW[i] * x / 8] })) }; };
+  for (let k = 0; k < all.length - 1; k++) {
+    const i = all[k], j = all[k + 1], A = rowAt(i, sOf(i, k, all) / 8), B = rowAt(j, sOf(j, k + 1, all) / 8);
+    strips('road').stitch(A.row, B.row, A.f, B.f);
   }
   for (const g of [-1, 1]) {
     const lineRuns = g < 0 ? runs(T.N, i => !T.pitMouth[i] && !(T.pitEntryZone[i] && !T.pitEntryRunoff[i])) : [all];
@@ -378,6 +394,24 @@ function furniture(T) {
 
 class Strips {
   constructor() { this.pos = []; this.uv = []; this.ind = []; this.col = null; }
+
+  // Joins two rows of points across the road (each [{ p: [x, y, z], uv: [u, v] }], in the same order across) with triangles,
+  // however many points each has: walks both rows together, so no point of one row sits on the middle of an edge of the other
+  // (no T-junction, no crack). Every triangle faces up.
+  stitch(rowA, rowB, fa, fb) {
+    let i = 0, j = 0;
+    const put = q => { const n = this.pos.length / 3; this.pos.push(...q.p); this.uv.push(...q.uv); return n; };
+    const tri = (a, b, c) => {
+      const ux = b.p[0] - a.p[0], uz = b.p[2] - a.p[2], vx = c.p[0] - a.p[0], vz = c.p[2] - a.p[2];
+      const up = uz * vx - ux * vz > 0;   // y of (b - a) x (c - a), from the plan view
+      const ia = put(a), ib = put(b), ic = put(c);
+      if (up) this.ind.push(ia, ib, ic); else this.ind.push(ia, ic, ib);
+    };
+    while (i < rowA.length - 1 || j < rowB.length - 1) {
+      if (j === rowB.length - 1 || (i < rowA.length - 1 && fa[i + 1] <= fb[j + 1])) { tri(rowA[i], rowA[i + 1], rowB[j]); i++; }
+      else { tri(rowA[i], rowB[j + 1], rowB[j]); j++; }
+    }
+  }
 
   // a(i), b(i): world positions of the two edges at sample i.
   // u(i, j): texture coordinate along the strip. va, vb: across (number or function of i).
