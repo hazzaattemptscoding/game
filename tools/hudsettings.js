@@ -19,6 +19,7 @@ const empty = migrateSettings({});
 check(same(empty.hud, FULL), 'an empty save gets the full HUD');
 check(same(empty.trackMap, DEFAULT_TRACK_MAP), 'an empty save gets the default map');
 check(empty.hudScale === 100, 'HUD scale defaults to 100');
+check(HUD_KEYS.includes('minisectors') && FULL.minisectors === true && MINIMAL.minisectors === false && empty.hud.minisectors === true, 'the minisectors part is on in full and off in minimal');
 check(HUD_KEYS.every(k => k === 'pedals' || k === 'inputOverlay' || k === 'fps' ? empty.hud[k] === false : empty.hud[k] === true), 'every part that existed before is on, the three extras are off');
 check(empty.trackMap.on === true, 'the map is on by default');
 for (const bad of [null, undefined, 5, 'x', []]) check(same(migrateSettings(bad).hud, FULL), 'a save that is not an object (' + JSON.stringify(bad) + ') gives the defaults');

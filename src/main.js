@@ -22,6 +22,7 @@ import { CameraRig } from './cameras.js';
 import { createInput } from './input.js';
 import { Hud } from './hud.js';
 import { createMiniMap } from './miniMap.js';
+import { createMarshalLights, planMarshal, MarshalWatch } from './marshal.js';
 import { hudOn, cyclePreset, PRESET_NAMES } from './hudSettings.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { ReportTool } from './report.js';
@@ -82,7 +83,8 @@ const ground = createGround(track);
 const terrain = ground.mesh();
 const world = new THREE.Group();
 const trackScene = buildTrackScene(track, ground);
-world.add(terrain, trackScene, buildScenery(track, ground));
+const scenery = buildScenery(track, ground);
+world.add(terrain, trackScene, scenery);
 const optimised = optimiseWorld(world);   // long ribbons in pieces and small meshes merged (src/cull.js); the report tool swaps the real objects back
 freezeWorld(world);
 const props = propCuller(world);
@@ -91,6 +93,9 @@ const env = createEnvironment({ renderer, scene, sun, hemi, sunDir: SUN_DIR, onL
 const urlEnv = envFromParams(params);   // ?weather=rain&time=dusk wins over the settings and the room, for testing
 env.set(urlEnv || settings, { instant: true });
 env.registerWorld(world);
+const marshal = createMarshalLights(track, ground, planMarshal(track, ground, scenery.userData.keepClear));   // LED panels at the minisector boundaries (src/marshal.js)
+scene.add(marshal.group);
+const marshalWatch = new MarshalWatch(marshal, track);
 const racingLine = createRacingLine(track);   // optional colour coded racing line (L key, Settings); the page ?line=1 turns it on
 scene.add(racingLine.group);
 const carFx = createCarFx(scene);     // headlamp and tail light glow, road pools and spray for the other cars
@@ -156,7 +161,7 @@ const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthe
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
 const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search, getLivery: myLivery });   // multiplayer: idle until a room is opened
-const miniMap = createMiniMap(document.getElementById('hud'), { track, car, lobby, settings, ownColour: () => myLivery().body });
+const miniMap = createMiniMap(document.getElementById('hud'), { track, car, lobby, settings, ownColour: () => myLivery().body, timer });
 const board = createBoard(document.getElementById('board'), { timer, lobby });
 const steerBar = document.getElementById('steer-bar'), steerMark = steerBar.firstElementChild;
 const IDLE = { steer: 0, throttle: 0, brake: 0.3, drs: false };
@@ -301,10 +306,12 @@ function frame(now) {
   hudDue += dt;
   if (hudDue >= 1 / quality.tier.hudHz - 0.002) {
     hud.update(car, timer, track, simTime, playerInput);
+    marshalWatch.update(car, simTime, timer.reverse);
     miniMap.update();
     hudDue = 0;
   }
   dir.after(now, simTime);
+  marshal.update(now / 1000);
   racingLine.setVisible(settings.racingLine && dir.api.racingLineAllowed());   // a race can forbid it
   racingLine.update(car.loc.s);
   board.update(simTime, now);
@@ -318,7 +325,7 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 // for quick checks from the browser console
-window.lakeside = { THREE, optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen };
+window.lakeside = { THREE, optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen, marshal };
 
 const shadowAt = { x: 0, y: 0, z: 0 };
 // the FPS readout: frame rate and time, the slowest frame, the render scale and what the last frame cost

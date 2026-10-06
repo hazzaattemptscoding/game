@@ -4,6 +4,7 @@
 
 import { SURF, SURF_NAMES } from './track.js';
 import { hudClasses, HUD_KEYS } from './hudSettings.js';
+import { MINISECTORS } from './minisectors.js';
 
 const SURF_NAME = SURF_NAMES;
 
@@ -32,6 +33,7 @@ export class Hud {
         </div>
         <div class="hud-live" id="h-live" hidden><b id="h-live-t">+0.000</b><span class="hud-live-bar"><i id="h-live-bar"></i></span></div>
         <div class="hud-sectors" id="h-sec"></div>
+        <div class="hud-mini" id="h-mini">${'<i></i>'.repeat(MINISECTORS)}</div>
         <div class="hud-limits" id="h-limits" hidden></div>
         <div class="hud-stand" id="h-stand" hidden></div>
         <div class="hud-fps" id="h-fps">FPS 0</div>
@@ -55,7 +57,7 @@ export class Hud {
       <pre class="hud-debug" id="h-debug"></pre>
       <div class="hud-help" id="h-help">Arrows or WASD to drive · Space for DRS · R reset · C camera · L racing line · Esc menu</div>`;
     const $ = id => root.querySelector('#' + id);
-    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), live: $('h-live'), liveT: $('h-live-t'), liveBar: $('h-live-bar'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr') };
+    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), mini: $('h-mini'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), live: $('h-live'), liveT: $('h-live-t'), liveBar: $('h-live-bar'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr') };
     this.root = root;
     this._layout = '';
     this.perf = 'FPS';    // the FPS readout text, set from the loop (src/main.js)
@@ -66,6 +68,8 @@ export class Hud {
     const forced = new URLSearchParams(location.search).get('warn');
     if (forced) { this.warn(forced, 0); this.forcedWarn = forced; }
     this.sectorCells = [];
+    this.miniCells = [...this.el.mini.children];
+    this._miniKey = '';
     setTimeout(() => this.el.help.classList.add('fade'), 9000);
   }
 
@@ -147,6 +151,15 @@ export class Hud {
     }
     const html = cells.join('');
     if (html !== this._secHtml) { e.sec.innerHTML = html; this._secHtml = html; }
+
+    // minisectors: one segment each, purple / green / yellow like the sector times, the one being driven outlined; redrawn only on a change
+    if (s.hud.minisectors) {
+      const m = timer.minis, shown = m.display(), cur = m.on ? m.index : -1, key = shown.join() + '|' + cur;
+      if (key !== this._miniKey) {
+        this._miniKey = key;
+        this.miniCells.forEach((c, i) => { c.className = (shown[i] || '') + (i === cur ? ' cur' : ''); });
+      }
+    }
 
     for (const ev of timer.takeEvents()) {
       if (ev.type === 'lap') this.flash((ev.best ? 'Best lap ' : 'Lap ') + fmtTime(ev.time), simTime, ev.best ? 'pb' : '');

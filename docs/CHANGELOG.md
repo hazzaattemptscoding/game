@@ -1,5 +1,15 @@
 # Changelog
 
+## Minisectors and marshal light panels
+
+The lap is cut into 25 minisectors of about 150 m, timed like the sectors and coloured like F1: purple is your best of that minisector this session, green is faster than the same one on your last lap, yellow is slower.
+
+- `src/minisectors.js` (no page needed): the boundaries (the three sector boundaries are always among them; mirrored in reverse so the posts stay in the same places) and a tracker that `LapTimer` feeds in lap order. Its times add up to the lap time and to each sector time. Lap and sector times are unchanged. A lap with a jump in it leaves the hidden pieces untimed, and a lap with the car put back is not kept.
+- HUD: a row of 25 coloured segments under the sector boxes with the current one outlined, and the track map outline takes the same colours (this lap, the last lap's for the pieces not reached yet). New HUD part "Minisectors" in Settings > Interface: on in Full, off in Minimal.
+- Marshal posts (`src/marshal.js`): a post with a square LED panel at each minisector boundary, behind the barrier on the outside of the bend, facing the oncoming cars, off the pit lane and clear of stands, buildings and bridges (a boundary with no room slides up to 120 m along the road). Two instanced meshes, so two draw calls however many posts.
+- Panel states: off, yellow (flashes), double yellow (flashes faster), red, green, blue. For now only yellow is automatic: your car off the track or stopped (under 3 m/s for over a second, not in the pit lane) lights yellow at its minisector and the one before it, and clears after 3 s of normal driving. Red, green and blue are for race control later: `window.lakeside.marshal.set(k, 'red')`, `.setAll(state)`, `.state(k)`.
+- `npm run minisectors` tests the boundaries, the timing totals (forward and reverse), the colours, the post placement and the panel states.
+
 ## Live delta
 
 A running gap to your best lap this session, under the lap timer: green and a bar to the left when you are ahead, red and a bar to the right when you are behind (a full half-bar at 2 s). It appears from the lap after your first full lap.

@@ -7,6 +7,7 @@ export const HUD_ELEMENTS = [
   ['speed', 'Speed, gear and revs', 'Includes the pit limiter and DRS lights.'],
   ['lapTimer', 'Lap timer, last and best', ''],
   ['sectors', 'Sector times', ''],
+  ['minisectors', 'Minisectors', 'A row of coloured segments under the sector times, and the colours on the track map: purple is your best this session, green is faster than your last lap, yellow is slower.'],
   ['delta', 'Delta in the sector times', 'The gap to your last lap, beside each sector time.'],
   ['liveDelta', 'Live delta', 'The running gap to your best lap this session: green when you are ahead, red when behind.'],
   ['limits', 'Track limits warnings', 'The banner and the count for this lap.'],
@@ -20,8 +21,8 @@ export const HUD_ELEMENTS = [
 export const HUD_KEYS = HUD_ELEMENTS.map(e => e[0]);
 
 // the look the game had before these settings: everything on except the three extras
-export const FULL = Object.freeze({ speed: true, lapTimer: true, sectors: true, delta: true, liveDelta: true, limits: true, assists: true, flags: true, steerBar: true, pedals: false, inputOverlay: false, fps: false });
-export const MINIMAL = Object.freeze({ speed: true, lapTimer: true, sectors: false, delta: false, liveDelta: true, limits: true, assists: false, flags: true, steerBar: false, pedals: false, inputOverlay: false, fps: false });
+export const FULL = Object.freeze({ speed: true, lapTimer: true, sectors: true, minisectors: true, delta: true, liveDelta: true, limits: true, assists: true, flags: true, steerBar: true, pedals: false, inputOverlay: false, fps: false });
+export const MINIMAL = Object.freeze({ speed: true, lapTimer: true, sectors: false, minisectors: false, delta: false, liveDelta: true, limits: true, assists: false, flags: true, steerBar: false, pedals: false, inputOverlay: false, fps: false });
 export const OFF = Object.freeze(Object.fromEntries(HUD_KEYS.map(k => [k, false])));
 export const PRESETS = { full: { hud: FULL, map: true }, minimal: { hud: MINIMAL, map: false }, off: { hud: OFF, map: false } };
 export const PRESET_ORDER = ['full', 'minimal', 'off'];

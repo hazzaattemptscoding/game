@@ -204,7 +204,7 @@ function settingsScreen() {
           add(p, segRow('HUD preset', PRESET_ORDER.map(k => [k, PRESET_NAMES[k]]), () => detectPreset(settings), v => { applyPreset(settings, v); persist(); sync(); }, { note: 'The H key steps through Full, Minimal and Off. Switching a single part below makes it Custom.' }));
           add(p, sliderRow('HUD scale', { min: SCALE_MIN, max: SCALE_MAX, step: 5, get: () => settings.hudScale, set: v => { settings.hudScale = v; persist(); }, fmt: v => `${Math.round(v)}%` }));
           add(p, segRow('Speed', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }));
-          const groups = [['Readouts', ['speed', 'lapTimer', 'sectors', 'delta']], ['Warnings and messages', ['limits', 'assists', 'flags']], ['Inputs', ['steerBar', 'pedals', 'inputOverlay']], ['Other', ['fps']]];
+          const groups = [['Readouts', ['speed', 'lapTimer', 'sectors', 'minisectors', 'delta']], ['Warnings and messages', ['limits', 'assists', 'flags']], ['Inputs', ['steerBar', 'pedals', 'inputOverlay']], ['Other', ['fps']]];
           const info = Object.fromEntries(HUD_ELEMENTS.map(e => [e[0], e]));
           for (const [title, keys] of groups) {
             const grp = h('div', 'm-group', h('div', 'm-gtitle', title));

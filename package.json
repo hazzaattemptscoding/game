@@ -25,6 +25,7 @@
     "live": "node tools/live.js",
     "session": "node tools/session.js",
     "hudsettings": "node tools/hudsettings.js",
+    "minisectors": "node tools/minisectors.js",
     "perf": "node tools/perf.js",
     "screencontrol": "node tools/screencontrol.js",
     "check": "node tools/check.js",
