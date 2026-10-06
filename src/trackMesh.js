@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { wrap, BARRIER } from './track.js';
 import * as tex from './textures.js';
-import { buildGroundRibbon } from './groundRibbon.js';
+import { buildGroundRibbon, buildEntryRoad } from './groundRibbon.js';
 import { buildGantry, buildStartPaint } from './gantry.js';
 import { buildBridge } from './bridge.js';
 import { meadowMaterial } from './scenery.js';
@@ -92,12 +92,13 @@ export function buildTrackScene(T, ground) {
     strips('road').strip(all, i => P(i, HW[i] * f0), i => P(i, HW[i] * f1), (i, j) => sOf(i, j, all) / 8, i => HW[i] * f0 / 8, i => HW[i] * f1 / 8);
   }
   for (const g of [-1, 1]) {
-    const lineRuns = g < 0 ? runs(T.N, i => !T.pitMouth[i]) : [all];
+    const lineRuns = g < 0 ? runs(T.N, i => !T.pitMouth[i] && !(T.pitEntryZone[i] && !T.pitEntryRunoff[i])) : [all];
     for (const run of lineRuns) strips('line').strip(run, i => P(i, g * (HW[i] - 0.15), DECAL), i => P(i, g * HW[i], DECAL), () => 0, 0, 1);
   }
 
   // all the ground beside the tarmac, as one ribbon with shared vertices (groundRibbon.js)
   buildGroundRibbon(T, strips, P, G);
+  buildEntryRoad(T, strips, G, DECAL);
 
   // paint on top of it: rumble bands across the concrete apron, dark edges on the gravel
   for (const sd of [0, 1]) {
@@ -120,7 +121,7 @@ export function buildTrackScene(T, ground) {
   // a short grass skirt at the edge of the flat ground, down into the terrain
   for (const sd of [0, 1]) {
     const g = sd ? 1 : -1;
-    for (const run of runs(T.N, i => !T.isBridge[i])) {
+    for (const run of runs(T.N, i => !T.isBridge[i] && !(sd === 0 && T.pitEntryZone[i]))) {   // beside the entry road its own run-off carries on
       strips('meadow').strip(run, i => P(i, g * T.wall[sd][i], -1.5), i => P(i, g * T.wall[sd][i]), (i, j) => sOf(i, j, run) / 24, 0, 0.1);
     }
   }

@@ -83,6 +83,10 @@ const EXIT_ALONGSIDE = 60;  // metres the exit road runs alongside at EXIT_SEP
 const EXIT_MERGE = 70;      // metres of hatched merge, the gap easing from EXIT_SEP to nothing
 const EXIT_WIDTH = 7;       // exit road width once clear of the garages, metres
 const EXIT_SEP_WALL = 0.9;  // thickness of the low wall between the exit road and the track, metres (0.55 m high)
+const LIMIT_LEAD = 25;      // the pit limiter starts this far before the first garage, metres
+const ENTRY_TANGENT = 0.5; // the entry road's curve: tangent length as a share of its chord (bigger = straighter in the middle)
+const ENTRY_FOCAL = 0.8;   // beside the entry road the run-off reaches at most this share of the way to where the normals cross
+const ENTRY_FOLD = 0.96;    // on the inside of a bend the entry road's far edge stays within this share of the radius (the offsets fold at 1)
 const EXIT_CLOSE = 60;      // metres after the merge over which the merged exit lane's outer edge eases in to the track edge
 
 export function buildTrack(layout = LAYOUT, corners = CORNERS) {
@@ -176,6 +180,16 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
     return bank[n] * Math.max(-lim, Math.min(lim, lat));
   };
   track.bankRise = bankRise;
+  // the separate pit entry road: level across, at the height of the track beside it, smoothed along
+  if (track.pitEntry) {
+    const R = track.pitEntry;
+    // level with the track's bands where the run-off strip meets them (the camber's rise is level past the kerb)
+    for (let k = 0; k < R.n; k++) {
+      const a = R.hitA[k], b = R.hitB[k], v = R.hitV[k];
+      R.y[k] = (h[a] + bankRise(a, -1e3)) * (1 - v) + (h[b] + bankRise(b, -1e3)) * v;
+    }
+    for (let pass = 0; pass < 4; pass++) { const y = Float64Array.from(R.y); for (let k = 1; k < R.n - 1; k++) R.y[k] = (y[k - 1] + 2 * y[k] + y[k + 1]) / 4; }
+  }
   // Road height under a point beside sample n: that sample's height, carried along the grade, plus the camber.
   const roadAt = (n, px, pz) => h[n] + grade[n] * Math.max(-ds, Math.min(ds, (px - x[n]) * tx[n] + (pz - z[n]) * tz[n]))
     + bankRise(n, (px - x[n]) * nx[n] + (pz - z[n]) * nz[n]);
@@ -185,7 +199,15 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   // belongs to that sample exactly, so a band built from sample i never takes its height from a
   // neighbour (which made the road bumpy on bends). Outside the paved width the ground is the same
   // whatever the hint.
+  // on the separate pit entry road its own height; beside it (on the far side) the ground eases to it at most 1 in 4
   const groundBase = (px, pz, hint) => {
+    const r = entryRoadAt(track, px, pz);
+    if (!r) return groundPlain(px, pz, hint);
+    if (!r.out) return r.y;
+    const g = groundPlain(px, pz, hint), lim = r.out * 0.25;
+    return r.y + Math.max(-lim, Math.min(lim, g - r.y));
+  };
+  const groundPlain = (px, pz, hint) => {
     let near = 0, best = Infinity;
     if (Number.isInteger(hint) && !track.isBridge[wrap(hint, N)]) {
       const n0 = wrap(hint, N), dx = px - x[n0], dz = pz - z[n0];
@@ -346,6 +368,12 @@ function surfaceAt(T, i, d) {
   if (side === 0 && T.pitMouth[i] && a <= T.pitOut[i]) return a < T.pitIn[i] ? SURF.TARMAC : SURF.PIT;   // the mouth is one surface with the track
   if (a <= hw - LINE_WIDTH) return SURF.TARMAC;
   if (a <= hw) return SURF.PAINT;
+  if (side === 0 && T.pitEntryNear && T.pitEntryNear[i]) {
+    if (T.pitEntryZone[i] && !T.pitEntryRunoff[i] && a <= T.pitEntryEdge[i]) return SURF.TARMAC;   // the entry road's mouth is one surface with the track
+    const r = a > T.hw[i] + T.kerb[0][i] + T.sausage[0][i] + T.runoff[0][i] || !T.pitEntryZone[i] ? entryRoadAt(T, T.x[i] + T.nx[i] * d, T.z[i] + T.nz[i] * d) : null;
+    if (r && r.apron) return SURF.RUNOFF;
+    if (r && !r.out) return SURF.PIT;
+  }
   if (side === 0 && T.pitOut[i] && a >= T.pitIn[i] && a <= T.pitOut[i]) return SURF.PIT;
   if (side === 0 && T.pitIsland[i] && a < T.pitIn[i]) return SURF.RUNOFF;
   let edge = hw + T.kerb[side][i];
@@ -466,7 +494,7 @@ function buildSides(T, corners) {
   const forZone = (from, to, code, taper, fn) => {
     for (const sd of sides(code)) forRange(T.sAtPointRaw(from), T.sAtPointRaw(to), taper, (i, w) => fn(sd, i, w));
   };
-  const kerbOK = (sd, i) => !T.isBridge[i] && !(sd === 0 && T.pitMouth[i]) && !(sd === 0 && T.pitOut[i] && T.pitIn[i] - HW[i] < KERB_WIDTH + 1.5);
+  const kerbOK = (sd, i) => !T.isBridge[i] && !(sd === 0 && T.pitMouth[i]) && !(sd === 0 && T.pitEntryZone[i] && !T.pitEntryWall[i]) && !(sd === 0 && T.pitOut[i] && T.pitIn[i] - HW[i] < KERB_WIDTH + 1.5);
 
   // 1. Corners: kerbs where the car uses the edge, run-off on the outside
   const gravelW = pair(), reach = pair();
@@ -546,7 +574,10 @@ function buildSides(T, corners) {
   for (let sd = 0; sd < 2; sd++) {
     for (let i = 0; i < N; i++) {
       if (T.isBridge[i]) { T.kerb[sd][i] = 0; T.runoff[sd][i] = BRIDGE_RUNOFF; T.wall[sd][i] = HW[i] + BRIDGE_RUNOFF; continue; }   // the deck margin is paved
-      if (sd === 0 && T.pitOut[i]) { T.runoff[sd][i] = 0; gravelW[sd][i] = 0; }
+      if (sd === 0 && (T.pitOut[i] || T.pitEntryZone[i])) { T.runoff[sd][i] = 0; gravelW[sd][i] = 0; }
+      // beside the entry road the run-off is tarmac all the way to the pit wall (the wall stands on its far edge)
+      // (at the mouth it is the shared asphalt where the road splits off; the bands draw it as road)
+      if (sd === 0 && T.pitEntryEdge[i]) { T.runoff[sd][i] = Math.max(0, T.pitEntryEdge[i] - HW[i] - T.kerb[sd][i] - T.sausage[sd][i]); T.concrete[sd][i] = 0; }
       if (gravelW[sd][i] > 0.5) T.runoff[sd][i] = Math.max(T.runoff[sd][i], GRAVEL_APRON * Math.min(1, gravelW[sd][i] / 5));
       const edge = HW[i] + T.kerb[sd][i] + T.sausage[sd][i] + T.runoff[sd][i];
       if (gravelW[sd][i] > 0.5) { T.gravelIn[sd][i] = edge; T.gravelOut[sd][i] = edge + gravelW[sd][i]; }
@@ -573,6 +604,8 @@ function buildSides(T, corners) {
       for (let i = 1; i < N; i++) T.wall[sd][i] = Math.min(T.wall[sd][i], T.wall[sd][i - 1] + 0.25);
       for (let i = N - 2; i >= 0; i--) T.wall[sd][i] = Math.min(T.wall[sd][i], T.wall[sd][i + 1] + 0.25);
     }
+    // beside the separate entry road the flat ground ends at the road's track-side edge, where the pit wall stands
+    if (sd === 0) for (let i = 0; i < N; i++) if (T.pitEntryZone[i]) T.wall[0][i] = T.pitEntryEdge[i];
     // the paved bands never reach past the barrier line (matters where the line funnels in to a bridge)
     for (let i = 0; i < N; i++) {
       const room = Math.max(0, T.wall[sd][i] - HW[i] - T.kerb[sd][i] - T.sausage[sd][i]);
@@ -764,25 +797,189 @@ function buildPit(T) {
   // gap between the track edge and the exit road, by distance v before the end of the merge
   const exitGap = v => v < EXIT_MERGE ? EXIT_SEP * ease(v / EXIT_MERGE) : EXIT_SEP + tOut * Math.max(0, v - EXIT_MERGE - EXIT_ALONGSIDE);
   T.pitExitClose = EXIT_CLOSE;
+  // The entry road: its track-side edge is pulled straight like a string between the split (at PIT_ENTRY_ANGLE) and the
+  // full-width lane, held at least a pit wall's clearance from the track edge. So it cuts across the chicane instead of
+  // following it. Its first `entryJoin` metres are a road of their own (T.pitEntry, laid along its own direction), since
+  // across the chicane its far edge is further out than the bend's radius, where offsets from the track fold back. After
+  // that it is the usual offset lane (pitIn, pitOut), and only its track-side edge has to stay clear of the fold.
+  const entryLen = P.entryRoad || 0, ek = Math.round(entryLen / T.ds), jk = Math.min(ek, Math.round((P.entryJoin || 0) / T.ds));
+  const fullAt = i => T.hw[i] + PIT_WALL_CLEAR + PIT_WALL + 0.6;
+  const entryWidth = u => (P.entryWidth || P.width) + (P.width - (P.entryWidth || P.width)) * ease((u - (entryLen - 60)) / 60);
+  const entryEdge = new Float64Array(ek + 1), idx = [];
+  if (ek > 0) {
+    const lo = [], hi = [], fixed = [];
+    for (let k = 0; k <= ek; k++) {
+      const u = k * T.ds, i = wrap(Math.round((a + u) / T.ds), N), hw = T.hw[i];
+      let c = 0; for (let q = -2; q <= 2; q++) c = Math.min(c, T.curv[wrap(i + q, N)]);   // tightest left turn nearby (left is the pit side)
+      idx.push(i);
+      lo.push(hw + Math.min(tIn * u, fullAt(i) - hw));
+      hi.push(c < 0 ? ENTRY_FOLD / -c - (k < jk ? 0 : entryWidth(u)) : Infinity);
+      fixed.push(u < PIT_MOUTH_CLEAR || u > entryLen - 15);
+      entryEdge[k] = u < PIT_MOUTH_CLEAR ? hw + tIn * u : u > entryLen - 15 ? fullAt(i) : Math.max(lo[k], Math.min(hi[k], fullAt(i)));
+    }
+    const px = k => T.x[idx[k]] - T.nx[idx[k]] * entryEdge[k], pz = k => T.z[idx[k]] - T.nz[idx[k]] * entryEdge[k];
+    for (let it = 0; it < 4000; it++) {
+      for (let k = 1; k < ek; k++) {
+        if (fixed[k]) continue;
+        // where this sample's normal crosses the chord between its neighbours (the edge there if it were straight)
+        const i = idx[k], ax = px(k - 1), az = pz(k - 1), dx = px(k + 1) - ax, dz = pz(k + 1) - az;
+        const den = T.nx[i] * dz - T.nz[i] * dx;
+        const target = Math.abs(den) > 1e-6 ? ((T.x[i] - ax) * dz - (T.z[i] - az) * dx) / den
+          : -(((ax + dx / 2) - T.x[i]) * T.nx[i] + ((az + dz / 2) - T.z[i]) * T.nz[i]);
+        entryEdge[k] = Math.max(lo[k], Math.min(hi[k], entryEdge[k] + 1.85 * (target - entryEdge[k])));   // over-relaxed: converges in a few hundred passes
+      }
+    }
+  }
+  T.pitEntryZone = new Uint8Array(N);   // samples beside the separate entry road
+  T.pitEntryEdge = new Float64Array(N); // |d| of the entry road's track-side edge (the pit wall's pit face), along the whole entry road
+  T.pitEntryWall = new Uint8Array(N);   // beside the separate entry road, where the pit wall stands
+  T.pitEntryRunoff = new Uint8Array(N); // beside the entry road: tarmac run-off from the track edge to the pit wall
+  T.pitEntry = null;
+  if (jk > 0) {
+    // The separate road. Its track-side edge is a smooth curve in the world (a cubic from the end of the mouth, splitting at
+    // PIT_ENTRY_ANGLE, to the join, parallel to the track there), laid out a metre at a time; not an offset from the
+    // track, which cannot hold a straight line past the chicane's tight left. R.i is the nearest track sample of each point.
+    const k0 = Math.round(PIT_MOUTH_CLEAR / T.ds), iA = idx[k0], iB = idx[jk];
+    const pA = [T.x[iA] - T.nx[iA] * entryEdge[k0], T.z[iA] - T.nz[iA] * entryEdge[k0]], pB = [T.x[iB] - T.nx[iB] * entryEdge[jk], T.z[iB] - T.nz[iB] * entryEdge[jk]];
+    const ca = Math.cos(PIT_ENTRY_ANGLE * Math.PI / 180), sa = Math.sin(PIT_ENTRY_ANGLE * Math.PI / 180);
+    // the track's direction turned PIT_ENTRY_ANGLE to the left (towards -n)
+    const tA = [T.tx[iA] * ca + T.nx[iA] * -sa, T.tz[iA] * ca + T.nz[iA] * -sa], tB = [T.tx[iB], T.tz[iB]];
+    const chord = Math.hypot(pB[0] - pA[0], pB[1] - pA[1]), m = chord * ENTRY_TANGENT;
+    const at = t => { const t2 = t * t, t3 = t2 * t, h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
+      return [h00 * pA[0] + h10 * m * tA[0] + h01 * pB[0] + h11 * m * tB[0], h00 * pA[1] + h10 * m * tA[1] + h01 * pB[1] + h11 * m * tB[1]]; };
+    const fine = []; for (let q = 0; q <= 2000; q++) fine.push(at(q / 2000));
+    const pts = [];
+    for (let k = 0; k < k0; k++) pts.push([T.x[idx[k]] - T.nx[idx[k]] * entryEdge[k], T.z[idx[k]] - T.nz[idx[k]] * entryEdge[k]]);   // the mouth: along the track
+    let acc = 0; pts.push(fine[0]);
+    for (let q = 1; q <= 2000; q++) { acc += Math.hypot(fine[q][0] - fine[q - 1][0], fine[q][1] - fine[q - 1][1]); if (acc >= T.ds) { pts.push(fine[q]); acc = 0; } }
+    if (Math.hypot(pts.at(-1)[0] - pB[0], pts.at(-1)[1] - pB[1]) > 0.3) pts.push(pB); else pts[pts.length - 1] = pB;
+    const n = pts.length;
+    const R = { n, i: new Int32Array(n), e: new Float64Array(n), x: new Float64Array(n), z: new Float64Array(n), dx: new Float64Array(n), dz: new Float64Array(n),
+      w: new Float64Array(n), y: new Float64Array(n), apron: new Float64Array(n), u: new Float64Array(n) };
+    let near = idx[0];
+    for (let k = 0; k < n; k++) {
+      R.x[k] = pts[k][0]; R.z[k] = pts[k][1];
+      let best = Infinity; for (let q = -6; q <= 30; q++) { const j = wrap(near + q, N), d2 = (T.x[j] - R.x[k]) ** 2 + (T.z[j] - R.z[k]) ** 2; if (d2 < best) { best = d2; R.i[k] = j; } }
+      near = R.i[k];
+      R.e[k] = -((R.x[k] - T.x[near]) * T.nx[near] + (R.z[k] - T.z[near]) * T.nz[near]);
+    }
+    for (let k = 0; k < n; k++) {
+      const p = Math.max(0, k - 2), q = Math.min(n - 1, k + 2), L = Math.hypot(R.x[q] - R.x[p], R.z[q] - R.z[p]) || 1;
+      R.dx[k] = (R.x[q] - R.x[p]) / L; R.dz[k] = (R.z[q] - R.z[p]) / L;
+      R.u[k] = k ? R.u[k - 1] + Math.hypot(R.x[k] - R.x[k - 1], R.z[k] - R.z[k - 1]) : 0;
+    }
+    for (let k = 0; k < n; k++) R.w[k] = entryWidth(R.u[k] * entryLen / Math.max(1, R.u[n - 1]) * (jk * T.ds / entryLen));
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let k = 0; k < n; k++) for (const f of [-1, 0, 1]) {
+      const ox = R.x[k] + R.dz[k] * (f < 0 ? -12 : R.w[k] * f), oz = R.z[k] - R.dx[k] * (f < 0 ? -12 : R.w[k] * f);
+      x0 = Math.min(x0, ox); x1 = Math.max(x1, ox); z0 = Math.min(z0, oz); z1 = Math.max(z1, oz);
+    }
+    R.box = [x0, x1, z0, z1];
+    T.pitEntry = R;
+    T.pitEntryNear = new Uint8Array(N);   // samples whose side the separate road may be on (the zone and 40 m either side)
+    for (let k = 0; k < n; k++) for (let q = -40; q <= 40; q++) T.pitEntryNear[wrap(R.i[k] + q, N)] = 1;
+    // where each zone sample's normal meets the road's edge (the run-off reaches it), never past where neighbouring
+    // normals cross (the bands would fold): R.apron is the world strip that fills from there to the road
+    for (let k = 0; k < jk; k++) {
+      const i = idx[k], cx = T.x[i], cz = T.z[i];
+      let hit = Infinity;
+      for (let j = 0; j < n - 1; j++) {
+        const ax = R.x[j], az = R.z[j], bx = R.x[j + 1] - ax, bz = R.z[j + 1] - az, den = -T.nx[i] * bz + T.nz[i] * bx;
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((ax - cx) * -T.nz[i] - (az - cz) * -T.nx[i]) / den, e = ((ax - cx) * bz - (az - cz) * bx) / den;
+        if (t >= -1e-6 && t <= 1 + 1e-6 && e > 0) hit = Math.min(hit, e);
+      }
+      let focal = Infinity;
+      for (let q = -3; q <= 3; q++) {
+        const j = wrap(i + q, N), j1 = wrap(j + 1, N), dth = Math.atan2(T.tz[j1], T.tx[j1]) - Math.atan2(T.tz[j], T.tx[j]);
+        const turn = Math.atan2(Math.sin(dth), Math.cos(dth));
+        if (T.curv[j] < 0) focal = Math.min(focal, T.ds / Math.max(1e-6, Math.abs(turn)));   // a left turn: the normals cross on the pit side
+      }
+      entryEdge[k] = Math.min(Number.isFinite(hit) ? hit : entryEdge[k], ENTRY_FOCAL * focal);
+    }
+    // eased into the dips where the normals cross, at most 0.25 m per metre (the road's own run-off strip fills the rest)
+    for (let pass = 0; pass < 2; pass++) {
+      for (let k = 1; k < jk; k++) entryEdge[k] = Math.min(entryEdge[k], entryEdge[k - 1] + 0.25 * T.ds);
+      for (let k = jk - 2; k >= 0; k--) entryEdge[k] = Math.min(entryEdge[k], entryEdge[k + 1] + 0.25 * T.ds);
+    }
+  }
   for (let u = 0; u <= len; u += T.ds) {
     const i = wrap(Math.round((a + u) / T.ds), N), w = len - u, v = Math.max(0, w - EXIT_CLOSE);   // w: to the very end, v: to the end of the merge
     const hw = T.hw[i], full = hw + PIT_WALL_CLEAR + PIT_WALL + 0.6;   // full: pit road inner edge once fully separated (a little spare for the eased curve)
-    const inner = Math.max(hw, smin(smin(hw + tIn * u, full, 1.5), hw + exitGap(v), 1.5));
+    const k = Math.round(u / T.ds), onEntry = k <= ek && ek > 0;
+    if (onEntry) { T.pitEntryEdge[i] = entryEdge[k]; if (u >= PIT_MOUTH_CLEAR) T.pitEntryRunoff[i] = 1; }
+    if (onEntry && k < jk) {
+      T.pitEntryZone[i] = 1;
+      if (entryEdge[k] - PIT_WALL >= hw + PIT_WALL_CLEAR) T.pitEntryWall[i] = 1;
+      continue;
+    }
+    const inner = onEntry ? Math.max(hw, entryEdge[k]) : Math.max(hw, smin(ek > 0 ? full : smin(hw + tIn * u, full, 1.5), hw + exitGap(v), 1.5));
     // the exit road narrows to EXIT_WIDTH as it comes down from beside the garages
     const narrow = u > len / 2 ? 1 - ease((inner - hw - EXIT_SEP) / (full - hw - EXIT_SEP - 0.3)) : 0;
     T.pitIn[i] = inner;
     // once merged, the lane closes: its outer edge eases in to the track edge over EXIT_CLOSE
-    T.pitOut[i] = inner + (P.width - (P.width - EXIT_WIDTH) * narrow) * (w < EXIT_CLOSE ? ease(w / EXIT_CLOSE) : 1);
-    if (u < PIT_MOUTH_CLEAR || v < PIT_MOUTH_CLEAR) T.pitMouth[i] = 1;
-    if (u >= PIT_MOUTH_CLEAR && v > EXIT_MERGE && inner - PIT_WALL >= hw + PIT_WALL_CLEAR) T.pitWall[i] = 1;
+    T.pitOut[i] = inner + (onEntry ? entryWidth(u) : P.width - (P.width - EXIT_WIDTH) * narrow) * (w < EXIT_CLOSE ? ease(w / EXIT_CLOSE) : 1);
+    if ((!jk && u < PIT_MOUTH_CLEAR) || v < PIT_MOUTH_CLEAR) T.pitMouth[i] = 1;
+    if ((jk || u >= PIT_MOUTH_CLEAR) && v > EXIT_MERGE && inner - PIT_WALL >= hw + PIT_WALL_CLEAR) T.pitWall[i] = 1;
     // the painted gore between the two roads: after the mouth at the entry, the whole hatched merge at the exit
-    if (u >= PIT_MOUTH_CLEAR && u < PIT_MOUTH_CLEAR + PIT_ISLAND && inner > hw + 0.3) T.pitIsland[i] = 1;
+    if (!jk && u >= PIT_MOUTH_CLEAR && u < PIT_MOUTH_CLEAR + PIT_ISLAND && inner > hw + 0.3) T.pitIsland[i] = 1;
     if (v >= PIT_MOUTH_CLEAR && v < EXIT_MERGE && inner > hw + 0.3) T.pitIsland[i] = 1;
     if (v >= EXIT_MERGE && !T.pitWall[i] && inner - hw <= EXIT_SEP + 1.5) T.pitSep[i] = 1;
     if (u > len / 2 && v >= EXIT_MERGE && !T.pitWall[i]) T.pitSepWall[i] = 1;
-    if (T.pitWall[i]) T.pitLimiter[i] = 1;
-    if (T.pitLimiter[i]) T.pitGarage[i] = 1;
+    if (T.pitWall[i] && (!ek || u > entryLen)) T.pitGarage[i] = 1;
   }
+  if (T.pitEntry) {
+    // R.apron: from the road's track-side edge back to where the track's own bands end (the zone samples' pitEntryEdge),
+    // measured square to the road. R.wall: the pit wall stands on the road's edge once it is clear enough of the track.
+    const R = T.pitEntry;
+    R.apron = new Float64Array(R.n); R.wall = new Uint8Array(R.n);
+    R.hitA = Int32Array.from(R.i); R.hitB = Int32Array.from(R.i); R.hitV = new Float64Array(R.n);   // the track samples whose band edge the run-off strip meets
+    const zone = []; for (let i = 0; i < N; i++) if (T.pitEntryZone[i]) zone.push(i);
+    for (let k = 0; k < R.n; k++) {
+      const ox = R.x[k], oz = R.z[k], rx = -R.dz[k], rz = R.dx[k];   // towards the track
+      let best = Infinity;
+      for (let q = 0; q < zone.length - 1; q++) {
+        const i = zone[q], j = zone[q + 1]; if (wrap(j - i, N) !== 1) continue;
+        const ax = T.x[i] - T.nx[i] * T.pitEntryEdge[i], az = T.z[i] - T.nz[i] * T.pitEntryEdge[i];
+        const bx = T.x[j] - T.nx[j] * T.pitEntryEdge[j] - ax, bz = T.z[j] - T.nz[j] * T.pitEntryEdge[j] - az;
+        const den = rx * bz - rz * bx; if (Math.abs(den) < 1e-9) continue;
+        const t = ((ax - ox) * bz - (az - oz) * bx) / den, v = ((ax - ox) * rz - (az - oz) * rx) / den;
+        if (v >= -1e-6 && v <= 1 + 1e-6 && t >= -0.05 && t < best) { best = t; R.hitA[k] = i; R.hitB[k] = j; R.hitV[k] = Math.max(0, Math.min(1, v)); }   // the nearest crossing towards the track
+      }
+      R.apron[k] = Number.isFinite(best) ? Math.max(0, best) : 0;
+      const i = R.i[k], clear = Math.hypot(ox - T.x[i], oz - T.z[i]) - T.hw[i];
+      R.wall[k] = R.u[k] >= PIT_MOUTH_CLEAR && clear - PIT_WALL >= PIT_WALL_CLEAR ? 1 : 0;
+    }
+  }
+  // the limiter: from LIMIT_LEAD before the first garage (the bay is the middle of the garage stretch, see pitBuilding.js garageBay)
+  // to the end of the pit wall at the exit
+  const garages = [];
+  for (let u = 0; u <= len; u += T.ds) { const i = wrap(Math.round((a + u) / T.ds), N); if (T.pitGarage[i]) garages.push(u); }
+  const limitFrom = garages.length ? garages[Math.max(0, Math.floor(garages.length / 2) - 63)] - LIMIT_LEAD : 0;
+  T.pitLimitFrom = (a + limitFrom) % T.length;
+  for (let u = limitFrom; u <= len; u += T.ds) { const i = wrap(Math.round((a + u) / T.ds), N); if (T.pitWall[i]) T.pitLimiter[i] = 1; }
+}
+
+// The separate entry road under (px, pz): null when the point is not on or beside it, else { y, out } where `out` is how far
+// outside the road's far edge it is (0 on the road). Points on the track side of it are left to the ordinary ground.
+const ENTRY_VERGE = 8;   // metres beyond the far edge over which the ground eases from the road's height to its own
+export function entryRoadAt(T, px, pz, reach = ENTRY_VERGE) {
+  const R = T.pitEntry;
+  if (!R) return null;
+  const [x0, x1, z0, z1] = R.box, m = reach + 1;
+  if (px < x0 - m || px > x1 + m || pz < z0 - m || pz > z1 + m) return null;
+  let best = Infinity, k = -1;
+  for (let j = 0; j < R.n; j++) {
+    const q = (px - R.x[j] - R.dz[j] * R.w[j] / 2) ** 2 + (pz - R.z[j] + R.dx[j] * R.w[j] / 2) ** 2;
+    if (q < best) { best = q; k = j; }
+  }
+  const rx = px - R.x[k], rz = pz - R.z[k];
+  const along = rx * R.dx[k] + rz * R.dz[k], lat = rx * R.dz[k] - rz * R.dx[k];   // lat: across the road, away from the track
+  if ((k === 0 && along < -0.5) || (k === R.n - 1 && along > 0.5) || lat < -(R.apron ? R.apron[k] : 0) || lat > R.w[k] + reach) return null;
+  const kn = Math.max(0, Math.min(R.n - 1, k + Math.sign(along))), t = Math.min(1, Math.abs(along) / T.ds);
+  // `apron`: on the run-off strip between the track's bands and the road (level with the road)
+  if (lat > R.w[k] + ENTRY_VERGE) return { far: true, out: lat - R.w[k], k, lat };   // only with a longer reach: past the verge, for the terrain's sink
+  return { y: R.y[k] + (R.y[kn] - R.y[k]) * t, out: Math.max(0, lat - R.w[k]), k, lat, apron: lat < 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -865,7 +1062,7 @@ function buildBarriers(T, corners) {
     // beside a street wall the containment wall keeps to the same easing line, so it joins the street wall in line
     const nearStreet = new Uint8Array(N);
     for (let i = 0; i < N; i++) if (streetWall[i]) for (let k = -20; k <= 20; k++) nearStreet[wrap(i + k, N)] = 1;
-    const needs = i => !streetWall[i] && !T.isBridge[i] && !nearBridge[i] && !(sd === 0 && T.pitOut[i]);
+    const needs = i => !streetWall[i] && !T.isBridge[i] && !nearBridge[i] && !(sd === 0 && (T.pitOut[i] || T.pitEntryZone[i]));
     const plainWhy = 'containment: a low sponsored tyre wall all round the flat ground, so a car never meets an unseen wall';
     const base = new Float64Array(N);
     for (let i = 0; i < N; i++) base[i] = nearStreet[i] ? Math.max(T.wall[sd][i], edge4(i)) : Math.max(T.wall[sd][i], HW[i] + MIN_BARRIER);
@@ -891,7 +1088,7 @@ function buildBarriers(T, corners) {
     // degrees between 3 m segments: round those turns off with a short moving average (a metre at most). Not beside
     // a street wall, a bridge or the pit lane, where the line must stay on the exact line it joins.
     const free = new Uint8Array(N).fill(1);
-    for (let i = 0; i < N; i++) if (nearStreet[i] || nearBridge[i] || T.isBridge[i] || (sd === 0 && T.pitOut[i])) for (let k = -3; k <= 3; k++) free[wrap(i + k, N)] = 0;
+    for (let i = 0; i < N; i++) if (nearStreet[i] || nearBridge[i] || T.isBridge[i] || (sd === 0 && (T.pitOut[i] || T.pitEntryZone[i]))) for (let k = -3; k <= 3; k++) free[wrap(i + k, N)] = 0;
     for (let pass = 0; pass < 2; pass++) {
       const out = Float64Array.from(base);
       for (let i = 0; i < N; i++) if (free[i]) {
@@ -930,6 +1127,30 @@ function buildBarriers(T, corners) {
   for (const run of runsOf(N, i => T.pitOut[i] && T.pitOut[i] > HW[i] + PIT_WALL_CLEAR && !T.pitMouth[i])) {
     follow(BARRIER.PITOUTER, 0, run, i => -(T.pitOut[i] + (T.pitGarage[i] ? PIT_APRON : 0.5)), 3, { why: 'low wall on the garage side of the pit lane' });
   }
+  // the separate entry road: the pit wall between the run-off and the road, and the low wall along its far edge
+  if (T.pitEntry) {
+    const R = T.pitEntry;
+    // the pit wall: its track-side face PIT_WALL in from the road's edge, its pit face on the edge (pitFace: the offset to it)
+    const wk = []; for (let k = 0; k < R.n; k++) if (R.wall[k]) wk.push(k);
+    if (wk.length > 1) {
+      const pts = [], face = [];
+      for (let q = 0; q < wk.length; q += q < wk.length - 3 ? 3 : 1) {
+        const k = wk[q], lx = R.dz[k], lz = -R.dx[k], x = R.x[k] - lx * PIT_WALL, z = R.z[k] - lz * PIT_WALL;
+        pts.push([x, T.groundAt(x, z, R.i[k]), z, R.i[k]]); face.push([lx * PIT_WALL, lz * PIT_WALL]);
+        if (q === wk.length - 1) break;
+      }
+      add(BARRIER.PITWALL, 0, pts, { pitFace: face, why: 'pit wall between the track and the pit entry road' });
+    }
+  }
+  if (T.pitEntry) {
+    const R = T.pitEntry, pts = [];
+    for (let k = 0; k < R.n; k += k < R.n - 3 ? 3 : 1) {
+      const x = R.x[k] + R.dz[k] * (R.w[k] + 0.5), z = R.z[k] - R.dx[k] * (R.w[k] + 0.5);
+      pts.push([x, T.groundAt(x, z, R.i[k]), z, R.i[k]]);
+      if (k === R.n - 1) break;
+    }
+    add(BARRIER.PITOUTER, 0, pts, { why: 'low wall on the far side of the pit entry road' });
+  }
   for (const run of runsOf(N, i => T.pitSepWall[i])) {
     follow(BARRIER.PITSEP, 0, run, i => -(T.pitIn[i] - EXIT_SEP_WALL), 2, { why: 'low wall between the pit exit road and the track' });
   }
@@ -955,7 +1176,7 @@ function buildBarriers(T, corners) {
     if (b.type === BARRIER.PITWALL || b.type === BARRIER.PITSEP) {
       // the pit side of the pit wall (and of the exit road's low wall) is its own face, facing the pit lane
       const w = b.type === BARRIER.PITWALL ? PIT_WALL : EXIT_SEP_WALL;
-      faces.push({ pts: b.pts.map(([x, y, z, i]) => [x - T.nx[i] * w, y, z - T.nz[i] * w, i]), towards: -1 });
+      faces.push({ pts: b.pts.map(([x, y, z, i], k) => b.pitFace ? [x + b.pitFace[k][0], y, z + b.pitFace[k][1], i] : [x - T.nx[i] * w, y, z - T.nz[i] * w, i]), towards: -1 });
     }
     for (const f of faces) {
       for (let k = 0; k < f.pts.length - 1; k++) {

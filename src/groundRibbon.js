@@ -41,9 +41,13 @@ export function buildGroundRibbon(T, strips, P, G) {
       else {
         push(T.kerb[sd][i], 'kerb');
         push(T.sausage[sd][i] / 2, 'sausage'); push(T.sausage[sd][i] / 2, 'sausage');
-        push(T.runoff[sd][i], T.concrete[sd][i] ? 'concrete' : 'apron');
+        // beside the separate pit entry road (pitEntryZone) the run-off is shared asphalt at the mouth, the painted island
+        // until the pit wall starts, then tarmac to the wall; the bands end there and the road's own ribbon (buildEntryRoad) carries on
+        const zone = sd === 0 && T.pitEntryZone && T.pitEntryZone[i];
+        push(T.runoff[sd][i], zone ? (!T.pitEntryRunoff[i] ? 'road' : T.pitEntryWall[i] ? 'apron' : 'island') : T.concrete[sd][i] ? 'concrete' : 'apron');
         push(T.gravelOut[sd][i] > 0 ? T.gravelIn[sd][i] - c : 0, 'grass');   // grass between the apron and a gravel trap set back from it
         push(T.gravelOut[sd][i] > 0 ? T.gravelOut[sd][i] - c : 0, 'gravel');
+        if (zone) { push(0, 'grass'); push(0, 'pit'); push(0, 'grass'); push(0, 'meadow'); E.push(e); MAT.push(m); continue; }
         if (sd === 0 && T.pitMouth[i] && T.pitOut[i] > 0) { push(0, 'grass'); push(T.pitOut[i] - c, 'road'); push(wall - c, 'grass'); }
         else if (sd === 0 && T.pitOut[i] > 0) { push(T.pitIn[i] - c, T.pitIsland[i] ? 'island' : 'grass'); push(T.pitOut[i] - c, 'pit'); push(wall - c, 'grass'); }
         else { push(wall - c, 'grass'); push(0, 'pit'); push(0, 'grass'); }
@@ -103,4 +107,40 @@ export function buildGroundRibbon(T, strips, P, G) {
       }
     }
   }
+}
+
+// The separate pit entry road (T.pitEntry), laid along its own direction: from where the track's bands end, the run-off strip
+// (island before the pit wall starts), the road, a grass verge past its far wall, then meadow and a skirt down into the terrain.
+const ENTRY_VERGE = 3, ENTRY_MEADOW = 10;
+export function buildEntryRoad(T, strips, G, decal) {
+  const R = T.pitEntry;
+  if (!R) return;
+  const ks = []; for (let k = 0; k < R.n; k++) ks.push(k);
+  const at = (k, lat, lift = 0) => { const x = R.x[k] + R.dz[k] * lat, z = R.z[k] - R.dx[k] * lat; return [x, G(x, z, R.i[k]) + lift, z]; };
+  const u = (k) => R.u[k];
+  // a band from lat a(k) to b(k), cut into pieces no wider than 3 m, each corner on the ground
+  const band = (name, list, a, b, uScale, colour) => {
+    const w = Math.max(...list.map(k => b(k) - a(k)), 0), n = Math.max(1, Math.ceil(w / 3));
+    for (let j = 0; j < n; j++) strips(name).strip(list, k => at(k, a(k) + (b(k) - a(k)) * j / n), k => at(k, a(k) + (b(k) - a(k)) * (j + 1) / n),
+      k => u(k) / uScale, k => (a(k) + (b(k) - a(k)) * j / n) / uScale, k => (a(k) + (b(k) - a(k)) * (j + 1) / n) / uScale, colour);
+  };
+  // the run-off strip between the track's bands and the road, by what it is at each point
+  const kind = k => (R.u[k] < 15 ? 'road' : R.wall[k] ? 'apron' : 'island');
+  for (const name of ['road', 'island', 'apron']) {
+    let run = [];
+    const flush = () => { if (run.length > 1) band(name, run, k => -R.apron[k], () => 0, U_SCALE[name] || 8); run = []; };
+    for (let k = 0; k < R.n; k++) { if (kind(k) === name) run.push(k); else { if (run.length) run.push(k); flush(); } }
+    flush();
+  }
+  // a tarmac skirt under the seam with the track's bands, so a hairline crack between the two shows tarmac, not the terrain
+  strips('apron').strip(ks.filter(k => R.u[k] >= 15), k => at(k, -R.apron[k], -0.6), k => at(k, -R.apron[k]), k => u(k) / 8, 0, 0.08);
+  const tone = k => { const f = Math.min(1, R.u[k] / PIT_FADE), v = TARMAC_TONE + (1 - TARMAC_TONE) * f * f * (3 - 2 * f); return [v, v, v]; };
+  band('pit', ks, () => 0, k => R.w[k], U_SCALE.pit, (k) => tone(k));
+  band('grass', ks, k => R.w[k], k => R.w[k] + ENTRY_VERGE, U_SCALE.grass);
+  band('meadow', ks, k => R.w[k] + ENTRY_VERGE, k => R.w[k] + ENTRY_VERGE + ENTRY_MEADOW, U_SCALE.meadow);
+  const far = k => R.w[k] + ENTRY_VERGE + ENTRY_MEADOW;
+  strips('meadow').strip(ks, k => at(k, far(k), -1.5), k => at(k, far(k)), k => u(k) / 24, 0, 0.1);
+  // white lines along both edges of the road
+  strips('line').strip(ks.filter(k => R.u[k] >= 15), k => at(k, 0.2, decal), k => at(k, 0.4, decal), () => 0, 0, 1);
+  strips('line').strip(ks, k => at(k, R.w[k] - 0.4, decal), k => at(k, R.w[k] - 0.2, decal), () => 0, 0, 1);
 }

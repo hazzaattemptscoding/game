@@ -7,7 +7,7 @@
 // Grandstands, the gate guardian, the chapel, the lake and the rest come in phase 3.
 
 import * as THREE from 'three';
-import { wrap } from './track.js';
+import { wrap, entryRoadAt } from './track.js';
 import * as tex from './textures.js';
 import { buildGrandstands, trackBlockers } from './grandstands.js';
 import { buildProps } from './props.js';
@@ -105,7 +105,10 @@ export function createGround(T) {
     const signed = (x - T.x[near]) * T.nx[near] + (z - T.z[near]) * T.nz[near];
     const side = signed < 0 ? 0 : 1;
     const out = Math.min(1, Math.max(0, (dist - Math.min(T.wall[side][near], T.reach[side][near])) / 24));
-    const sink = TERRAIN_SINK * (1 - out * out * (3 - 2 * out));
+    let sink = TERRAIN_SINK * (1 - out * out * (3 - 2 * out));
+    // around the separate pit entry road: sunk under the road, its verge and meadow (13 m past its far edge), easing out over 24 m
+    const r = entryRoadAt(T, x, z, 13 + 24);
+    if (r) { const f = Math.min(1, Math.max(0, (r.out - 13) / 24)); sink = Math.max(sink, TERRAIN_SINK * (1 - f * f * (3 - 2 * f))); }
     return Math.min(height(x, z) - sink, deckCap(x, z));
   }
 

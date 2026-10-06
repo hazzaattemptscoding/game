@@ -57,7 +57,8 @@ for (const b of T.barriers) {
 for (let i = 0; i < T.N; i++) {
   const s = T.s[i];
   for (let side = 0; side < 2; side++) {
-    const pitException = side === 0 && T.pitOut[i] > 0;
+    const zone = j => T.pitEntryZone && T.pitEntryZone[j];   // beside the separate pit entry road the line is the road's edge
+    const pitException = side === 0 && (T.pitOut[i] > 0 || zone(i) || zone(wrap(i + 1, T.N)));
     if (T.isBridge[i] || T.street[side][i] || pitException) continue;
     if (!coverage[side][i]) errors.push(`containment gap side ${side ? 'R' : 'L'} s=${s.toFixed(1)} at (${T.x[i].toFixed(1)}, ${T.z[i].toFixed(1)})`);
     const next = wrap(i + 1, T.N), delta = Math.abs(T.wall[side][next] - T.wall[side][i]);
@@ -172,7 +173,25 @@ for (const [key, n] of templates) if (n > 2) errors.push(`the same barrier secti
   const at = s => Math.round(((s % T.length) + T.length) % T.length / T.ds) % T.N;
   const lanePath = s => -(Math.max(T.pitIn[at(s)], hw) + 1.2);   // inner wheel 0.35 m inside the lane edge
   const cosine = t => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, t)));
-  for (const entering of [true, false]) for (const start of [-4, -2, 0, 2, 4]) {
+  // a separate entry road (T.pitEntry): the drive-in follows its own direction, a point a metre, then 40 m of the lane
+  const E = T.pitEntry;
+  const onSample = (x, z, hint) => {
+    let i = hint, best = Infinity;
+    for (let q = -40; q <= 40; q++) { const j = ((hint + q) % T.N + T.N) % T.N, d2 = (T.x[j] - x) ** 2 + (T.z[j] - z) ** 2; if (d2 < best) { best = d2; i = j; } }
+    return [i, (x - T.x[i]) * T.nx[i] + (z - T.z[i]) * T.nz[i]];
+  };
+  if (E) for (const start of [-4, -2, 0, 2, 4]) {
+    const path = [];
+    for (let k = 0; k < E.n; k++) { const lx = E.dz[k], lz = -E.dx[k]; for (const w of [0.35, 2.05]) path.push([...onSample(E.x[k] + lx * w, E.z[k] + lz * w, E.i[k]), true]); }
+    for (let u = 1; u <= 40; u++) { const i = (E.i[E.n - 1] + u) % T.N; path.push([i, -(T.pitIn[i] + 1.2)]); }
+    for (const [i, d, exact] of path) {
+      for (const w of exact ? [0] : [-0.85, 0.85]) {
+        const sf = T.surfaceAt(i, d + w);
+        if (!SURF_OK.has(sf)) { bad.push(`entry road from offset ${start} at s=${T.s[i].toFixed(0)} d=${(d + w).toFixed(1)} surface ${sf}`); break; }
+      }
+    }
+  }
+  for (const entering of (E ? [false] : [true, false])) for (const start of [-4, -2, 0, 2, 4]) {
     for (let u = 0; u <= 80; u += 1) {
       const s = entering ? a - 20 + u : b - 60 + u;
       const t = entering ? (s - a) / 15 : (s - (b - 15)) / 15;     // the car follows the lane edge, then merges across the mouth

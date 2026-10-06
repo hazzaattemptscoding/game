@@ -1,5 +1,14 @@
 # Changelog
 
+## Pit entry before the Guardroom Chicane
+
+The pit entry now leaves the track on the left at 3433 m, before the Guardroom Chicane, and runs straight past it behind a pit wall, joining the pit lane after Final Approach. The old entry after the chicane is gone. Between the track and the pit wall there is tarmac run-off all the way (up to 20 m wide beside the chicane). The pit limiter starts 25 m before the first garage instead of at the start of the pit wall.
+
+- The first 110 m of the entry road is a road of its own (`T.pitEntry`, laid along its own direction as a smooth curve), because beside the chicane's tight left the track's normals cross 17.8 m out and a lane measured as an offset from the track folds back there. `entryRoadAt(T, x, z)` gives its height and is used by `groundAt`, `surfaceAt` and the terrain's sink. After that it is the usual offset lane, 7 m wide (`layout.pit.entryWidth`) and widening to 12 m by the garages.
+- Its own ribbon (`buildEntryRoad` in groundRibbon.js): the run-off strip from where the track's bands end, the road, a verge and meadow. The pit wall stands on its track-side edge (attenuator at the start), a low wall along its far edge.
+- Layout: `pit.entry` 55.5 (was 60.5), new `pit.entryRoad`, `pit.entryJoin`, `pit.entryWidth`.
+- Audit: the pit drive-in follows the separate road; the wall offset rate check skips the side beside it.
+
 ## Camber and more elevation
 
 Twelve corners are banked or off-camber (`layout.bank`, degrees, + banks into the corner, - leans away): Windsock Hairpin 7, Chandelle 5, Boundary Loop 5, Nissen Hairpin 4, Scramble 3, Searchlight 3, Final Approach 3, Aileron and Rudder 1.5, and off-camber Station Corner -3, Hurricane Sweep -2.5, Pen Alley -2. The bank eases in and out over 30 m. Elevation is 20 % steeper (`heightScale` 0.3 to 0.36; 0.42 put the ground over the end of the Scramble gravel, where a higher stretch of the lap runs 50 m away).
