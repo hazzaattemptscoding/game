@@ -72,19 +72,15 @@ export function buildTrackScene(T, ground) {
     white: new THREE.MeshStandardMaterial({ color: 0xe8e6de, roughness: 0.7, side: THREE.DoubleSide }),
     fence: new THREE.MeshStandardMaterial({ map: tex.fenceTexture(), transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 0.5, metalness: 0.4, depthWrite: false }),
     dark: new THREE.MeshStandardMaterial({ color: 0x1e2124, roughness: 0.6 }),
-    garage: new THREE.MeshStandardMaterial({ map: tex.garageTexture(), roughness: 0.7, side: THREE.DoubleSide }),
-    glass: new THREE.MeshStandardMaterial({ map: tex.facadeTexture({ wall: '#e6e3da', glass: '#24313b', frame: '#2a2d31', cols: 8, rows: 1 }), roughness: 0.35, metalness: 0.2, side: THREE.DoubleSide }),
-    roof: new THREE.MeshStandardMaterial({ color: 0x8a8f94, roughness: 0.7, metalness: 0.3, side: THREE.DoubleSide }),
     attenuator: new THREE.MeshStandardMaterial({ map: tex.chevronTexture('#f2c200', '#111111'), roughness: 0.6 }),
     lampOff: new THREE.MeshStandardMaterial({ color: 0x2a0606, emissive: 0xff1a1a, emissiveIntensity: 0 }),
   };
   for (const k of ['road', 'line', 'kerb', 'sausage', 'apron', 'concrete', 'rumble', 'pit', 'island', 'attenuator']) mat[k].userData.wet = 'road';   // the weather (src/environment.js) makes these glossy and dark in the rain
-  for (const k of ['roof', 'garage']) mat[k].userData.wet = 'surface';   // pit building roof and doors: a little darker and glossier
   const DEBUG_OF = {
     road: 'road', line: 'line', kerb: 'kerb', sausage: 'sausage', apron: 'runoff', concrete: 'runoff', rumble: 'rumble', grass: 'grass',
     gravel: 'gravel', gravelEdge: 'gravel', pit: 'pit', island: 'island', armco: 'armco', armcoSingle: 'armcoSingle',
     wallConcrete: 'pitwall', meadow: 'grass', street: 'street', parapet: 'parapet', sponsor: 'tyres', tyre: 'tyres', white: 'tyres',
-    fence: 'fence', garage: 'building', glass: 'building', roof: 'building', attenuator: 'pitwall', pitOuter: 'pitwall',
+    fence: 'fence', attenuator: 'pitwall', pitOuter: 'pitwall',
   };
 
   // --- ground-level surfaces, laid side by side so nothing overlaps -----
@@ -234,23 +230,16 @@ export function buildTrackScene(T, ground) {
   }
   mat.armcoSingle = mat.armco; mat.parapet = mat.wallConcrete; mat.pitOuter = mat.wallConcrete;
 
-  // pit garages: rough block for now, rebuilt in part 2
+  // pit garages: the building itself is drawn by buildPitDetail (src/pitBuilding.js); here only the concrete forecourt in front of it
   if (T.pitGarage.some(v => v > 0)) {
     const bay = garageBay(T);
-    const front = i => -(T.pitOut[i] + 2), back = i => front(i) - 14, H = 9.5;
-    strips('garage').strip(bay, i => P(i, front(i), 0), i => P(i, front(i), 5.5), (i, j) => sOf(i, j, bay) / 14, 0, 1);
-    strips('glass').strip(bay, i => P(i, front(i) + 1.2, 6.6), i => P(i, front(i) + 1.2, H), (i, j) => sOf(i, j, bay) / 28, 0, 1);
-    strips('roof').strip(bay, i => P(i, front(i) + 2.5, H), i => P(i, back(i), H), () => 0, 0, 1);
-    strips('roof').strip(bay, i => P(i, front(i), 5.5), i => P(i, front(i), 6.6), () => 0, 0, 1);
-    strips('wallConcrete').strip(bay, i => P(i, back(i), 0), i => P(i, back(i), H), (i, j) => sOf(i, j, bay) / 8, 0, 1);
-    // concrete forecourt in front of the garages
-    strips('apron').strip(bay, i => P(i, -T.pitOut[i]), i => P(i, front(i)), (i, j) => sOf(i, j, bay) / 8, 0, 1);
+    strips('apron').strip(bay, i => P(i, -T.pitOut[i]), i => P(i, -(T.pitOut[i] + 2)), (i, j) => sOf(i, j, bay) / 8, 0, 1);
   }
 
   for (const [name, b] of Object.entries(S)) {
     const mesh = tag(new THREE.Mesh(b.geometry(), mat[name]), DEBUG_OF[name] || name);
     mesh.receiveShadow = true;
-    mesh.castShadow = ['armco', 'armcoSingle', 'wallConcrete', 'street', 'sponsor', 'tyre', 'garage', 'glass', 'roof', 'parapet', 'pitOuter'].includes(name);
+    mesh.castShadow = ['armco', 'armcoSingle', 'wallConcrete', 'street', 'sponsor', 'tyre', 'parapet', 'pitOuter'].includes(name);
     if (name === 'fence') mesh.renderOrder = 2;
     group.add(mesh);
   }
