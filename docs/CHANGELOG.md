@@ -1,5 +1,13 @@
 # Changelog
 
+## Global lap times: the server side
+
+The relay Worker now also keeps a global leaderboard (the game side comes separately). A new Durable Object, `Times` (binding `TIMES`, migration `v3`, SQLite, nothing to set up by hand), holds one row per driver per board, 16 boards (dry or wet, solo or online, forward or reverse, assists on or off).
+- `POST /times` takes a finished lap, `GET /times?board=...&n=...&name=...` answers the top rows and the driver's own row, `GET /ghost?board=...&name=...` answers a stored ghost line. Allowed websites only for POST (403), 20 laps per 10 minutes per client address (429), plain 400 reasons.
+- The rules are in `worker/src/times.js`, with no I/O: name (1 to 16 characters, letters, digits, space . _ -, one driver per lowercase name), time 60 to 900 s, three sectors of at least 5 s that add up to the time, and a ghost that has to be a plausible lap (sample count, start and end times, at most 120 m/s per step, at least 3400 m of path). A bad ghost rejects the whole lap. Only a driver's best lap is kept, and ghosts only for the top 10 of each board.
+- Stored: name, lap time, sectors, when the lap was set, and the top 10 ghosts. No IP addresses.
+- `worker/dev-relay.mjs` serves the same routes from memory. New test `tools/times.js` (in the check): every rule, the SQL store on `node:sqlite`, and an end to end run over HTTP including the 403 and 429 cases. `worker/README.md` has a "Global times" section.
+
 ## Back under the triangle budget, and browser tests that test the right code
 
 The browser tests (smoke, perf, shot) stopped only `npx`, not the Vite server it starts, so every run left a server on its port and the next run, from any checkout, quietly loaded that server's code. Today's perf passes were all measured on a stale server. `tools/lib/vite.mjs` now starts Vite in its own process group, stops the whole group, and refuses a port that is already taken.

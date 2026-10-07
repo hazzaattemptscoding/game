@@ -18,6 +18,10 @@ class_name = "Room"
 name = "DIRECTORY"
 class_name = "Directory"
 
+[[durable_objects.bindings]]
+name = "TIMES"
+class_name = "Times"
+
 # SQLite-backed Durable Objects are the kind the free plan allows.
 [[migrations]]
 tag = "v1"
@@ -27,3 +31,8 @@ new_sqlite_classes = ["Room"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Directory"]
+
+# v3 adds the global lap times. Room and Directory already exist, so only the new class is listed here.
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Times"]

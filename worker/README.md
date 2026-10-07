@@ -2,7 +2,8 @@
 
 A small message relay for the online mode. It is for players who cannot connect peer to peer, for example behind a
 carrier-grade NAT (double NAT, no public IP, no port forwarding). Everybody connects OUT to the relay over `wss://`, and the
-relay passes messages between the players in a room. It stores nothing and logs nothing: it only holds the live connections.
+relay passes messages between the players in a room. The relay itself stores nothing and logs nothing: it only holds the live connections.
+The same Worker also keeps the global lap times, see "Global times" below.
 
 The game itself stays on your IONOS web space. Only this folder goes to Cloudflare. It is not part of the Vite build.
 
@@ -82,7 +83,7 @@ cd worker
 npx wrangler delete
 ```
 Then delete the `"relay"` line from `multiplayer.json` on IONOS. (Or in the Cloudflare dashboard: Workers & Pages, lakeside-relay,
-Settings, Delete.) Nothing else is left behind, there is no stored data.
+Settings, Delete.) The only stored data is the global times (see above); deleting the Worker deletes them.
 
 ## Try it on your own computer, without Cloudflare
 
@@ -116,6 +117,36 @@ by hand: `cd worker && npx wrangler deploy`. Check it with `https://<worker>/lob
 Free plan cost: every spectator connection is one request plus one per 20 messages it SENDS (only pings), and the messages the Worker
 sends out are free, so watching is cheap. The lobby list is cached for 3 seconds per Worker instance and the directory is updated
 at most every 5 seconds per room.
+
+## Global times
+
+The Worker also keeps the global lap-times leaderboard, in one more Durable Object (`Times`, binding `TIMES`, code in `src/times.js` and
+`src/times-do.js`). It is on the same Worker and the same `ALLOWED_ORIGINS` list, so nothing new has to be set up.
+
+* `POST /times` takes a finished lap (`{name, time, sectors:[s1,s2,s3], board:{weather,mode,dir,assists}, build, ghost?}` as JSON, at most 64 KB)
+  and answers `{ok, improved, rank, best, entries}`. It needs an allowed `Origin` (403 otherwise) and refuses invalid laps with 400 and
+  a plain reason. At most 20 laps per 10 minutes per client address (429 after that).
+* `GET /times?board=dry-solo-fwd-on&n=50&name=Harry` answers the top `n` (default 20, at most 100) of one board and the row of `name`.
+* `GET /ghost?board=dry-solo-fwd-on&name=Harry` answers that driver's stored ghost line, or 404.
+* There are 16 boards: weather (`dry`, `wet`) x mode (`solo`, `online`) x direction (`fwd`, `rev`) x assists (`on`, `off`).
+
+What is stored, per driver and board (their best lap only): the name, the lap time, the three sector times, the time the lap was set,
+and the ghost line (position and heading about 10 times a second) for the top 10 of the board only. Nothing else. IP addresses are
+used for the rate limit in memory only and are never stored. A driver is the lowercase name, so "Harry" and "harry" are one row.
+The Worker checks every lap before keeping it (time and sector limits, and a ghost that has to be a plausible full lap).
+
+Deploying: the next deploy creates the new storage by itself, through migration `v3` in `wrangler.toml`. A push to `main` redeploys
+the Worker, or run `cd worker && npx wrangler deploy`. Check it with `https://<worker>/times?board=dry-solo-fwd-on` (must answer
+`{"board":"dry-solo-fwd-on","entries":[],"you":null}`). The relay and the lobby list keep working as before.
+
+Free plan cost: one request per finished valid lap, plus one per time someone opens a leaderboard page (a ghost download is one more).
+It runs in one object that sleeps when nobody asks, so it is far below the daily limits next to the relay's 3,600 requests per player
+hour. Storage is a few kilobytes per ghost and 160 ghosts at most (10 on each of the 16 boards).
+
+Clearing the board: there is no admin route. To wipe everything, delete the `Times` class and create it again with two more migrations
+in `wrangler.toml`, deployed one after the other: first `tag = "v4"` with `deleted_classes = ["Times"]` (this deletes all its data and
+cannot be undone), deploy, then `tag = "v5"` with `new_sqlite_classes = ["Times"]`, deploy again. The Cloudflare dashboard (Workers & Pages,
+lakeside-relay, Durable Objects) can also remove a Durable Object namespace, which is the same thing. Tests: `node tools/times.js`.
 
 ## How it works (for developers)
 
