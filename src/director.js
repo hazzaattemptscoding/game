@@ -114,6 +114,7 @@ export function createDirector(g) {
     getAutopilot: () => g.getAutopilot(),
     setAutopilot: v => g.setAutopilot(v),
     livery: () => g.liveryChanged(),
+    globalTimes: g.globalTimes || null,
     go(id) {
       if (id === 'practice') menu.push('setup', { mode: 'practice' });
       else if (id === 'timetrial') api.startTimeTrial();

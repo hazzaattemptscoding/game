@@ -15,6 +15,10 @@ import { optimiseWorld, freezeWorld, propCuller } from './cull.js';
 import { GT } from './cars.js';
 import { LapTimer } from './timing.js';
 import { Autopilot } from './autopilot.js';
+import { createGlobalTimes, LapWatch, timesBase, boardFor, boardLabel } from './globalTimes.js';
+import { createBoardGhost } from './boardGhost.js';
+import { makeProjector } from './ghosts.js';
+import { loadConfig } from './multiplayer.js';
 import { buildTrackScene, DEBUG_COLOURS } from './trackMesh.js';
 import { createGround, buildScenery } from './scenery.js';
 import { CarView } from './car.js';
@@ -162,6 +166,30 @@ const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthe
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
 const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search, getLivery: myLivery });   // multiplayer: idle until a room is opened
+// global times (src/globalTimes.js): valid, clean laps go to the relay's boards; the relay's address comes from multiplayer.json
+const BUILD = typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : '';
+const NAME_KEY = 'lakeside-mp-name';   // the name the lobby keeps (src/lobby.js); the name on the car's livery wins, like online
+const driverName = () => {
+  const painted = myLivery() && myLivery().name;
+  if (painted && painted.trim()) return painted.trim();
+  let n = null; try { n = localStorage.getItem(NAME_KEY); } catch { n = null; }
+  if (!n || !n.trim()) { n = 'Driver' + (100 + Math.floor(Math.random() * 900)); try { localStorage.setItem(NAME_KEY, n); } catch { /* private mode */ } }
+  return n.trim();
+};
+let timesUrl = '';
+let storageRef = null; try { storageRef = localStorage; } catch { storageRef = null; }
+const globalTimes = createGlobalTimes({
+  storage: storageRef, getBase: () => timesUrl,
+  onResult: (post, ans) => { if (ans && ans.improved) hud.flash(`Global P${ans.rank} \u00b7 ${boardLabel(post.board)}`, simTime, 'pb'); },
+});
+loadConfig({ fetchFn: (...a) => fetch(...a), search: location.search, build: BUILD }).then(cfg => { timesUrl = timesBase(cfg && cfg.relayUrl); globalTimes.flush(); }).catch(() => {});
+setInterval(() => globalTimes.flush(), 30000);
+const lapWatch = new LapWatch({
+  timer, build: BUILD, getName: driverName, isAutopilot: () => !!autopilot,
+  getConditions: () => ({ weather: (urlEnv || dir.api.environment()).weather, online: !!lobby.active, reverse: timer.reverse, assists: { tc: car.assistTc, abs: car.assistAbs, esc: car.assistEsc } }),
+});
+const boardGhost = createBoardGhost({ scene, tagRoot: document.getElementById('mp-tags') || document.getElementById('hud'), track });
+let ghostProject = null, ghostSize = null;
 const miniMap = createMiniMap(document.getElementById('hud'), { track, car, lobby, settings, ownColour: () => myLivery().body, timer });
 const board = createBoard(document.getElementById('board'), { timer, lobby });
 const steerBar = document.getElementById('steer-bar'), steerMark = steerBar.firstElementChild;
@@ -202,6 +230,15 @@ const dir = createDirector({
   qualityChanged: () => quality.refresh(),
   getAutopilot: () => !!autopilot, setAutopilot: v => { autopilot = v ? new Autopilot(track, GT, { skill: 0.9 }) : null; },
   liveryChanged: () => { view.setLivery(myLivery()); lobby.liveryChanged(); },
+  globalTimes: {
+    client: () => globalTimes,
+    name: driverName,
+    setName: v => { try { localStorage.setItem(NAME_KEY, v); } catch { /* private mode */ } },
+    currentBoard: () => boardFor({ weather: (urlEnv || dir.api.environment()).weather, online: !!lobby.active, reverse: timer.reverse, assists: { tc: car.assistTc, abs: car.assistAbs, esc: car.assistEsc } }),
+    loadGhost: entry => boardGhost.load(entry),
+    clearGhost: () => boardGhost.clear(),
+    ghostInfo: () => boardGhost.info,
+  },
 });
 
 // --- loop ---
@@ -252,6 +289,8 @@ function frame(now) {
       simTime += STEP;
       timer.update(car.loc.s, simTime);
       timer.checkLimits(car, simTime);
+      const post = lapWatch.step(simTime, car);
+      if (post) globalTimes.submit(post);
       keysNow = keysNow || input.pressedKeys();
       history.inputs.push({ t: simTime, device: input.device, keys: keysNow, steer: playerInput.steer, throttle: playerInput.throttle, brake: playerInput.brake, drs: playerInput.drs });
       history.telemetry.push({ t: simTime, x: car.x, y: car.y, z: car.z, s: car.loc.s, d: car.loc.d, speed: car.speed });
@@ -315,6 +354,10 @@ function frame(now) {
   marshal.update(now / 1000);
   racingLine.setVisible(settings.racingLine && dir.api.racingLineAllowed());   // a race can forbid it
   racingLine.update(car.loc.s);
+  if (boardGhost.active) {
+    if (!ghostProject || ghostSize !== innerWidth + 'x' + innerHeight) { ghostSize = innerWidth + 'x' + innerHeight; ghostProject = makeProjector(rig.camera, innerWidth, innerHeight); }
+    boardGhost.update(timer.lapStart === null ? null : simTime - timer.lapStart, dt, ghostProject);
+  }
   board.update(simTime, now);
   const cursorOn = settings.steering === 'cursor';
   steerBar.hidden = !(cursorOn && hudOn(settings, 'steerBar'));

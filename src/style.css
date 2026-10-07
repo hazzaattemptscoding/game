@@ -353,3 +353,18 @@ body.touch #trackmap.pos-tl { top: calc(150px + env(safe-area-inset-top, 0px)); 
 .hud-live-bar i{position:absolute;top:0;height:100%;background:var(--red)}
 .hud-live[data-s=ahead] .hud-live-bar i{background:var(--green)}
 body.hx-no-liveDelta .hud-live{display:none!important}
+
+/* Global times (menuScreens.js timesScreen): rank, name, time, sectors, a Race button for rows with a ghost */
+.t-list { margin: 6px 0 10px; }
+.t-row { display: grid; grid-template-columns: 2.4em minmax(0, 1fr) 6.4em minmax(0, 9em) 5.2em; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid rgba(242,239,230,.1); font-variant-numeric: tabular-nums; }
+.t-row:first-child { background: rgba(179,107,255,.16); }
+.t-row.you { box-shadow: inset 3px 0 0 var(--paper); background: rgba(242,239,230,.08); }
+.t-rank { opacity: .7; text-align: right; }
+.t-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-time { font-weight: 700; text-align: right; }
+.t-sec { font-size: 12px; opacity: .65; white-space: nowrap; overflow: hidden; }
+.t-act .m-opt { min-height: 34px; padding: 6px 10px; font-size: 14px; width: 100%; }
+.t-gap { text-align: center; opacity: .5; padding: 2px 0; }
+.t-ghost { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.t-ghost[hidden] { display: none; }
+@media (max-width: 520px) { .t-row { grid-template-columns: 2em minmax(0, 1fr) 5.8em 4.6em; } .t-sec { display: none; } }

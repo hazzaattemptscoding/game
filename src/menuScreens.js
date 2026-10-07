@@ -6,6 +6,9 @@ import { weatherRows, lightningRows } from './weatherMenu.js';
 import { QUALITY_SETTINGS, QUALITY_LABELS } from './quality.js';
 import { HUD_ELEMENTS, MAP_SIZES, MAP_POSITIONS, PRESET_ORDER, PRESET_NAMES, SCALE_MIN, SCALE_MAX, MAP_OPACITY_MIN, detectPreset, applyPreset } from './hudSettings.js';
 
+import { boardLabel, cleanName as cleanTimesName } from './globalTimes.js';
+import { fmtTime } from './hud.js';
+
 export const h = (tag, cls, ...kids) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -49,6 +52,7 @@ const HOME = [
   ['timetrial', 'Time trial', 'A standing start from the pit exit. Every lap counted and saved.'],
   ['race', 'Race', 'Set up a race: laps, assists, the racing line. Lights and a start.'],
   ['online', 'Online', 'Host a room or join one with a code and race your friends.'],
+  ['times', 'Global times', 'The best valid laps from everyone. Pick one and race its ghost.'],
   ['garage', 'Garage', 'Paint your car: colours, number, stripes and sponsors.'],
   ['settings', 'Settings', 'Units, assists, steering, display, sound, controls.'],
 ];
@@ -87,6 +91,7 @@ function pauseScreen() {
         ['Resume', 'primary', () => ctx.api.resume()],
         ['Restart session', '', () => ctx.api.restart()],
         ['Settings', '', () => ctx.menu.push('settings')],
+        ['Global times', '', () => ctx.menu.push('times')],
         ...(ctx.api.screen && ctx.api.screen.canControl() ? [['Screen control', '', () => ctx.menu.push('screen')]] : []),
         ['Report a problem', '', () => ctx.api.report()],
         ['Back to main menu', 'danger', () => confirmLeave()],
@@ -329,6 +334,93 @@ function onlineScreen() {
   };
 }
 
+// --- global times ----------------------------------------------------------------------------------------------------
+// The relay's boards (src/globalTimes.js): four filters pick one of the 16 boards, opening on the one the player is driving
+// for now. Rows with a stored ghost have a Race button: the ghost drives that lap on the player's lap clock (src/boardGhost.js).
+
+function timesScreen() {
+  let seq = 0;
+  return {
+    title: 'Global times',
+    mount(c, ctx) {
+      const gt = ctx.api.globalTimes, client = gt && gt.client();
+      if (!client || !client.available()) {
+        c.append(h('p', 'm-sub', 'Global times need the game on its website, where it can reach the times server.'),
+          h('p', 'm-note', 'Laps you drive here are still kept on this device (hold Tab for your times).'));
+        return null;
+      }
+      const board = { ...gt.currentBoard() };
+      c.append(h('p', 'm-sub', 'Every valid lap is posted on its own: no track limit warnings, no reset, no autopilot. One row per driver, their best.'));
+      const nameIn = h('input', 'm-text'); nameIn.type = 'text'; nameIn.maxLength = 16; nameIn.autocomplete = 'off'; nameIn.spellcheck = false;
+      nameIn.value = gt.name(); nameIn.setAttribute('aria-label', 'Your name on the boards');
+      const nameNote = h('p', 'm-note'); nameNote.hidden = true;
+      nameIn.addEventListener('change', () => {
+        const v = cleanTimesName(nameIn.value);
+        if (!v) { nameIn.value = gt.name(); return; }
+        gt.setName(v); nameIn.value = gt.name();
+        nameNote.hidden = gt.name() === v;
+        nameNote.textContent = 'The name painted on your car is used while it is set (Garage).';
+        load();
+      });
+      c.append(h('div', 'm-row', h('label', 'm-label', 'Your name'), nameIn), nameNote);
+      const rows = [
+        segRow('Weather', [['dry', 'Dry'], ['wet', 'Wet']], () => board.weather, v => { board.weather = v; load(); }),
+        segRow('Session', [['solo', 'Solo'], ['online', 'Online']], () => board.mode, v => { board.mode = v; load(); }),
+        segRow('Direction', [['fwd', 'Normal'], ['rev', 'Reverse']], () => board.dir, v => { board.dir = v; load(); }),
+        segRow('Assists', [['on', 'On'], ['off', 'All off']], () => board.assists, v => { board.assists = v; load(); }),
+      ];
+      c.append(...rows);
+      const ghostLine = h('div', 'm-row t-ghost');
+      const status = h('p', 'm-note t-status');
+      const list = h('div', 't-list');
+      c.append(ghostLine, list, status);
+
+      const showGhost = () => {
+        const g = gt.ghostInfo();
+        ghostLine.replaceChildren();
+        ghostLine.hidden = !g;
+        if (g) ghostLine.append(h('div', 'm-label', `Racing the ghost of ${g.name}, ${fmtTime(g.time)}`), btn('Remove ghost', 'm-btn', () => { gt.clearGhost(); showGhost(); }));
+      };
+      const row = (e, you) => {
+        const r = h('div', 't-row' + (you ? ' you' : ''), h('span', 't-rank', String(e.rank)), h('span', 't-name', e.name), h('span', 't-time', fmtTime(e.time)),
+          h('span', 't-sec', (e.sectors || []).map(x => x.toFixed(1)).join('  ')));
+        const cell = h('span', 't-act');
+        if (e.ghost) cell.append(btn('Race', 'm-opt', async () => {
+          status.textContent = `Loading the ghost of ${e.name}...`;
+          const got = await client.ghost(board, e.name);
+          if (!got || !gt.loadGhost({ ...got, board: { ...board } })) { status.textContent = 'That ghost could not be loaded.'; return; }
+          showGhost();
+          const s = ctx.api.session && ctx.api.session();
+          const wantRev = board.dir === 'rev';
+          if (s && s.mode === 'practice' && !!s.reverse === wantRev) ctx.api.resume();
+          else ctx.api.startPractice({ start: 'pit', reverse: wantRev });
+        }));
+        r.append(cell);
+        return r;
+      };
+      async function load() {
+        const my = ++seq;
+        for (const r of rows) r.sync();
+        status.textContent = `Loading ${boardLabel(board)}...`;
+        const res = await client.top(board, gt.name(), 20);
+        if (my !== seq) return;   // a newer filter choice is already loading
+        list.replaceChildren();
+        if (!res) { status.textContent = 'The times server cannot be reached right now.'; return; }
+        if (!res.entries.length) list.append(h('p', 'm-note', 'No times on this board yet. Be the first.'));
+        for (const e of res.entries) list.append(row(e, res.you && res.you.name.toLowerCase() === e.name.toLowerCase()));
+        if (res.you && !res.entries.some(e => e.name.toLowerCase() === res.you.name.toLowerCase())) list.append(h('div', 't-gap', '...'), row(res.you, true));
+        const waiting = client.pending ? ` ${client.pending} lap${client.pending > 1 ? 's' : ''} waiting to be posted.` : '';
+        status.textContent = boardLabel(board) + '.' + waiting + (client.status.error ? ` ${client.status.error}.` : '');
+      }
+      showGhost();
+      load();
+      client.flush().then(ok => { if (ok) load(); });
+      return null;
+    },
+    unmount() { seq++; },
+  };
+}
+
 // --- plug-in screens --------------------------------------------------------------------------------------------------
 
 function comingScreen() {
@@ -415,5 +507,6 @@ export function registerScreens(menu) {
   menu.addScreen('settings', settingsScreen());
   menu.addScreen('online', onlineScreen());
   menu.addScreen('garage', garageScreen());
+  menu.addScreen('times', timesScreen());
   menu.addScreen('coming', comingScreen());
 }
