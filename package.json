@@ -23,6 +23,7 @@
     "multiplayer-live": "node tools/multiplayer-live.mjs",
     "relay-live": "node tools/relay-live.mjs",
     "live": "node tools/live.js",
+    "times": "node tools/times.js",
     "session": "node tools/session.js",
     "hudsettings": "node tools/hudsettings.js",
     "minisectors": "node tools/minisectors.js",

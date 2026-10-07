@@ -1,10 +1,12 @@
 // Local stand-in for the Cloudflare Worker: the same protocol (src/protocol.js), a hand-written RFC 6455 server, no packages.
 // Run: node worker/dev-relay.mjs [port]   (default 8787). Then use ?relay=ws://localhost:8787/ in the game.
 // Environment: ALLOWED_ORIGINS (default *), MAX_SPECTATORS, SPECTATOR_STATE_DIVIDER like the Worker. Also serves GET /lobbies and /lobbies/CODE
-// (the directory lives in this process). Used by tools/relay.js, tools/live.js and tools/relay-live.mjs.
+// (the directory lives in this process) and /times and /ghost (the global lap times, kept in memory, same rules as the Worker). Used by tools/relay.js, tools/live.js and tools/relay-live.mjs.
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { parseRoute, originAllowed, onOpen, onMessage, onClose, sweep, lobbyEntry, Directory, Publisher, IDLE_MS, MAX_PLAYERS, MAX_SPECTATORS, DIRECTORY_TTL_MS, PUBLISH_MIN_MS, PUBLISH_BEAT_MS } from './src/protocol.js';
+
+import { parseTimesRoute, TimesModel, MemoryTimesStore, RateLimiter, handleTimes, MAX_BODY } from './src/times.js';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 const MAX_FRAME = 64 * 1024;
@@ -32,8 +34,23 @@ export function startRelay({ port = 0, allowed = process.env.ALLOWED_ORIGINS ?? 
     return r;
   };
   const stats = { sockets: 0 };
+  const times = { model: new TimesModel(new MemoryTimesStore()), limiter: new RateLimiter() };
   const server = http.createServer((req, res) => {
     const origin = req.headers.origin;
+    const timesUrl = new URL(req.url, 'http://x'), timesRoute = parseTimesRoute(timesUrl.pathname);
+    if (timesRoute) {
+      const ok = origin && originAllowed(origin, allowed);
+      const head = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Vary: 'Origin', ...(ok ? { 'Access-Control-Allow-Origin': origin } : {}) };
+      const send = (status, json) => { res.writeHead(status, head); res.end(JSON.stringify(json)); };
+      if (req.method === 'OPTIONS') { res.writeHead(204, { ...head, 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' }); res.end(); return; }
+      if (req.method === 'POST' && !ok) return send(403, { error: 'origin not allowed' });
+      const run = bodyText => { const r = handleTimes(times.model, times.limiter, { method: req.method, route: timesRoute, params: timesUrl.searchParams, bodyText, ip: req.socket.remoteAddress, now: Date.now() }); send(r.status, r.json); };
+      if (req.method !== 'POST') return run(undefined);
+      const chunks = []; let size = 0, over = false;
+      req.on('data', c => { size += c.length; if (size > MAX_BODY) over = true; else chunks.push(c); });
+      req.on('end', () => (over ? send(400, { error: 'body too large' }) : run(Buffer.concat(chunks).toString('utf8'))));
+      return;
+    }
     const route = parseRoute(new URL(req.url, 'http://x').pathname);
     const cors = origin && originAllowed(origin, allowed) ? { 'Access-Control-Allow-Origin': origin } : {};
     if (route?.kind === 'health') { res.writeHead(200, { 'Content-Type': 'text/plain', ...cors }); res.end('ok'); return; }
@@ -96,7 +113,7 @@ export function startRelay({ port = 0, allowed = process.env.ALLOWED_ORIGINS ?? 
   const timer = setInterval(() => { const now = Date.now(); for (const [code, set] of rooms) { sweep({ conns: () => [...set] }, now, idleMs); roomObjs.get(code)?.pub.tick(now); } }, sweepMs);
   timer.unref();
   return new Promise(r => server.listen(port, () => r({
-    port: server.address().port, rooms, stats, directory, roomObjs,
+    port: server.address().port, rooms, stats, directory, roomObjs, times,
     close() { clearInterval(timer); for (const set of rooms.values()) for (const c of set) c.close(1001, 'shutdown'); server.close(); server.closeAllConnections?.(); },
   })));
 }
