@@ -1,5 +1,17 @@
 # Changelog
 
+## Global times (game side)
+
+Every valid lap goes to the global boards on the relay (the server side is the entry below): no track limit warnings, driven all the way round with no reset or jump (`clean`, new in `timer.history`), and no autopilot at any moment of it. 16 boards: dry or wet, solo or online, normal or reverse, assists on or off; a lap that was partly wet counts as wet, partly assisted as assisted. One row per driver, their best.
+
+- `src/lapTrace.js`: the lap's line, 10 samples a second (time, x, z, heading), about 19 KB per lap; posted with the lap so the top 10 of each board can be raced.
+- `src/globalTimes.js`: which board, which laps qualify, `LapWatch` (records each lap and builds the post), and the client: posts wait in a queue in the browser and retry every 30 s when the relay cannot be reached or is busy; a lap the relay refuses is dropped. The relay's address is the one in `multiplayer.json`, so no new setting.
+- Name: the name painted on the car, else the online lobby name (one is made up and kept if neither is set). Editable on the screen.
+- Menus: Global times on the main menu and the pause menu. Four filters (opening on the board you are driving for), the top 20 with sectors, your own row marked (shown under the list if you are lower down), and a Race button on rows with a ghost.
+- `src/boardGhost.js`: the ghost drives the stored lap on your lap clock, see-through with a name tag, never touching your car. It waits on the line during the out lap and starts again every lap. Race starts free practice in the board's direction (or resumes it).
+- On a page with no relay (the artifact), the screen says global times need the game's website.
+- New test `tools/globaltimes.js` (in the check): the line format, boards, which laps qualify, the queue against a fake server (offline, refused, busy, reload, full queue), the lap watcher over simulated laps (rain, assists and the autopilot part way through, a warning, a reset, a restart), and a real post, board read and ghost download against `worker/dev-relay.mjs`.
+
 ## Global lap times: the server side
 
 The relay Worker now also keeps a global leaderboard (the game side comes separately). A new Durable Object, `Times` (binding `TIMES`, migration `v3`, SQLite, nothing to set up by hand), holds one row per driver per board, 16 boards (dry or wet, solo or online, forward or reverse, assists on or off).

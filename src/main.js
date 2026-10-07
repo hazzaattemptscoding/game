@@ -182,7 +182,7 @@ const globalTimes = createGlobalTimes({
   storage: storageRef, getBase: () => timesUrl,
   onResult: (post, ans) => { if (ans && ans.improved) hud.flash(`Global P${ans.rank} \u00b7 ${boardLabel(post.board)}`, simTime, 'pb'); },
 });
-loadConfig({ fetchFn: (...a) => fetch(...a), search: location.search, build: BUILD }).then(cfg => { timesUrl = timesBase(cfg && cfg.relayUrl); globalTimes.flush(); }).catch(() => {});
+const timesReady = loadConfig({ fetchFn: (...a) => fetch(...a), search: location.search, build: BUILD }).then(cfg => { timesUrl = timesBase(cfg && cfg.relayUrl); globalTimes.flush(); }).catch(() => {});
 setInterval(() => globalTimes.flush(), 30000);
 const lapWatch = new LapWatch({
   timer, build: BUILD, getName: driverName, isAutopilot: () => !!autopilot,
@@ -232,6 +232,7 @@ const dir = createDirector({
   liveryChanged: () => { view.setLivery(myLivery()); lobby.liveryChanged(); },
   globalTimes: {
     client: () => globalTimes,
+    ready: () => timesReady,   // resolves once multiplayer.json has said where the relay is (or that there is none)
     name: driverName,
     setName: v => { try { localStorage.setItem(NAME_KEY, v); } catch { /* private mode */ } },
     currentBoard: () => boardFor({ weather: (urlEnv || dir.api.environment()).weather, online: !!lobby.active, reverse: timer.reverse, assists: { tc: car.assistTc, abs: car.assistAbs, esc: car.assistEsc } }),
@@ -369,7 +370,7 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 // for quick checks from the browser console
-window.lakeside = { THREE, optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen, marshal };
+window.lakeside = { THREE, optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen, marshal, globalTimes, boardGhost, simTime: () => simTime };
 
 const shadowAt = { x: 0, y: 0, z: 0 };
 // the FPS readout: frame rate and time, the slowest frame, the render scale and what the last frame cost

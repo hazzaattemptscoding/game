@@ -175,7 +175,7 @@ export function createDirector(g) {
   if (!booting) {
     if (params.has('garage')) showMain('garage');
     else if (menuParam === 'race' || menuParam === 'practice') showMain([{ id: 'setup', params: { mode: menuParam } }]);
-    else if (['settings', 'garage', 'online'].includes(menuParam)) showMain(menuParam);
+    else if (['settings', 'garage', 'online', 'times'].includes(menuParam)) showMain(menuParam);
     else showMain();
   }
 

@@ -344,10 +344,17 @@ function timesScreen() {
     title: 'Global times',
     mount(c, ctx) {
       const gt = ctx.api.globalTimes, client = gt && gt.client();
+      const wait = h('p', 'm-sub', 'Finding the times server...');
+      c.append(wait);
+      const my = ++seq;
+      Promise.resolve(gt && gt.ready ? gt.ready() : null).then(() => { if (my === seq) { wait.remove(); build(); } });
+      return null;
+
+      function build() {
       if (!client || !client.available()) {
         c.append(h('p', 'm-sub', 'Global times need the game on its website, where it can reach the times server.'),
           h('p', 'm-note', 'Laps you drive here are still kept on this device (hold Tab for your times).'));
-        return null;
+        return;
       }
       const board = { ...gt.currentBoard() };
       c.append(h('p', 'm-sub', 'Every valid lap is posted on its own: no track limit warnings, no reset, no autopilot. One row per driver, their best.'));
@@ -415,7 +422,7 @@ function timesScreen() {
       showGhost();
       load();
       client.flush().then(ok => { if (ok) load(); });
-      return null;
+      }
     },
     unmount() { seq++; },
   };

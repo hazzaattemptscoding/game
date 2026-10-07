@@ -45,21 +45,21 @@ Open problems to settle first:
 
 Each item: do it, verify it, update `docs/CHANGELOG.md`, commit, then ship when a batch is done.
 
-**Idea from the owner, parked (2026-10-05), do not start until asked: live leaderboard with ghosts.** Gather LEGAL laps only (no track limit warnings), tagged wet or dry, and kept separate for single player and online sessions (and normal or reverse direction, which now exists in free practice). Upload them to a database on the relay server so everyone can see the times, load a lap's ghost and race against it. Replaces queue item 6 below when it is picked up.
+Done since this queue was written (see the changelog): infield and Boundary Loop barriers, pit building, pit exit, pit entry before the Guardroom Chicane, global times with ghosts (the old items 6 and the parked leaderboard idea), chase camera free look, camber and more elevation, minisectors and marshal panels, hill camera.
 
-**Queued by the owner, not started (2026-10-05): move the pit entry earlier.** Report `reports/lakeside-report-2026-10-05T17-23-34-296Z.json`, build cd2f1b1, car at s=3433 d=0.2 on the left of the track after the final turn: "Pitlane entry is here. Makes pit entry much easier and allows for a nice runoff out of the exit of the final turn". Today the pit road leaves at layout `pit.entry` 60.5 (about s=3605), roughly 170 m later. Owner's intent: the pit road splits off on the left from about s=3433, so the paved entry also works as run-off on the exit of the final turn. Things to settle when it is picked up: whether the pit lane (and limiter line) starts earlier too or only the entry road is longer; what happens to the left-side tyre wall and the grandstand on that side; keep `tools/audit.js` pit drive-in passing and the laptest unchanged. Wait for the owner to say go.
+1. **Escape roads** at the three heaviest braking zones: Scramble (end of Runway Straight), Windsock Hairpin, Nissen Hairpin. Owner asked 2026-10-06.
+2. **Floodlights**: better modelling and real coverage of the track at night. Owner asked 2026-10-05.
+3. **DRS in reverse** (owner, 2026-10-07). Reverse direction has no DRS zones of its own: `layout.drs` holds the two forward zones (points 59.3 to 3.1 and 40 to 43), and `track.inDRS` checks the same stretches whatever the direction. Give reverse its own zones on its long straights (detection before, activation after), shown the same way on the HUD and the track, and keep the forward zones unchanged.
+4. **Terrain cliffs near s=50 and s=2045.** Smooth the steep ground beside the road. Tighten the audit slope limit. No lap time change.
+5. **Wet grip, wet line and tyre choice.** Per-sample wetness, rising and falling over time. Dry and Wet compounds, with a "wet tyres recommended" hint when it rains. A drier line appears over time where cars have driven. Keep the dry laptest unchanged. (The global times already keep wet and dry laps apart.)
+6. **Controller button guide.** While in menus, show a legend bottom left (A select, B back, bumpers for tabs, from the real gamepad mapping).
+7. **Track limit penalties.** Warnings exist and already keep a lap off the global times. Add time penalties in races. Confirm the rules with the owner first.
+8. **Phone HUD and touch controls** (parked, owner said later): thumb-sized steer, throttle and brake zones, safe-area insets, HUD readable at 360x740, 412x915 and 915x412, menus usable by touch. Then **live chat** in online rooms.
+9. **Broadcast cameras and a livestream data feed** (low priority): clean no-UI output, auto director, overlays, a JSON or WebSocket feed of all race data.
 
-1. **Infield surfaces and barriers near s=3149.** Report: the inside of the track should be grass for the nearer half with gravel kept on the far inside, and the inside barriers are "squiggly" (smooth them).
-2. **Pit building has no side wall (s=6).** Close the ends and finish the detail.
-3. **Pit exit (s=372).** The owner's sketch is `docs/pit-exit-sketch.webp` (view it). Intent: the pit exit runs alongside the track for a stretch, separated by a solid line and painted hatching, then joins at a shallow angle with a long hatched merge zone. It currently cuts onto the track abruptly, which the owner calls too dangerous. Ask whether the separation is paint only or a wall, and whether the car may cross it. Keep the pit drive-in and drive-out audit passing.
-4. **Terrain cliffs near s=50 and s=2045.** Smooth the steep ground beside the road. Tighten the audit slope limit (currently 0.84 max). No lap time change.
-5. **Wet grip, wet line and tyre choice.** Per-sample wetness, rising and falling over time. Dry and Wet compounds, with a "wet tyres recommended" hint when it rains. A drier line appears over time where cars have driven (per lateral band, shown on the road surface without adding draw calls, remote cars dry it too). Keep the dry laptest unchanged. The owner asked for this explicitly (it changes how the car drives).
-6. **Live leaderboard with driver times.** A global best-laps board kept on the relay (Durable Object, HTTP endpoints, CORS, plausibility checks, rate limit, quiet retry when offline). Menu screen, in-game panel, and a live panel on `live.html`. The owner cannot test live timing, so build thorough bot-driven tests (`tools/lib/bots.js`). Document any Worker migration or config step the owner must do in `worker/README.md`.
-7. **Controller button guide.** While in menus, show a legend bottom left (A select, B back, bumpers for tabs, from the real gamepad mapping). Xbox navigation already works.
-8. **Chase camera free look.** Orbit around the car (mouse drag, right stick), easing back behind the car on release.
-9. **Track limit penalties.** Warnings exist. Add time penalties and tie them to the leaderboard (valid laps only). Not started, confirm the rules with the owner first.
-10. **Phone HUD and touch controls** (parked, owner said later): thumb-sized steer, throttle and brake zones, safe-area insets, no page zoom or scroll, HUD readable at 360x740, 412x915 and 915x412, menus usable by touch, fullscreen hint. Then **live chat** in online rooms.
-11. **Broadcast cameras and a livestream data feed** (low priority): clean no-UI output, auto director, overlays, a JSON or WebSocket feed of all race data.
+Open questions for the owner: the screen control panel's "Something else" option came through blank; what was it meant to be?
+
+Shipping: `main` has not been pushed this week. A push to `main` also redeploys the relay Worker (Cloudflare builds it from `main`), which is what turns on the global times storage (migration v3). The game itself goes to IONOS by hand from the site zip.
 
 Replacing the repo's pale placeholder sponsor artwork is the owner's job (they are adding logos themselves).
 
