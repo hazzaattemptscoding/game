@@ -4,16 +4,20 @@
 // Everything except `threeFactory` and `makeProjector` is plain JavaScript with no DOM or WebGL, so
 // tools/multiplayer.js runs it in node.
 //
-// Remote cars are drawn about 100 ms in the past, so there are normally two packets to blend. They are solid:
-// `solids()` hands the same interpolated poses to Car.collideCars in src/physics.js.
+// Remote cars are drawn a little in the past (a per-car delay that follows the measured arrival jitter, see StateBuffer), so
+// there are normally two packets to blend. Race position and the standings use the pose they are drawn at. They are solid:
+// `solids()` hands the present pose (where the car is now, extrapolated from the newest packet) to Car.collideCars in src/physics.js.
 
 import * as THREE from 'three';
 import { CarView } from './car.js';
 import { GT } from './cars.js';
 import { decodeLivery, defaultLivery, liveryEquals } from './livery.js';
 
-export const DELAY = 0.1;         // seconds behind real time that remote cars are drawn (the relay adds RELAY_EXTRA_DELAY, see below)
-export const RELAY_EXTRA_DELAY = 0.05;   // over the relay a state takes an extra hop, so remote cars are drawn 150 ms behind
+export const DELAY = 0.1;         // seconds behind real time that remote cars start from (peer to peer and relay alike)
+export const MIN_DELAY = 0.05;    // the adaptive delay never goes below this (seconds)
+export const MAX_DELAY = 0.15;    // ...nor above this, unless a transport asks for more (Ghosts.delay)
+export const LEGACY_DELAY = 0.15; // the old fixed delay, for the before and after in tools/netsim.js (Ghosts with legacy: true)
+export const RELAY_EXTRA_DELAY = 0;   // kept for old imports; not added any more, the clock offset already measures the relay's extra hop
 export const MAX_EXTRAP = 0.25;   // seconds a car may be extrapolated when packets are late, then it holds still
 export const TIMEOUT = 3;         // seconds without a packet before a remote car is removed
 export const FADE = 1;            // the last second before removal is a fade out
@@ -117,27 +121,85 @@ export function stateFromCar(car, lap, col, name, t, best = null, last = null) {
 }
 
 const SMOOTH = ['y', 'st', 'pz', 'rx', 'thr', 'brk', 'vx', 'vz', 'yr'];
-const WINDOW = 100;     // packets (5 s at 20 Hz) over which the fastest delivery sets the clock offset
+const OFFSET_MS = 2000;      // the clock offset follows the fastest packet of the last 2 s
+const OFFSET_RATE = 0.15;    // ms the offset may move per ms of time: 5 ms a packet at 30 Hz, spread over the frames so the picture does not step
+const LEGACY_SLEW = 1;       // ms per packet, the old behaviour
+const OFFSET_RESET = 250;    // ms: a bigger change than this re-syncs at once
+const JITTER_GAIN = 1 / 16;  // smoothing of the lateness and jitter estimates (about 16 packets)
+const DELAY_UP = 2, DELAY_DOWN = 1;   // ms per packet the delay may grow (fast, a stall needs it) or shrink (slow, no wobble)
+const BLEND_MS = 150;        // after a stall the picture eases from where it was to the new pose over this long
+const STALL_MS = 100;        // no packet for this long (and three packet intervals) counts as a stall
+const LEGACY_WINDOW = 100;   // packets (legacy: the old 5 s offset window at 20 Hz)
 
 // Holds the recent states of one remote car and answers "where is it at this moment".
+//
+// The delay is adaptive. Each packet is `late` ms after the fastest packet of the last 2 s (the clock offset). A smoothed
+// mean of that lateness and a smoothed mean absolute deviation from it give the jitter; the target delay is the mean lateness
+// plus twice the jitter plus half a packet interval (the spacing is measured from the sender's clock), held between the
+// floor (MIN_DELAY, or one packet interval if that is more) and the ceiling (MAX_DELAY, or what the transport asked for). The
+// delay moves toward the target by at most 2 ms a packet up and 1 ms down, so the picture does not wobble. The offset walks to
+// its target at 5 ms a packet. legacy: a fixed delay, the old offset window and slew, and a freeze then snap after a stall
+// (for tools/netsim.js). fixed (a number of seconds, the live spectator view): the delay stays at that value and the
+// adaptive logic is skipped, so the broadcast picture does not move with the jitter.
 export class StateBuffer {
-  constructor(delay = DELAY) { this.delay = delay; this.buf = []; this.offs = []; this.off = null; this.lastRecv = -Infinity; this.born = -Infinity; }
+  // delay: with legacy, the fixed delay; otherwise the ceiling is the larger of MAX_DELAY and this, and the delay starts at DELAY
+  constructor(delay = DELAY, opts = {}) {
+    this.legacy = !!opts.legacy;
+    this.fixed = opts.fixed > 0 ? opts.fixed : 0;
+    this.ceil = Math.max(MAX_DELAY, delay);
+    this.delay = this.fixed || (this.legacy ? delay : DELAY);   // seconds behind real time that this car is drawn
+    this.buf = []; this.offs = []; this.off = null; this.lastRecv = -Infinity; this.born = -Infinity;
+    this.iv = 0;         // smoothed spacing of the sender's packets, ms (0 until there are two)
+    this.late = 0;       // smoothed lateness of a packet over the fastest one, ms
+    this.jit = 0;        // smoothed mean absolute deviation of that lateness, ms
+    this.drawn = null;   // the pose sample() returned last, the start of a blend after a stall
+    this.under = false;  // the last sample ran past the newest packet (the buffer ran dry)
+    this.blend = null;   // { x, z, h, t0 }: the pose the picture eases from after a stall
+    this.target = null;  // the clock offset the packets point at; this.off walks to it
+    this.offAt = null;   // the local time of the last walk
+  }
 
-  // st.t is the sender's clock (ms), recvMs is ours. The offset between the clocks follows the fastest packets,
-  // slowly, so a late packet does not shift the car and the car never jumps when the delay settles.
+  // the ceiling of the adaptive delay (Ghosts.delay); the fixed delay with legacy; nothing with fixed (the delay stays put)
+  setCeiling(v) { this.ceil = Math.max(MAX_DELAY, v); if (this.legacy) this.delay = v; }
+
+  // st.t is the sender's clock (ms), recvMs is ours. The offset between the clocks follows the fastest packets of the last
+  // 2 s, slowly, so a late packet does not shift the car and the car never jumps when the delay settles.
   push(st, recvMs) {
     let last = this.buf[this.buf.length - 1];
     if (last && st.t <= last.t) return false;      // old or duplicate
     if (last) {
       const gap = (st.t - last.t) / 1000, jump = Math.hypot(st.x - last.x, st.z - last.z);
-      if (jump > 15 + 100 * gap) { this.buf.length = 0; this.offs.length = 0; this.off = null; last = null; }   // a reset or a teleport: start again
+      if (jump > 15 + 100 * gap) { this.buf.length = 0; this.offs.length = 0; this.off = null; this.drawn = null; this.blend = null; last = null; }   // a reset or a teleport: start again
     }
     if (!last) this.born = recvMs;
-    this.offs.push(recvMs - st.t);
-    if (this.offs.length > WINDOW) this.offs.shift();
-    const target = Math.min(...this.offs);
-    if (this.off == null || Math.abs(target - this.off) > 250) this.off = target;
-    else this.off += Math.max(-1, Math.min(1, target - this.off));
+    // a stall: the car was drawn past its newest packet, and nothing arrived for a long time before this one (a stalled link
+    // delivers what was made during the stall all at once, with the old timestamps, so the gap is measured in arrivals).
+    // Ease from the drawn pose to the new one instead of jumping. A short gap (one lost packet, a late one) does not blend.
+    if (!this.legacy && last && this.under && this.drawn && !this.blend && recvMs - this.lastRecv > Math.max(STALL_MS, 3 * this.iv))
+      this.blend = { x: this.drawn.x, z: this.drawn.z, h: this.drawn.h, t0: recvMs };
+
+    this.offs.push({ v: recvMs - st.t, r: recvMs });
+    if (this.legacy) { if (this.offs.length > LEGACY_WINDOW) this.offs.shift(); }
+    else while (this.offs.length > 1 && recvMs - this.offs[0].r > OFFSET_MS) this.offs.shift();
+    let target = Infinity;
+    for (const o of this.offs) if (o.v < target) target = o.v;
+    this.target = target;
+    if (this.off == null || Math.abs(target - this.off) > OFFSET_RESET) this.off = target;   // a big change re-syncs at once
+    else if (this.legacy) this.off += Math.max(-LEGACY_SLEW, Math.min(LEGACY_SLEW, target - this.off));
+    else this.walkOffset(recvMs);
+
+    if (last && !this.legacy) { const sp = st.t - last.t; if (sp <= 250) this.iv = this.iv ? this.iv + (sp - this.iv) / 8 : sp; }
+    if (!this.legacy && !this.fixed) {
+      const late = recvMs - st.t - this.off;     // how much later than the fastest packet this one came (ms)
+      this.late += (late - this.late) * JITTER_GAIN;
+      this.jit += (Math.abs(late - this.late) - this.jit) * JITTER_GAIN;
+      const floor = Math.max(MIN_DELAY, this.iv / 1000), ceil = Math.max(floor, this.ceil);
+      const want = (this.late + 2 * this.jit + (this.iv || 33) / 2) / 1000;
+      const goal = Math.max(floor, Math.min(ceil, want));
+      const step = Math.max(-DELAY_DOWN, Math.min(DELAY_UP, (goal - this.delay) * 1000));
+      this.delay += step / 1000;
+    }
+
     this.buf.push(st);
     if (this.buf.length > 40) this.buf.shift();
     this.lastRecv = recvMs;
@@ -146,33 +208,75 @@ export class StateBuffer {
 
   get latest() { return this.buf[this.buf.length - 1] || null; }
 
-  // Fills and returns `out` with the pose at local time nowMs, or null when nothing has arrived.
+  // The clock offset walks to the target the packets point at, at OFFSET_RATE, so it never steps (a packet, or a frame, at a time).
+  walkOffset(nowMs) {
+    if (this.legacy || this.target === null || this.off === null) return;
+    const room = this.offAt === null ? 0 : Math.max(0, nowMs - this.offAt) * OFFSET_RATE;
+    this.off += Math.max(-room, Math.min(room, this.target - this.off));
+    this.offAt = nowMs;
+  }
+
+  // Where the car is now, by the sender's clock: the newest packet carried on at its own velocity to the present (the
+  // present is nowMs less the clock offset, so the time the packet spent on the way is counted). Capped at MAX_EXTRAP.
+  // Used for contact only: the drawn pose is sample()'s, which is behind by the delay.
+  presentPose(nowMs, out = {}) {
+    const last = this.latest;
+    if (!last) return null;
+    const dt = Math.max(0, Math.min((nowMs - this.off - last.t) / 1000, MAX_EXTRAP));
+    Object.assign(out, last);
+    out.x = last.x + last.vx * dt; out.z = last.z + last.vz * dt;
+    out.h = last.h + Math.max(-6, Math.min(6, last.yr)) * dt;
+    return out;
+  }
+
+  // Fills and returns `out` with the pose at local time nowMs, or null when nothing has arrived. This is the pose the car is
+  // drawn at, and race position and the standings use it too.
   sample(nowMs, out = {}) {
     const b = this.buf, n = b.length;
     if (!n) return null;
+    this.walkOffset(nowMs);
     const t = nowMs - this.delay * 1000 - this.off;       // the sender's clock at the moment we want to show
     const last = b[n - 1];
-    if (n === 1 || t <= b[0].t) return Object.assign(out, n === 1 ? last : b[0]);
-    if (t >= last.t) {
-      // late packets: carry on at the last velocity for a short while, then hold still
+    this.under = false;
+    if (n === 1 || t <= b[0].t) Object.assign(out, n === 1 ? last : b[0]);
+    else if (t >= last.t) {
+      // the packets have run out: carry on at the last velocity for a short while, then hold still
+      this.under = true;
       const dt = Math.min((t - last.t) / 1000, MAX_EXTRAP);
       Object.assign(out, last);
       out.x = last.x + last.vx * dt; out.z = last.z + last.vz * dt;
       out.h = last.h + Math.max(-6, Math.min(6, last.yr)) * dt;
-      return out;
+    } else {
+      let i = n - 2;
+      while (i > 0 && b[i].t > t) i--;
+      const a = b[i], c = b[i + 1], span = (c.t - a.t) / 1000, u = (t - a.t) / (c.t - a.t);
+      Object.assign(out, c);
+      // position: cubic Hermite through both packets using the velocities they carry, so a 20 Hz stream curves smoothly
+      const u2 = u * u, u3 = u2 * u, h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+      out.x = h00 * a.x + h10 * span * a.vx + h01 * c.x + h11 * span * c.vx;
+      out.z = h00 * a.z + h10 * span * a.vz + h01 * c.z + h11 * span * c.vz;
+      for (const f of SMOOTH) out[f] = a[f] + (c[f] - a[f]) * u;
+      out.h = a.h + wrapAngle(c.h - a.h) * u;
+      out.w = a.w + wrapAngle(c.w - a.w) * u;
+      // race progress: lap and the distance into it go together, so across a lap line take both from one packet
+      if (a.lap === c.lap) out.s = a.s + (c.s - a.s) * u;
+      else { const p = u < 0.5 ? a : c; out.lap = p.lap; out.s = p.s; }
     }
-    let i = n - 2;
-    while (i > 0 && b[i].t > t) i--;
-    const a = b[i], c = b[i + 1], span = (c.t - a.t) / 1000, u = (t - a.t) / (c.t - a.t);
-    Object.assign(out, c);
-    // position: cubic Hermite through both packets using the velocities they carry, so a 20 Hz stream curves smoothly
-    const u2 = u * u, u3 = u2 * u, h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
-    out.x = h00 * a.x + h10 * span * a.vx + h01 * c.x + h11 * span * c.vx;
-    out.z = h00 * a.z + h10 * span * a.vz + h01 * c.z + h11 * span * c.vz;
-    for (const f of SMOOTH) out[f] = a[f] + (c[f] - a[f]) * u;
-    out.h = a.h + wrapAngle(c.h - a.h) * u;
-    out.w = a.w + wrapAngle(c.w - a.w) * u;
+    if (this.blend) this.easeBlend(nowMs, out);
+    if (!this.drawn) this.drawn = { x: 0, z: 0, h: 0 };
+    this.drawn.x = out.x; this.drawn.z = out.z; this.drawn.h = out.h;
     return out;
+  }
+
+  // After a stall: the pose eases from the blend's start to the interpolated one over BLEND_MS (smoothstep), so a car that was
+  // drawn ahead of its last packet is not pulled back in one frame.
+  easeBlend(nowMs, out) {
+    const k = this.blend, w = (nowMs - k.t0) / BLEND_MS;
+    if (w >= 1) { this.blend = null; return; }
+    const s = w <= 0 ? 0 : w * w * (3 - 2 * w);
+    out.x = k.x + (out.x - k.x) * s;
+    out.z = k.z + (out.z - k.z) * s;
+    out.h = k.h + wrapAngle(out.h - k.h) * s;
   }
 }
 
@@ -182,19 +286,31 @@ export const raceDistance = (lap, s, length) => lap * length + s;
 // The set of remote cars in the scene. `factory.create(info)` returns an entity with setPose(pose), setOpacity(o),
 // setLabel(screen or null, name, opacity) and dispose(); the browser one is threeFactory below, the test uses a stub.
 export class Ghosts {
-  // opts.max: how many cars at most (the game shows the other 7; the live page, a spectator, all 8)
+  // opts.max: how many cars at most (the game shows the other 7; the live page, a spectator, all 8).
+  // opts.legacy: the old behaviour (fixed delay, see StateBuffer), for tools/netsim.js only.
+  // opts.fixed: seconds of a fixed delay for every car (the live spectator view, see StateBuffer). Set it before the cars arrive.
   constructor(factory, opts = {}) {
     this.factory = factory;
     this.max = opts.max || MAX_PLAYERS - 1;
-    this.map = new Map();    // id -> { id, buf, ent, name, livery, info, opacity }
+    this.legacy = !!opts.legacy;
+    this.fixed = opts.fixed > 0 ? opts.fixed : 0;
+    this.map = new Map();    // id -> { id, buf, ent, name, livery, info, opacity, shown }
     this.pending = new Map();   // id -> livery string that arrived before the first state of that player
     this._pose = {};
+    this._pres = {};
     this._solids = [];
     this.fx = [];            // pose summary of each car drawn this frame, for the lights and spray (src/carFx.js): { x, y, z, h, v, brk, o }
-    this.delay = DELAY;      // seconds behind real time that remote cars are drawn; the relay transport raises it to DELAY + RELAY_EXTRA_DELAY
+    this._delay = this.fixed || (this.legacy ? LEGACY_DELAY : DELAY);
+    this.drawnAt = null;     // the local time of the last update(): the pose on screen is the one sampled at this time
   }
 
   get size() { return this.map.size; }
+
+  // Seconds behind real time that remote cars may be drawn at most. A transport sets it (peer to peer and relay: DELAY). It is the
+  // ceiling of each car's adaptive delay, which is never above MAX_DELAY unless this asks for more. With fixed, every car is
+  // drawn at that delay and this returns it.
+  get delay() { return this.fixed || this._delay; }
+  set delay(v) { this._delay = v; for (const g of this.map.values()) g.buf.setCeiling(v); }
 
   // A state arrived from player `id` at local time nowMs. Returns false if it was ignored.
   receive(id, st, nowMs) {
@@ -204,7 +320,7 @@ export class Ghosts {
       // painted from the player's own livery if it has arrived, else from the default for that player id (the same on every client)
       const livery = this.pending.has(id) ? decodeLivery(this.pending.get(id)) : defaultLivery(id);
       this.pending.delete(id);
-      g = { id, buf: new StateBuffer(this.delay), livery, name: st.name, info: null, opacity: 1, ent: this.factory ? this.factory.create({ id, livery, name: st.name }) : null };
+      g = { id, buf: new StateBuffer(this._delay, { legacy: this.legacy, fixed: this.fixed }), livery, name: st.name, info: null, opacity: 1, shown: {}, ent: this.factory ? this.factory.create({ id, livery, name: st.name }) : null };
       this.map.set(id, g);
     }
     if (!g.buf.push(st, nowMs)) return false;
@@ -242,6 +358,7 @@ export class Ghosts {
 
   // Call every frame. `project(x, y, z)` gives {x, y} in pixels or null if the point is off screen or behind the camera.
   update(nowMs, project) {
+    this.drawnAt = nowMs;
     let nfx = 0;
     for (const g of [...this.map.values()]) {
       const silent = (nowMs - g.buf.lastRecv) / 1000;
@@ -258,13 +375,20 @@ export class Ghosts {
     this.fx.length = nfx;
   }
 
-  // The remote cars as Car.collideCars wants them, at local time nowMs. The array and its objects are reused,
-  // so read them straight away. `age` is seconds since the car appeared (or was reset), `silent` seconds since its last packet.
-  solids(nowMs) {
+  // The pose a remote car is drawn at, at local time at (default: the last update()). Before any update, the newest packet.
+  // Race position uses this pose, so the standings agree with the picture. Read it straight away: the object is reused per car.
+  shownPose(g, at = this.drawnAt) {
+    return (at == null ? null : g.buf.sample(at, g.shown)) || g.info;
+  }
+
+  // Where every remote car is now, for Car.collideCars (see StateBuffer.presentPose): id, x, z, heading, vx, vz, yawRate, age
+  // (seconds since the car appeared or was reset) and silent (seconds since its last packet). The array and its objects are
+  // reused, so read them straight away.
+  presentPose(nowMs) {
     const out = this._solids;
     let n = 0;
     for (const g of this.map.values()) {
-      const p = g.buf.sample(nowMs, this._pose);
+      const p = g.buf.presentPose(nowMs, this._pres);
       if (!p) continue;
       const o = out[n] || (out[n] = {});
       o.id = g.id; o.x = p.x; o.z = p.z; o.heading = p.h; o.vx = p.vx; o.vz = p.vz; o.yawRate = p.yr;
@@ -275,14 +399,19 @@ export class Ghosts {
     return out;
   }
 
-  // The standings: every player (you included) ranked by race distance, with the gap to the leader.
+  // The remote cars as Car.collideCars wants them, at local time nowMs (the present pose, see presentPose).
+  solids(nowMs) { return this.presentPose(nowMs); }
+
+  // The standings: every player (you included) ranked by race distance, with the gap to the leader. Remote cars are ranked
+  // at the pose they are drawn at (shownPose), so the order on screen is the order here. Lap, best and last come from the newest packet.
   // own = { name, livery, lap, s, speed }. Rows carry colour (css body colour) and num (race number or -1). A gap under a lap is in seconds at that player's speed, over a lap it is whole laps.
   standings(own, length) {
     const rows = [{ id: 'me', name: (own.livery && own.livery.name) || own.name || 'You', colour: own.livery ? own.livery.body : '#ffd21f', num: own.livery ? own.livery.number : -1, lap: own.lap, dist: raceDistance(own.lap, own.s, length), speed: own.speed, me: true }];
     for (const g of this.map.values()) {
       if (!g.info) continue;
-      const v = Math.hypot(g.info.vx, g.info.vz);
-      rows.push({ id: g.id, name: this.nameOf(g), colour: g.livery.body, num: g.livery.number, lap: g.info.lap, dist: raceDistance(g.info.lap, g.info.s, length), speed: v, me: false });
+      const p = this.shownPose(g);
+      const v = Math.hypot(p.vx, p.vz);
+      rows.push({ id: g.id, name: this.nameOf(g), colour: g.livery.body, num: g.livery.number, lap: g.info.lap, dist: raceDistance(p.lap, p.s, length), speed: v, me: false });
     }
     rows.sort((a, b) => b.dist - a.dist);
     const lead = rows[0].dist;

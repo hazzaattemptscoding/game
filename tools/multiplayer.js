@@ -4,11 +4,12 @@
 //   3. rooms: the room logic over an in-memory stand-in for PeerJS (full mesh, host leaving, full room, broker down, wrong code)
 //   3b. connection setup: ICE list, multiplayer.json merge order and loader, join retry (fake timers), diagnostics text, host hints
 //   4. collisions: two real Car objects through Car.collideCars, head-on and side by side
+//   5. adaptive delay, the catch-up after a stall, the present pose, standings on the drawn pose (see tools/netsim.js for the numbers)
 import { buildTrack } from '../src/track.js';
 import { Car, STEP } from '../src/physics.js';
 import { GT } from '../src/cars.js';
 import { carContact } from '../src/carContact.js';
-import { encodeState, decodeState, stateFromCar, StateBuffer, Ghosts, cleanName, FIELDS, DELAY, MAX_EXTRAP, TIMEOUT } from '../src/ghosts.js';
+import { encodeState, decodeState, stateFromCar, StateBuffer, Ghosts, cleanName, FIELDS, DELAY, MIN_DELAY, MAX_DELAY, LEGACY_DELAY, RELAY_EXTRA_DELAY, MAX_EXTRAP, TIMEOUT, raceDistance } from '../src/ghosts.js';
 import { defaultLivery, liveryEquals } from '../src/livery.js';
 import { fakeNetwork } from './lib/fakepeer.js';
 import { Multiplayer, makeCode, cleanCode, parseBroker, brokerFromSearch, BROKER, hostId, DEFAULT_ICE_SERVERS, applyConfigFile, cleanIceServers, fetchConfigFile, resolveConfig, loadConfig, hasTurn, rtcConfig, newDiag, diagText, failureReason, NO_OUTSIDE, NEEDS_RELAY } from '../src/multiplayer.js';
@@ -88,7 +89,7 @@ const mkState = (tMs, extra = {}) => ({ ...truth(tMs), t: tMs, y: 0, st: 0, w: 0
     while (i < arrivals.length && arrivals[i].at <= now) { buf.push(arrivals[i].st, arrivals[i].at); i++; }
     const p = buf.sample(now, out);
     if (!p || now < 1500) { prev = null; continue; }
-    // the car should be where the sender was about DELAY plus the fastest packet's delay ago; allow 0 to 160 ms of lag
+    // the car should be where the sender was a little before the fastest packet's arrival; allow 0 to 160 ms of lag
     const err = Math.min(...[0, 20, 40, 60, 80, 100, 120, 140, 160].map(lag => Math.hypot(p.x - truth(now + skew - lag).x, p.z - truth(now + skew - lag).z)));
     maxErr = Math.max(maxErr, err);
     if (prev) {
@@ -122,7 +123,7 @@ const mkState = (tMs, extra = {}) => ({ ...truth(tMs), t: tMs, y: 0, st: 0, w: 0
   const b = new StateBuffer();
   b.push({ ...mkState(0), h: 3.1, vx: 0, vz: 0, yr: 0 }, 0);
   b.push({ ...mkState(50), h: -3.1, vx: 0, vz: 0, yr: 0 }, 50);
-  const p = b.sample(125, {});     // halfway between the two (DELAY 100)
+  const p = b.sample(125, {});     // halfway between the two (the starting delay is DELAY, 100 ms)
   check(Math.abs(Math.abs(p.h) - Math.PI) < 0.05, `heading wraps the short way (${p.h.toFixed(2)})`);
 }
 console.log('SILENCE AND REMOVAL');
@@ -569,6 +570,89 @@ function run(cars, seconds, onStep) {
   check(!crossed, 'on the track through Car.step: no tunnelling');
   check(vmax <= 30.3, `on the track through Car.step: nobody gains speed (${vmax.toFixed(1)})`);
   check(energy([A, B]) <= e0, 'on the track through Car.step: energy does not increase');
+}
+
+{
+  // contact: a deep overlap is taken out over several steps, at most CAR_PUSH (0.3 m) of it in one
+  const A = mk(0, 0, 0, 5), B = mk(3, 0, Math.PI, 5);
+  const before = A.x; A.collideCars([asOther(B, 'b')]);
+  const push = A.x - before;
+  check(push < 0 && Math.abs(push) <= 0.3 + 1e-9, `contact: one step pushes at most 0.3 m (${push.toFixed(3)} m)`);
+}
+
+console.log('ADAPTIVE DELAY, STALLS, PRESENT POSE');
+{
+  // the delay follows the jitter and stays within its limits
+  const calm = new StateBuffer(), wild = new StateBuffer(), spec = new StateBuffer(0.3);
+  let peak = 0;
+  for (let k = 0; k < 300; k++) {
+    const t = k * 1000 / 30;
+    calm.push(mkState(t + 5000), t + 40);
+    wild.push(mkState(t + 5000), t + 40 + rnd() * 300);
+    spec.push(mkState(t + 5000), t + 40 + rnd() * 300);
+    peak = Math.max(peak, spec.delay);
+  }
+  check(calm.delay >= MIN_DELAY - 1e-9 && calm.delay <= 0.06, `calm packets settle near the floor (${(calm.delay * 1000).toFixed(0)} ms)`);
+  check(wild.delay > calm.delay + 0.02 && wild.delay <= MAX_DELAY + 1e-9, `jittery packets draw further back, within the ceiling (${(wild.delay * 1000).toFixed(0)} ms)`);
+  check(peak > MAX_DELAY, `a transport ceiling above MAX_DELAY is used (peak ${(peak * 1000).toFixed(0)} ms)`);
+  check(RELAY_EXTRA_DELAY === 0 && !(DELAY + RELAY_EXTRA_DELAY > MAX_DELAY), 'no fixed relay addition');
+  const legacy = new StateBuffer(LEGACY_DELAY, { legacy: true });
+  for (let k = 0; k < 300; k++) { const t = k * 1000 / 30; legacy.push(mkState(t + 5000), t + 40 + (k % 7) * 9); }
+  check(legacy.delay === LEGACY_DELAY, 'legacy: the delay is the fixed 150 ms');
+  // a fixed buffer (the live spectator view, SPEC_DELAY) keeps its delay under the same kind of jitter
+  const fixed = new StateBuffer(0.3, { fixed: 0.3 });
+  let fixedMoved = false;
+  for (let k = 0; k < 300; k++) { const t = k * 1000 / 30; fixed.push(mkState(t + 5000), t + 40 + (k * 37) % 300); if (fixed.delay !== 0.3) fixedMoved = true; }
+  check(!fixedMoved && fixed.delay === 0.3, 'a fixed buffer keeps delay 0.3 under jitter (the live spectator view)');
+
+  // a stall: nothing for 600 ms, then the held packets all at once. The drawn car does not jump.
+  const stalled = (opts, ceil) => {   // the largest frame-to-frame move while the buffer runs dry and catches up
+    const b = new StateBuffer(ceil, opts);
+    const steps = []; let prev = null, i = 0;
+    const packets = [];
+    for (let k = 0; k <= 240; k++) {                                   // 8 s at 30 Hz
+      const made = k * 1000 / 30;
+      const held = made >= 3000 && made < 3600;                          // made during the stall, sent when it ends
+      packets.push({ at: (held ? 3600 : made) + 40, t: made });
+    }
+    packets.sort((a, c) => a.at - c.at || a.t - c.t);
+    for (let now = 1000; now <= 6000; now += 1000 / 60) {
+      while (i < packets.length && packets[i].at <= now) { b.push(mkState(packets[i].t + 5000), packets[i].at); i++; }
+      const p = b.sample(now, {});
+      if (prev) steps.push(Math.hypot(p.x - prev.x, p.z - prev.z));
+      prev = { x: p.x, z: p.z };
+    }
+    return Math.max(...steps);
+  };
+  const jumpNew = stalled({}, DELAY), jumpOld = stalled({ legacy: true }, LEGACY_DELAY);
+  console.log(`  600 ms stall: largest frame-to-frame move ${jumpNew.toFixed(2)} m (new), ${jumpOld.toFixed(2)} m (legacy)`);
+  check(jumpNew < 3, `a stall is eased, not snapped (largest move ${jumpNew.toFixed(2)} m, a snap is above 3 m)`);
+  check(jumpOld > jumpNew, 'the legacy buffer does snap more after the same stall');
+
+  // the present pose: the newest packet carried on to now, capped at MAX_EXTRAP
+  const pb = new StateBuffer();
+  for (let t = 0; t <= 1000; t += 50) pb.push({ ...mkState(t), vx: 40, vz: 0, yr: 0, x: t * 0.04, z: 0 }, t + 30);
+  const last = pb.latest, pres = pb.presentPose(1030, {});
+  check(Math.abs((pres.x - last.x) - 40 * (1030 - 30 - last.t) / 1000) < 1e-6, `present pose: the newest packet carried on to now (${(pres.x - last.x).toFixed(3)} m)`);
+  const far = pb.presentPose(9000, {});
+  check(Math.abs((far.x - last.x) - 40 * MAX_EXTRAP) < 1e-6, 'present pose: capped at MAX_EXTRAP');
+
+  // race standings use the pose the car is drawn at, not its newest packet
+  const L = 5000, g = new Ghosts(null);
+  for (let t = 0; t <= 3000; t += 33) g.receive('a', { ...mkState(t), x: 0, z: 0, s: 100 + 60 * t / 1000, lap: 1, name: 'Ann' }, t + 40);
+  g.update(3000, null);
+  const rows = g.standings({ name: 'Me', lap: 1, s: 0, speed: 0 }, L);
+  const drawn = g.shownPose(g.map.get('a'));
+  const row = rows.find(r => r.id === 'a');
+  check(Math.abs(row.dist - raceDistance(drawn.lap, drawn.s, L)) < 1e-9, `standings use the drawn pose (${row.dist.toFixed(2)} m)`);
+  check(row.dist < raceDistance(1, 100 + 60 * 3000 / 1000, L) - 3, 'the drawn car is behind its newest packet, so the standings put it behind too');
+  const solidsNow = g.solids(3000)[0];
+  check(solidsNow.x > 0 && Math.abs(solidsNow.silent - 0.0) < 0.1 + 1e-9 || solidsNow.silent < 0.1, 'solids come from the present pose with a silence age');
+
+  // a transport's ceiling: the Ghosts delay is the ceiling of each car's own delay
+  const h = new Ghosts(null);
+  h.receive('p', mkState(0), 40); h.delay = 0.3;
+  check(h.map.get('p').buf.ceil === 0.3 && h.delay === 0.3, 'Ghosts.delay sets the ceiling of each car');
 }
 
 if (fails.length) { console.log('\nFAIL\n  ' + fails.join('\n  ')); process.exit(1); }

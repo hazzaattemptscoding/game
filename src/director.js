@@ -89,10 +89,16 @@ export function createDirector(g) {
     menu.open('results', 'pause', { rows: flow.results, race: { laps: race.laps, time: race.time, best: timer.best, warnings: timer.limits.events.length, penalties: race.penalties }, canAgain: !online() || mp.isHost });
   }
 
+  // The other cars for the race. Position uses the pose each car is drawn at (lap and s go together, from the same sample), so
+  // the order matches the picture; laps completed and the best lap are the sender's own, from its newest packet.
   function otherCars() {
     const out = [];
     if (!lobby.active) return out;
-    for (const o of lobby.ghosts.map.values()) if (o.info) out.push({ id: o.id, name: lobby.ghosts.nameOf(o), laps: Math.max(0, o.info.lap - 1), lap: o.info.lap, s: o.info.s, best: o.info.bl || null });
+    for (const o of lobby.ghosts.map.values()) {
+      if (!o.info) continue;
+      const p = lobby.ghosts.shownPose(o);
+      out.push({ id: o.id, name: lobby.ghosts.nameOf(o), laps: Math.max(0, o.info.lap - 1), lap: p.lap, s: p.s, best: o.info.bl || null });
+    }
     return out;
   }
 

@@ -623,7 +623,7 @@ export class Multiplayer {
   sendTelemetry(bytes) { if (this.relayRoom) this.relayRoom.sendTelemetry(bytes); }
   sendMeta(m) { return this.relayRoom ? this.relayRoom.sendMeta(m) : false; }
 
-  // Broadcast our car (an encoded state array). Called about 20 times a second; never waits.
+  // Broadcast our car (an encoded state array). Called about 30 times a second; never waits.
   sendState(arr) {
     if (this.relayRoom) { this.relayRoom.sendState(arr); return; }
     for (const p of this.peers.values()) {

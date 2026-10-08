@@ -1,13 +1,13 @@
 // The live page's connection to the relay: where the relay is, the list of open lobbies, and one spectator seat in a room.
 // A spectator only listens. RelayClient (src/relay.js) is the same socket the game uses, joined with spectator:true; the relay then
-// sends the room's cars (state at 10 Hz), their paint and names, telemetry, the race details and who comes and goes.
+// sends the room's cars (state at 15 Hz), their paint and names, telemetry, the race details and who comes and goes.
 
 import { RelayClient, cleanRelayUrl } from '../relay.js';
 import { unpackState, decodeState, cleanName, DELAY, BIN_STATE } from '../ghosts.js';
 import { decodeTelemetry, TAG_TELEMETRY } from '../shared/telemetry.js';
 
 export const LIST_MS = 3000;           // the lobby list is read this often
-export const SPEC_DELAY = 0.3;         // seconds behind real time the cars are drawn: states come at 10 Hz, so a full extra packet of margin
+export const SPEC_DELAY = 0.3;         // seconds behind real time the cars are drawn, fixed: states come at 15 Hz (the relay sends spectators every 2nd state from a 30 Hz sender), and a fixed delay keeps the broadcast picture still
 const CODE = /^[A-Z]{5}$/;
 
 // ?relay=ws://localhost:8787/ wins, then "relay" in multiplayer.json next to the page. Returns '' when there is none.
@@ -52,7 +52,7 @@ const peerId = n => 'r' + n;
 export class SpectatorRoom {
   constructor({ url, code, ghosts, model, handlers = {}, WebSocket, timers, now = () => performance.now() }) {
     Object.assign(this, { url, code, ghosts, model, handlers, now });
-    ghosts.delay = SPEC_DELAY;
+    ghosts.fixed = SPEC_DELAY;   // before any car arrives: every car is drawn SPEC_DELAY behind, whatever the jitter
     this.players = new Set();
     this.spectators = 0;
     this.client = new RelayClient({
