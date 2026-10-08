@@ -58,7 +58,7 @@ const BRIDGE_APPROACH = 40; // metres before and after the deck where a parapet 
 const MIN_EDGE = 4;        // the 4 m minimum from the track edge to any barrier
 const MIN_BARRIER = 5;     // working clearance margin beyond the 4 m minimum (street, pit and bridge excepted)
 // Corners that get bollards on the inside kerb at the apex: esses and chicanes, where a car could cut straight across.
-// The start of a track limits system (they are only markers for now; nothing is penalised yet).
+// They are markers only: the track limits rule (src/trackLimits.js) checks every corner, bollards or not.
 const BOLLARD_CORNERS = ['Aileron', 'Rudder', 'Guardroom Chicane', 'Boundary Loop'];
 const TALL_RAMP = 6;        // the tall stretch of the containment wall tapers in height over this many metres at each end
 const BRIDGE_SLOPE = 1 / 3;  // the embankment under the ends of the deck falls (and rises) at 1:3

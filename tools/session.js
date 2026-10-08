@@ -11,6 +11,12 @@ import { createRaceControl, cleanRaceMessage } from '../src/raceControl.js';
 import { TIMES, WEATHERS, resolveEnv, blendEnv, cleanEnv, cleanWeather, cleanTime, envFromParams, shadowsOn, DEFAULT_ENV } from '../src/weather.js';
 import { migrateSettings } from '../src/settings.js';
 import { boltShape } from '../src/environment.js';
+import { Car, STEP } from '../src/physics.js';
+import { GT } from '../src/cars.js';
+import { LapTimer } from '../src/timing.js';
+import { Autopilot, computeRacingLine } from '../src/autopilot.js';
+import { limitZones, timeGained, TOLERANCE } from '../src/trackLimits.js';
+import { limitBanner } from '../src/sessionHud.js';
 
 const fails = [];
 const check = (ok, msg) => { if (!ok) fails.push(msg); };
@@ -171,6 +177,99 @@ console.log('RESULTS ORDER');
   check(rows[0].lap === 3 && rows.find(x => x.best).lap === 3 && !rows.find(x => x.lap === 2).best, 'time trial list: newest first, an invalid lap is never the best');
 }
 
+console.log('TRACK LIMITS IN A RACE');
+{
+  // the setting: races penalise, everything else only warns
+  check(makeSession('race').trackLimits === 'penalty' && makeSession('online').trackLimits === 'penalty', 'races default to penalty');
+  check(makeSession('race', { trackLimits: 'warn' }).trackLimits === 'warn' && makeSession('race', { trackLimits: 'nonsense' }).trackLimits === 'penalty', 'a race may choose warn; bad values fall back to penalty');
+  check(makeSession('practice', { trackLimits: 'penalty' }).trackLimits === 'warn' && makeSession('timetrial').trackLimits === 'warn', 'practice and time trial only warn, whatever is asked');
+  const f = new Flow({ random: () => 0 });
+  f.begin(makeSession('race'), 0, { hold: 500 });
+  check(f.race.limitRule === 'penalty', 'a race started by the flow penalises');
+
+  // the rule on a fake timer: a gain over the tolerance costs the gain rounded up to a whole second
+  const L = 3835, trace = new Float32Array(L + 1);
+  for (let k = 0; k <= L; k++) trace[k] = k * 0.05;   // the reference: 20 m/s, 0.05 s a metre
+  const fake = { bestTrace: trace, track: { length: L }, reverse: false };
+  const ex = (s0, s1, took, corner = 'Windsock Hairpin') => ({ corner, s0, s1, t0: 100, t1: 100 + took });
+  check(near(timeGained(ex(1000, 1010, 0.3), fake), 0.2, 1e-3) && near(timeGained(ex(1000, 1010, 0.5), fake), 0, 1e-3), 'time gained is the reference time for the stretch minus the time taken');
+  check(timeGained(ex(1000, 1010, 0.3), { ...fake, bestTrace: null }) === null, 'no clean lap yet: no reference, no judgement');
+  const rev = { ...fake, reverse: true };
+  check(near(timeGained(ex(1010, 1000, 0.3), rev), 0.2, 1e-3), 'a reverse lap is mirrored in lap order: the same gain going backwards');
+  check(timeGained(ex(1000, 1250, 0.3), fake) === null && timeGained(ex(1000, 1010, 40), fake) === null, 'a long stretch or a long time (a reset) is not judged');
+
+  const race = (rule) => new RaceTracker({ laps: 5, length: L, trackLimits: rule });
+  const closed = (gained) => ({ closed: [ex(1000, 1010, 0.5 - gained)] });
+  const judge = (rule, gained, finished = false) => {
+    const r = race(rule);
+    r.start(0);
+    if (finished) { r.state = RACE.FINISHED; r.finishSim = 1; }
+    const timer = { limits: { takeClosed: () => closed(gained).closed }, ...fake };
+    r.update(120, { laps: 1, lap: 2, s: 1020 }, [], timer);
+    return r;
+  };
+  const g2 = judge('penalty', 0.9);
+  check(g2.penalties.length === 1 && g2.penalties[0].seconds === 1 && g2.penalties[0].reason === 'Track limits +1s', 'a gain of 0.9 s costs 1 s, shown as Track limits +1s');
+  const g3 = judge('penalty', 1.3);
+  check(g3.penalty === 2 && g3.penalties[0].reason === 'Track limits +2s', 'a gain of 1.3 s costs 2 s (rounded up)');
+  check(judge('penalty', TOLERANCE - 0.01).penalties.length === 0, 'a gain under the tolerance costs nothing');
+  check(judge('penalty', -0.4).penalties.length === 0, 'slower than the reference: no penalty');
+  check(judge('warn', 1.3).penalties.length === 0, 'the warn setting never penalises');
+  check(judge('penalty', 1.3, true).penalties.length === 0, 'an excursion that ends after the race is finished is not judged');
+
+  // the banner: shown for three seconds after the penalty
+  const br = { limitPenalties: [{ corner: 'Windsock Hairpin', gained: 0.9, seconds: 1, at: 50 }] };
+  check(limitBanner(br, 51).text === 'Track limits +1s' && limitBanner(br, 51).kind === 'jump' && limitBanner(br, 54) === null, 'the HUD banner: Track limits +1s for three seconds');
+  check(limitBanner({ limitPenalties: [] }, 10) === null && limitBanner(null, 10) === null, 'no penalty, no banner');
+
+  // scripted drives on the real track: out lap, lap 1 on the racing line (the reference), lap 2 with the inside cut
+  const track = buildTrack(), line = computeRacingLine(track);
+  const zone = limitZones().find(z => z.name === 'Windsock Hairpin');
+  const side = zone.side < 0 ? 0 : 1;
+  let reach = 0;
+  for (let i = Math.round(zone.from); i <= Math.round(zone.to); i++) reach = Math.max(reach, track.hw[i] + track.kerb[side][i] + track.sausage[side][i] + track.runoff[side][i]);
+  const cut = { ...line, x: Float64Array.from(line.x), z: Float64Array.from(line.z) };
+  {
+    const ease = Math.round(40 / track.ds), i0 = Math.round(zone.from), i1 = Math.round(zone.to);
+    for (let i = i0 - ease; i <= i1 + ease; i++) {
+      const k = ((i % track.N) + track.N) % track.N, w = Math.min(1, (i - (i0 - ease)) / ease, (i1 + ease - i) / ease);
+      const f = w * w * (3 - 2 * w), want = zone.side * (reach + 2.5), d = line.off[k] + (want - line.off[k]) * f;
+      cut.x[k] = track.x[k] + track.nx[k] * d; cut.z[k] = track.z[k] + track.nz[k] * d;
+    }
+  }
+  const drive = (rule, skill) => {
+    const r = new RaceTracker({ laps: 5, length: track.length, trackLimits: rule });
+    const car = new Car(GT, track), timer = new LapTimer(track);
+    car.setAssists(true); car.placeAt(-20, 0);
+    const clean = new Autopilot(track, GT, { skill: 0.8, line });
+    const cutter = new Autopilot(track, GT, { skill, line });
+    cutter.line = cut;
+    let ap = clean, t = 0;
+    r.start(0);
+    while (timer.lap < 2 && t < 500) {
+      if (timer.lap === 1) ap = cutter;
+      car.step(ap.drive(car)); t += STEP;
+      timer.update(car.loc.s, t);
+      timer.checkLimits(car, t);
+      r.update(t, { laps: timer.lap, lap: timer.currentLap(), s: car.loc.s }, [], timer);
+    }
+    return { r, timer };
+  };
+  const gain = drive('penalty', 0.8);
+  const cuts = gain.timer.limits.events.filter(e => e.lap === 2 && e.corner === 'Windsock Hairpin').length;
+  console.log(`  Windsock Hairpin, lap 2 cut at 0.8 skill: ${cuts} warning(s), lap 2 ${gain.timer.history[1] ? (gain.timer.history[1].valid ? 'valid' : 'invalid') : 'not finished'}, penalties ${gain.r.penalties.map(p => `${p.reason} (${p.seconds} s)`).join(', ') || 'none'}`);
+  check(cuts >= 1, 'the autopilot cut across the grass at Windsock Hairpin is a warning');
+  check(gain.timer.history[1] && gain.timer.history[1].valid === false, 'the lap with the cut is invalid');
+  check(gain.r.penalties.length >= 1 && gain.r.penalties.every(p => /^Track limits \+\d+s$/.test(p.reason)), 'the cut gains time: a Track limits penalty in the race');
+  const warn = drive('warn', 0.8);
+  check(warn.timer.limits.events.some(e => e.corner === 'Windsock Hairpin') && warn.r.penalties.length === 0, 'the same cut in a warn session: warning and no penalty');
+  // the same cut by a driver who is slower through it than the reference lap: the warning stays, the penalty does not
+  const slow = drive('penalty', 0.5);
+  const slowCuts = slow.timer.limits.events.filter(e => e.lap === 2 && e.corner === 'Windsock Hairpin').length;
+  console.log(`  Windsock Hairpin, lap 2 cut at 0.5 skill: ${slowCuts} warning(s), penalties ${slow.r.penalties.map(p => p.reason).join(', ') || 'none'}`);
+  check(slowCuts >= 1 && slow.r.penalties.length === 0, 'a slower driver on the same cut: the warning, but no time gained, so no penalty');
+}
+
 console.log('GRID AND PIT');
 {
   const T = buildTrack();
@@ -226,7 +325,7 @@ console.log('ONLINE: A FAKE ROOM WITH SKEWED CLOCKS AND UNEVEN LATENCY');
   const run = until => { for (;;) { queue.sort((a, b) => a.ms - b.ms); if (!queue.length || queue[0].ms > until) break; const e = queue.shift(); T = Math.max(T, e.ms); e.f(); } T = until; };
   const nodes = {};
   const make = (id, isHost, skew) => {
-    const n = { id, skew, got: [], mp: { isHost, selfId: id, peers: new Map(), sendControl(obj, to) { for (const o of Object.values(nodes)) if (o.id !== id && (to === undefined || to === o.id)) at(n.lat[o.id] ?? 30, () => o.rc.handle(JSON.parse(JSON.stringify(obj)), id)); return true; } } };
+    const n = { id, skew, got: [], mp: { isHost, selfId: id, hostPeerId: 'host', peers: new Map(), sendControl(obj, to) { for (const o of Object.values(nodes)) if (o.id !== id && (to === undefined || to === o.id)) at(n.lat[o.id] ?? 30, () => o.rc.handle(JSON.parse(JSON.stringify(obj)), id)); return true; } } };
     n.rc = createRaceControl({ mp: n.mp, now: () => T + skew, random: () => 0.5, setTimeout: (f, ms) => at(ms, f), onRace: r => n.got.push({ ...r, real: T }) });
     nodes[id] = n; return n;
   };

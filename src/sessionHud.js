@@ -6,6 +6,15 @@ import { fmtTime } from './hud.js';
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// The banner for the latest track limits penalty, for `shownFor` seconds after it was given (race.limitPenalties from
+// RaceTracker, simTime the sim clock). Uses the amber 'jump' style. Null when there is nothing to show.
+export function limitBanner(race, simTime, shownFor = 3) {
+  const list = race && race.limitPenalties;
+  const p = list && list.length ? list[list.length - 1] : null;
+  if (!p || !(simTime - p.at <= shownFor)) return null;
+  return { text: `Track limits +${p.seconds}s`, kind: 'jump' };
+}
+
 // view: { show, chip: string|null, lights: 0..5|null (null hides the lights), lightsOut: bool, banner: { text, kind }|null,
 //         laps: [{ lap, time, valid, best }]|null, ready: number|null }
 export function createSessionHud(root = document.getElementById('sess')) {
