@@ -143,7 +143,7 @@ export class RelayClient {
 
 const randomToken = random => { let s = ''; for (let i = 0; i < 16; i++) s += 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(random() * 36)]; return s; };
 const peerId = n => 'r' + n;
-const CONTROL = new Set(['clk', 'clkr', 'race', 'env', 'scr', 'scrc', 'scrs', 'scrg']);     // message types that go to Multiplayer.onControl
+const CONTROL = new Set(['clk', 'clkr', 'race', 'env', 'scr', 'scrc', 'scrs', 'scrg', 'fin']);     // message types that go to Multiplayer.onControl (fin: src/finish.js)
 
 export class RelayRoom {
   // opts: ghosts, url, onStatus(status), onPlayers(), onRtt(ms), now() ms clock, random(), makeCode(), WebSocket, timers

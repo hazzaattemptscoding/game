@@ -7,6 +7,7 @@ import { Multiplayer, brokerFromSearch, loadConfig, cleanCode } from './multipla
 import { encodeLivery } from './livery.js';
 import { Ghosts, threeFactory, makeProjector, stateFromCar, encodeState } from './ghosts.js';
 import { encodeTelemetry, telemetryFromCar, TELEMETRY_HZ } from './shared/telemetry.js';
+import { FinishBook, cleanFinish, FIN } from './finish.js';
 
 const SEND_MS = 33;           // 30 Hz (the relay allows 80 frames a second per socket, worker/src/protocol.js)
 const HELD_MS = 250;          // a pose older than this is not moving on (paused, or a hidden tab): see the sender below
@@ -22,6 +23,7 @@ const store = {
 // ctx: { scene, camera, car, timer, track, search, getLivery, poseTime } where getLivery() is the player's own livery (a normalised livery
 // object) and poseTime() is the performance.now() time that the car's pose belongs to (the last physics step, see src/main.js)
 const LIVERY_MS = 2000;       // our livery goes out again every 2 s (the low rate control state)
+const FIN_AGAIN_MS = 1500;    // our finish goes out once more this long after the first, in case a packet was lost
 export function createLobby(ctx) {
   const $ = id => document.getElementById(id);
   const tagRoot = document.createElement('div');
@@ -29,6 +31,9 @@ export function createLobby(ctx) {
   $('hud').appendChild(tagRoot);
 
   const ghosts = new Ghosts(threeFactory(ctx.scene, tagRoot));
+  // the finishes of the other players in this race (src/finish.js) and ours, which goes to each player who joins after we finished
+  const finishes = new FinishBook();
+  let localFin = null, finSent = new Set(), finTimer = null, changeHook = null;
   const el = { name: $('mp-name'), code: $('mp-code'), host: $('mp-host'), join: $('mp-join'), leave: $('mp-leave'), copy: $('mp-copy'), big: $('mp-big'),
     start: $('mp-start'), joinrow: $('mp-joinrow'), room: $('mp-room'), status: $('mp-status'), who: $('mp-who'), hint: $('mp-hint'), via: $('mp-via'), diag: $('mp-diag'), details: $('mp-details'), stand: $('h-stand') };
   const search = ctx.search || '';
@@ -41,7 +46,7 @@ export function createLobby(ctx) {
     loadConfig: () => loadConfig({ fetchFn: (u, o) => fetch(u, o), search, build: typeof __BUILD_COMMIT__ === 'undefined' ? '' : __BUILD_COMMIT__ }),
     onStatus: s => render(s),
     onDiag: t => { el.diag.textContent = t; el.details.hidden = !t; },
-    onPlayers: () => { renderWho(); lastStand = ''; },
+    onPlayers: () => { renderWho(); lastStand = ''; playersChanged(); },
     onRtt: ms => { rttSeen.push(ms); if (rttSeen.length > 500) rttSeen.shift(); renderVia(); },
   });
 
@@ -52,6 +57,41 @@ export function createLobby(ctx) {
   }
 
   const liveryNow = () => (ctx.getLivery ? ctx.getLivery() : null);
+
+  // --- finishes (src/finish.js) ---
+  const changed = () => { if (changeHook) changeHook(); };
+  // the room's players changed: a finish of someone who left is dropped, our finish goes to a newcomer, and a room we left forgets all
+  function playersChanged() {
+    if (!mp.active) { resetFinishes(); return; }
+    const here = new Set([...mp.peers.values()].filter(p => p.hello).map(p => p.id));
+    if (finishes.keep(here)) changed();
+    if (localFin) for (const id of here) if (!finSent.has(id)) { finSent.add(id); mp.sendControl(localFin, id); }
+  }
+  function resetFinishes() {
+    clearTimeout(finTimer); finTimer = null;
+    localFin = null; finSent = new Set();
+    if (finishes.clear()) changed();
+  }
+  // a finish from another player: only from an id in the room (the relay stamps `from`; a message from ourselves is ignored)
+  function receiveFinish(m, from) {
+    if (!mp.active || !from || from === mp.selfId) return false;
+    const p = mp.peers.get(from);
+    if (!p || !p.hello) return false;
+    const fin = cleanFinish(m);
+    if (!fin || !finishes.set(from, fin)) return false;
+    changed();
+    return true;
+  }
+  // our finish: sent now, once more after FIN_AGAIN_MS, and to anyone who joins later (playersChanged)
+  function announceFinish(m) {
+    const fin = cleanFinish(m);
+    if (!fin || !mp.active) return null;
+    localFin = fin; finSent = new Set([...mp.peers.values()].filter(p => p.hello).map(p => p.id));
+    mp.sendControl(fin);
+    clearTimeout(finTimer);
+    finTimer = setTimeout(() => { finTimer = null; if (localFin === fin && mp.active) mp.sendControl(fin); }, FIN_AGAIN_MS);
+    return fin;
+  }
   const name = () => ((liveryNow() && liveryNow().name) || el.name.value.trim() || 'Driver');
   el.name.addEventListener('change', () => { store.set(NAME_KEY, el.name.value.trim()); mp.setName(name()); });
   el.code.addEventListener('input', () => { el.code.value = cleanCode(el.code.value); });
@@ -165,6 +205,21 @@ export function createLobby(ctx) {
       console.log(`ping (relay): min ${Math.min(...rttSeen)} ms, avg ${avg.toFixed(1)} ms, max ${Math.max(...rttSeen)} ms, ${rttSeen.length} samples`);
     },
     get joined() { return ghosts.size > 0; },
+    // the finishes of this race (FinishBook), and our own: the results screen reads both
+    finishes,
+    get localFinish() { return localFin; },
+    announceFinish,
+    receiveFinish,
+    resetFinishes,
+    // a callback for when a finish arrives or a player joins or leaves
+    onChange(fn) { changeHook = fn; },
+    // whether a player id is in the room now (their control channel is up)
+    isPresent(id) { const p = mp.peers.get(id); return !!(p && p.hello); },
+    // a player's name and livery colours, from the room, or null when we know nothing of that id
+    nameOf(id) { const g = ghosts.map.get(id); if (g) return ghosts.nameOf(g); const p = mp.peers.get(id); return p && p.name ? p.name : null; },
+    ownLivery: () => liveryNow(),
+    liveryOf(id) { const g = ghosts.map.get(id); return g && g.livery ? { colour: g.livery.body, num: g.livery.number } : null; },
+    FIN,
     ghosts,       // for tests and the console
     mp,           // the Multiplayer: the director reads its phase and sends the race start through it
     name,         // our name in the room

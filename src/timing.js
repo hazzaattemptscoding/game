@@ -57,7 +57,9 @@ export class LapTimer {
     this.traceAt = k;
   }
 
-  // a reset or a teleport: the lap is no longer driven all the way round, so it is not clean (the flag a jump sets)
+  // a reset or a teleport: the lap is no longer driven all the way round. The lap is INVALID (as with a track limit warning): it keeps
+  // its time, but it is never a best, a PB, a purple sector or minisector, a delta reference or a global time. The flag is
+  // sticky for the lap being driven and cleared when a new lap starts (finishLap); before the first crossing it changes nothing.
   markJump() { this.traceOK = false; }
 
   // the autopilot is driving: this lap is not a driver's lap (the local list leaves it out, see src/board.js)
@@ -82,7 +84,7 @@ export class LapTimer {
     if (crossedLine && ds > 0) this.finishLap(time);
     else if (this.lapStart !== null) {
       if (ds > 0) this.recordTrace(s, time);
-      this.minis.update(this.prevS, s, ds, time - this.lapStart, this.limits.countFor(this.currentLap()) === 0);
+      this.minis.update(this.prevS, s, ds, time - this.lapStart, this.limits.countFor(this.currentLap()) === 0 && this.traceOK);
       const next = sectors[this.sector + 1];
       if (this.sector < 2 && this.prevS < next && s >= next && ds > 0) this.finishSector(time);
     }
@@ -94,8 +96,8 @@ export class LapTimer {
     const t = elapsed - this.current.reduce((a, b) => a + b, 0);
     this.current.push(t);
     const i = this.sector;
-    // purple only while this lap has no track limit warning yet; finishLap takes the sector back if the lap ends up invalid
-    const prev = this.bestSectors[i], clean = this.limits.countFor(this.currentLap()) === 0;
+    // purple only while this lap has no track limit warning and no jump yet; finishLap takes the sector back if the lap ends up invalid
+    const prev = this.bestSectors[i], clean = this.limits.countFor(this.currentLap()) === 0 && this.traceOK;
     const pb = clean && (prev === null || t <= prev + 1e-6);
     if (clean && (prev === null || t < prev)) this.bestSectors[i] = t;
     this.sectorPB[i] = pb;
@@ -108,11 +110,13 @@ export class LapTimer {
     if (this.lapStart !== null && this.sector === 2) {
       this.finishSector(time);
       const lapTime = time - this.lapStart;
-      // a lap with a track limit warning is invalid: it keeps its time, but it is never the best, the PB, a purple sector or a purple minisector
-      const warnings = this.limits.countFor(this.lap + 1), valid = warnings === 0;   // the lap being finished is currentLap() until lap++
+      // a lap with a track limit warning, or with a jump (a reset or a teleport: traceOK false), is invalid: it keeps its time, but it
+      // is never the best, the PB, a purple sector or a purple minisector
+      const warnings = this.limits.countFor(this.lap + 1), jumped = !this.traceOK;
+      const valid = warnings === 0 && !jumped;   // the lap being finished is currentLap() until lap++
       this.minis.finishLap(lapTime, true, valid);
       this.lap++;
-      // whole: driven all the way round with no jump (a reset or a teleport). Only a whole lap can be the session best or the delta reference
+      // whole: driven all the way round with no jump. Only a whole lap can be the session best or the delta reference
       const whole = !!(this.trace && this.traceOK && this.traceAt > this.track.length - 60);
       const isBest = valid && whole && (this.best === null || lapTime < this.best);
       if (!valid) this.bestSectors = this.sectorBests.slice();
@@ -124,9 +128,9 @@ export class LapTimer {
         for (let m = this.traceAt + 1; m < this.trace.length; m++) this.trace[m] = lapTime;
         this.bestTrace = this.trace;
       }
-      // clean: a whole lap with no jump; only a valid AND clean lap goes to the global times
-      const clean = whole;
-      this.history.push({ lap: this.lap, time: lapTime, sectors: this.lastSectors, warnings, valid, clean, autopilot });
+      // clean: a whole lap, valid; only a valid AND clean lap goes to the global times
+      const clean = whole && valid;
+      this.history.push({ lap: this.lap, time: lapTime, sectors: this.lastSectors, warnings, valid, clean, jumped, autopilot });
       this.events.push({ type: 'lap', time: lapTime, best: isBest, valid, sectors: this.lastSectors });
     }
     else this.minis.finishLap(0, false);   // the out lap or a lap that skipped a sector: nothing to keep

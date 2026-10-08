@@ -4,8 +4,10 @@
 //   3. lap counting and the finish rule, positions, results ordering
 //   4. the grid and pit slots on the real track
 //   5. the clock offset estimate and the online schedule
+//   6. the finish message (src/finish.js) and the results table (src/session.js raceRows): validation, order, DNF, late finishes
+//   7. the results screen's view model (src/results.js), in node
 import { StartSequence, START, pickHold, goOffset, gridSlot, pitSlot, sampleOffset, estimateOffset, toLocalTime, scheduleStart, sequenceFromMessage, cinematicPose, orbitPose } from '../src/start.js';
-import { makeSession, Flow, PHASE, RaceTracker, RACE, orderResults, timeTrialRows, hasStartLights } from '../src/session.js';
+import { makeSession, Flow, PHASE, RaceTracker, RACE, orderResults, raceRows, timeTrialRows, hasStartLights } from '../src/session.js';
 import { buildTrack } from '../src/track.js';
 import { createRaceControl, cleanRaceMessage, SAMPLES } from '../src/raceControl.js';
 import { TIMES, WEATHERS, resolveEnv, blendEnv, cleanEnv, cleanWeather, cleanTime, envFromParams, shadowsOn, DEFAULT_ENV } from '../src/weather.js';
@@ -17,6 +19,8 @@ import { LapTimer } from '../src/timing.js';
 import { Autopilot, computeRacingLine } from '../src/autopilot.js';
 import { limitZones, timeGained, TOLERANCE } from '../src/trackLimits.js';
 import { limitBanner } from '../src/sessionHud.js';
+import { cleanFinish, FinishBook, FIN } from '../src/finish.js';
+import { resultsModel, sampleResults, chipInk } from '../src/results.js';
 
 const fails = [];
 const check = (ok, msg) => { if (!ok) fails.push(msg); };
@@ -117,7 +121,7 @@ console.log('FLOW');
   check(f.pause() && f.restart(t + 20000, { hold: 800 }) && f.phase === PHASE.START && f.race.penalty === 0 && f.seq.hold === 800, 'restart session: a fresh start and a clean race');
   f.update(t + 20000 + goOffset(800), 30);
   // finish -> results
-  check(f.finish([{ id: 'me', me: true, finished: true, time: 100 }]) && f.phase === PHASE.RESULTS && f.results[0].rank === 1, 'finish gives the results');
+  check(f.finish(raceRows([{ id: 'me', me: true, finished: true, time: 100 }])) && f.phase === PHASE.RESULTS && f.results[0].rank === 1, 'finish gives the results');
   check(f.restart(t + 99000) && f.phase === PHASE.START, 'race again from the results');
   f.update(t + 99000 + goOffset(f.seq.hold), 0);
   f.finish([{ id: 'me', me: true, finished: true, time: 90 }]);
@@ -423,6 +427,80 @@ console.log('WEATHER AND TIME OF DAY');
   let peak = 0, ok = true;
   for (let t = -0.2; t < 1.2; t += 0.005) { const v = boltShape(t); if (!(v >= 0 && v <= 1)) ok = false; if (t >= 0 && t < 0.1) peak = Math.max(peak, v); }
   check(ok && peak > 0.95 && boltShape(-0.1) === 0 && boltShape(0.9) === 0 && boltShape(0.3) > 0.3, 'the lightning flash is 0 to 1, peaks at once and is over in under a second');
+}
+
+console.log('FINISH MESSAGES AND THE RESULTS TABLE');
+{
+  // the finish message: clean numbers, clamped ranges, bad numbers rejected, at most 8 penalties, short plain reasons
+  const good = { t: 'fin', time: 480.5, laps: 5, best: 92.4, sec: [29.8, 38.1, 24.5], pen: [{ s: 2, why: 'Track limits +2s' }], warn: 1 };
+  check(JSON.stringify(cleanFinish(good)) === JSON.stringify(good), 'a good finish message is kept as it is');
+  check(cleanFinish({ ...good, time: NaN }) === null && cleanFinish({ ...good, time: 'fast' }) === null && cleanFinish({ ...good, time: 0 }) === null, 'a bad or zero race time is rejected');
+  check(cleanFinish({ ...good, laps: Infinity }) === null && cleanFinish({ ...good, best: NaN }) === null && cleanFinish({ ...good, warn: -Infinity }) === null, 'bad laps, best or warnings are rejected');
+  check(cleanFinish({ ...good, sec: [29.8, NaN, 24.5] }) === null && cleanFinish({ ...good, sec: [1, 2, 3, 4] }) === null && cleanFinish({ ...good, pen: 'x' }) === null, 'a bad sector, a long sector list or a non-list penalty is rejected');
+  const big = cleanFinish({ ...good, time: 1e9, laps: 500, best: 1e9, sec: [-5, 1e9, 3], warn: 1e9 });
+  check(big.time === 7200 && big.laps === 99 && big.best === 3600 && big.sec[0] === 0 && big.sec[1] === 3600 && big.warn === 999, 'out of range numbers are clamped');
+  const pens = cleanFinish({ ...good, pen: [...Array(12)].map((_, i) => ({ s: i + 1, why: 'Track limits' })) });
+  check(pens.pen.length === 8 && pens.pen[7].s === 8, 'at most 8 penalties');
+  check(cleanFinish({ ...good, pen: [{ s: NaN, why: 'x' }, { s: 3, why: 'Jump start' }] }).pen.map(p => p.s).join() === '3', 'a penalty with a bad number is dropped, the rest kept');
+  const reason = cleanFinish({ ...good, pen: [{ s: 5, why: '<b>Track limits and a very long reason text</b>' }] }).pen[0].why;
+  check(reason.length <= 24 && !/[<>]/.test(reason) && reason.startsWith('bTrack limits'), `reasons are plain and at most 24 characters (got "${reason}")`);
+  check(cleanFinish({ ...good, pen: [{ s: 2 }] }).pen[0].why === 'Penalty', 'a penalty with no reason gets a plain one');
+  check(cleanFinish({ ...good, sec: undefined, best: undefined, warn: undefined, pen: undefined }).sec.join() === '0,0,0', 'optional parts default');
+  check(cleanFinish(null) === null && cleanFinish('fin') === null, 'not an object: rejected');
+
+  // the book: a repeat changes nothing; players who left are dropped; a new race clears it
+  const book = new FinishBook();
+  check(book.set('r1', good) === true && book.set('r1', { ...good }) === false && book.set('r1', { ...good, time: 481 }) === true, 'a repeated finish is idempotent, a changed one is stored');
+  book.set('r2', good);
+  check(book.keep(new Set(['r2'])) === true && !book.has('r1') && book.has('r2') && book.keep(new Set(['r2'])) === false, 'a player who left loses their finish');
+  check(book.clear() === true && book.size === 0 && book.clear() === false, 'a new race clears the book');
+
+  // the results table: a finished car ranks by its time, penalties included; the local car is not first unless it is
+  const L = 1000, laps = 3;
+  const me = (over = {}) => ({ id: 'me', name: 'You', me: true, finished: true, time: 250, dist: 0, best: 80, sec: [26, 27, 27], pen: [], warn: 0, grid: 2, ...over });
+  const remote = (over = {}) => ({ id: 'r1', name: 'Ada', finished: true, time: 240, dist: 0, best: 79, sec: [25, 27, 27], pen: [{ s: 10, why: 'Track limits +10s' }], warn: 1, grid: 1, ...over });
+  const rows = raceRows([me(), remote(), { id: 'r2', name: 'Bo', finished: false, dist: 2 * L + 300, grid: 3 }, { id: 'r3', name: 'Cy', finished: false, dnf: true, dist: 900, grid: 4 }], { laps, length: L });
+  check(rows.map(r => r.id).join() === 'r1,me,r2,r3', `remote finished first by time (penalty in it), local not automatically first (got ${rows.map(r => r.id)})`);
+  check(rows[0].rank === 1 && rows[0].gap === null && near(rows[1].gap, 10, 1e-9), 'the winner has no gap; the car behind has the time gap');
+  check(rows[2].status === 'racing' && rows[2].rank === 3 && rows[2].lapsDown === 0, 'a car still out is ranked after the finished ones, by distance');
+  check(rows[3].status === 'dnf' && rows[3].rank === null && rows[3].gap === null, 'a car that did not finish is DNF, unranked, last');
+  check(rows[0].gained === 1 - 1 && rows[1].gained === 2 - 2 && rows[2].gained === 3 - 3, 'positions gained: grid minus finish');
+  check(rows[0].penalty === 10 && rows[1].penalty === 0, 'the penalty of each car is in its row');
+  // the sector colours: the fastest of the race is best, within 0.3 s near, else slow
+  const sc = raceRows([me({ sec: [26, 27.2, 27] }), remote({ sec: [25, 27, 27.5] }), { id: 'x', name: 'X', finished: true, time: 260, sec: [25.2, 28, 0], best: 78, pen: [], warn: 0 }], { laps, length: L });
+  const byId = Object.fromEntries(sc.map(r => [r.id, r]));
+  check(byId.r1.secCls[0] === 'best' && byId.x.secCls[0] === 'near' && byId.me.secCls[0] === 'slow', `sector 1: the fastest is best, 0.2 s is near, 1.0 s is slow (got ${byId.r1.secCls[0]}, ${byId.x.secCls[0]}, ${byId.me.secCls[0]})`);
+  check(byId.x.secCls[2] === null && byId.me.secCls[1] === 'near' && byId.x.secCls[1] === 'slow', `no time is no colour; 0.2 s behind the fastest S2 is near, 1 s is slow (got ${byId.x.secCls[2]}, ${byId.me.secCls[1]}, ${byId.x.secCls[1]})`);
+  check(byId.x.bestCls === 'best' && byId.r1.bestCls === null, 'the fastest lap of the race is marked');
+  // a late finish: the same table with a car that was out now finishing first, the rows re-rank
+  const before = raceRows([me({ time: 300 }), { id: 'r2', name: 'Bo', finished: false, dist: 2.5 * L, grid: 3 }], { laps, length: L });
+  check(before.map(r => r.id).join() === 'me,r2' && before[1].lapsDown === 0, 'before: the car out is second');
+  const after = raceRows([me({ time: 300 }), { id: 'r2', name: 'Bo', finished: true, time: 290, grid: 3, dist: 0 }], { laps, length: L });
+  check(after.map(r => r.id).join() === 'r2,me' && after[1].gap === 10 && after[0].gained === 2, 'a late finish re-ranks: the new finisher (grid 3) goes ahead on time and gains two');
+  // a lap down: a car a whole lap behind the leader, still out
+  const lapped = raceRows([me(), { id: 'r4', name: 'Di', finished: false, dist: L + 10, grid: 5 }], { laps, length: L });
+  check(lapped[1].lapsDown === 1 && lapped[1].gap === null, `a car a whole lap behind shows one lap down (got ${lapped[1].lapsDown})`);
+  check(raceRows([], { laps, length: L }).length === 0 && orderResults([{ id: 'x', finished: true, time: 5 }]).length === 1, 'empty and single rows');
+}
+
+console.log('RESULTS SCREEN MODEL');
+{
+  const sample = sampleResults(), m = resultsModel(sample);
+  const txt = id => m.rows.find(r => r.id === id);
+  check(m.rows.length === 6 && m.total === 6 && m.hasMe && m.rows.filter(r => r.me).length === 1 && txt('me').me, 'the sample table has six rows and one of them is you');
+  check(m.card.pos === 'P2' && m.card.of === 'of 6' && m.sub === 'Lakeside Circuit, 5 laps, Clear, Midday', `the card and the subtitle (got ${m.card.pos} ${m.card.of}, "${m.sub}")`);
+  check(txt('a').gap === '-' && txt('a').pos === '1' && txt('me').gap === '+2.116' && txt('me').pen === '+2 s' && txt('me').penTitle === 'Track limits +2s +2 s', `winner has no gap, you have the gap and the penalty with its reason (got ${txt('me').gap} ${txt('me').pen} ${txt('me').penTitle})`);
+  check(txt('d').gap === 'Racing' && txt('d').pos === '5' && txt('e').gap === 'DNF' && txt('e').pos === '-', 'a car out of the race is Racing, a car that left is DNF with no position');
+  check(txt('me').gained === '0' && txt('a').gained === '+2' && txt('d').gained === '-1' && txt('e').gained === '', 'positions gained as text: +2, 0, -1, and nothing for DNF');
+  check(txt('a').sec.map(x => x.cls).join() === 'best,near,best' && txt('a').best === '1:32.411' && txt('a').bestCls === 'best', 'sector and lap classes come from the rows');
+  check(m.card.sectors.join() === 'slow,best,slow' && m.card.penalised && m.card.penalty === '+2 s' && m.card.warn === '1 warning' && m.card.gained === '0', 'the card: your sectors, penalty, warnings and positions gained');
+  const dnfRow = txt('e');
+  check(dnfRow.best === '-' && dnfRow.sec.every(x => x.text === '-') && dnfRow.pen === '', 'a DNF car with no laps shows dashes');
+  const solo = resultsModel({ rows: [{ id: 'me', me: true, status: 'finished', rank: 1, time: 300, best: 90, sec: [30, 30, 30], secCls: ['best', 'best', 'best'], penalty: 0, pen: [], warn: 0, name: 'You', colour: '#1c6dd0', num: -1 }], laps: 1, canAgain: false });
+  check(solo.card.of === '' && solo.card.pos === 'P1' && solo.rows[0].num === '' && solo.card.canAgain === false && solo.card.penalty === 'None' && solo.rows[0].pen === '', 'a solo race: no "of", no number, no penalty, Race again off');
+  check(solo.sub === 'Lakeside Circuit, 1 lap', `one lap is singular (got "${solo.sub}")`);
+  check(chipInk('#ffd400') === 'var(--on-gantry)' && chipInk('#1c6dd0') === 'var(--text)' && chipInk('nope') === 'var(--text)', 'race number text is dark on light liveries and light on dark ones (tokens)');
+  check(resultsModel({}).rows.length === 0 && resultsModel({}).card.pos === 'P-', 'no data: an empty card');
 }
 
 console.log(fails.length ? `FAILED\n  ${fails.join('\n  ')}` : 'session: all checks passed');

@@ -7,13 +7,14 @@
 import * as THREE from 'three';
 import { createMenu } from './menu.js';
 import { registerScreens } from './menuScreens.js';
-import { resultsScreen } from './results.js';
+import { resultsScreen, sampleResults } from './results.js';
 import { createSessionHud, limitBanner } from './sessionHud.js';
-import { Flow, PHASE, makeSession, timeTrialRows, raceDistance, MODE_NAMES } from './session.js';
+import { Flow, PHASE, makeSession, timeTrialRows, raceDistance, raceRows, MODE_NAMES } from './session.js';
+import { FIN } from './finish.js';
 import { START, gridSlot, pitSlot, orbitPose, cinematicPose } from './start.js';
 import { createScreenControl } from './screenControl.js';
 import { createRaceControl } from './raceControl.js';
-import { cleanEnv } from './weather.js';
+import { cleanEnv, WEATHER_NAMES, TIME_NAMES } from './weather.js';
 
 // the car on the grid before lights out: brake held, but under the 0.5 that would put it in reverse
 export const HOLD = Object.freeze({ steer: 0, throttle: 0, brake: 0.45, drs: false });
@@ -35,13 +36,16 @@ export function createDirector(g) {
   } });
   // the gantry screen's control panel (src/screenControl.js): the host's in a room, handed to others by the host
   const sc = createScreenControl({ screen: g.gantryScreen, mp, inRoom: () => !!lobby.active, onChange: () => { const top = menu.current && menu.current(); if (top && (top.id === 'screen' || top.id === 'pause')) menu.refresh(); } });
-  mp.onControl = (m, id) => { rc.handle(m, id); sc.handle(m, id); };
+  mp.onControl = (m, id) => { rc.handle(m, id); sc.handle(m, id); if (m && m.t === FIN) lobby.receiveFinish(m, id); };
+  lobby.onChange(() => refreshResults());     // a finish arrived or a player came or went: the results screen, if it is open, follows
 
   // --- the menu ---
   const api = {};      // filled in below; the menu screens reach the game through it
   const menu = createMenu({ root: document.getElementById('menu'), settings, save: g.save, api, params, build: typeof __BUILD_COMMIT__ === 'undefined' ? '' : String(__BUILD_COMMIT__).slice(0, 7) });
   registerScreens(menu);
-  menu.addScreen('results', resultsScreen());
+  const resultsHub = { current: null };     // the results screen's view while it is open (see showResults and refreshResults)
+  let resultsAt = 0;
+  menu.addScreen('results', resultsScreen(resultsHub));
 
   const online = () => !!lobby.active;
   // weather and time of day on screen: a guest takes the host's (when the host sends one), everybody else their own choice. Visual only.
@@ -66,6 +70,7 @@ export function createDirector(g) {
     g.history.inputs.length = 0; g.history.telemetry.length = 0;
     g.rig.yaw = null; g.rig.height = null;
     finishedAt = null; pos = null; jumpShownUntil = 0;
+    lobby.resetFinishes();     // the finishes of the last race are not this race's
     sessHud.reset();
     const fo = { length: L };
     if (o.seq) { fo.t0 = o.seq.t0; fo.hold = o.seq.hold; }
@@ -82,12 +87,54 @@ export function createDirector(g) {
     if (was === PHASE.START && flow.seq && !online()) flow.seq.shift(performance.now() - pausedAt);
   }
 
+  // our finish for the room (src/finish.js): the race time with penalties, the best valid lap and sectors, the penalties, the warnings
+  function finishMessage() {
+    const race = flow.race;
+    return { t: FIN, time: race.time, laps: race.laps, best: timer.best || 0, sec: timer.bestSectors.map(v => v || 0),
+      pen: race.penalties.map(p => ({ s: p.seconds, why: p.reason })), warn: timer.limits.events.length };
+  }
+
+  // The results table: every car of the race, ranked by raceRows (session.js). The local car is from the session. A remote car is
+  // ranked by its finish message once it has one; before that by where the room has it (its drawn distance); a car of the grid that
+  // is no longer in the room did not finish (DNF). Cars that are not on the grid and not in the room are not in the race.
+  const knownCars = new Map();   // id -> { name, colour, num }: the last we saw of each remote car, for a row after it left
+  function buildResults() {
+    const s = session || {}, L = track.length;
+    const grid = rc.current && Array.isArray(rc.current.grid) ? rc.current.grid : [];
+    const myId = online() ? mp.selfId : 'me';
+    const gridOf = id => { const i = grid.indexOf(id); return i >= 0 ? i + 1 : null; };
+    const own = lobby.ownLivery ? lobby.ownLivery() : null;
+    const race = flow.race;
+    const entries = [{ id: myId, name: lobby.name(), me: true, finished: true, time: race.time, dist: 0, best: timer.best || 0,
+      sec: timer.bestSectors.map(v => v || 0), pen: race.penalties.map(p => ({ s: p.seconds, why: p.reason })), warn: timer.limits.events.length,
+      grid: online() ? gridOf(myId) : null, colour: own ? own.body : '#ffd21f', num: own ? own.number : -1 }];
+    const ids = new Set([...grid, ...lobby.finishes.ids(), ...[...mp.peers.values()].filter(p => p.hello).map(p => p.id)]);
+    ids.delete(myId);
+    for (const id of ids) {
+      const fin = lobby.finishes.get(id), present = lobby.isPresent(id), g = lobby.ghosts.map.get(id), known = knownCars.get(id) || {};
+      const lv = lobby.liveryOf(id) || known;
+      const base = { id, name: lobby.nameOf(id) || known.name || 'Driver', colour: lv.colour || '#8f84a8', num: lv.num ?? -1, grid: gridOf(id) };
+      if (fin) entries.push({ ...base, finished: true, time: fin.time, best: fin.best, sec: fin.sec, pen: fin.pen, warn: fin.warn, dist: 0 });
+      else if (present) { const p = g && g.info ? lobby.ghosts.shownPose(g) : null; entries.push({ ...base, finished: false, dist: p ? raceDistance(p.lap, p.s, L) : 0 }); }
+      else if (base.grid != null) entries.push({ ...base, finished: false, dnf: true, dist: 0 });
+    }
+    const rows = raceRows(entries, { laps: s.laps || 0, length: L });
+    return { rows, laps: s.laps || 0, track: 'Lakeside Circuit', conditions: [WEATHER_NAMES[s.weather], TIME_NAMES[s.time]].filter(Boolean).join(', '), canAgain: !online() || mp.isHost };
+  }
+
   function showResults() {
-    const race = flow.race, others = otherCars();
-    const rows = [{ id: 'me', name: lobby.name(), me: true, finished: true, time: race.time, dist: raceDistance(timer.currentLap(), car.loc.s, L), best: timer.best }];
-    for (const o of others) rows.push({ id: o.id, name: o.name, me: false, finished: false, dist: raceDistance(o.lap, o.s, L), best: o.best });
-    if (!flow.finish(rows)) return;
-    menu.open('results', 'pause', { rows: flow.results, race: { laps: race.laps, time: race.time, best: timer.best, warnings: timer.limits.events.length, penalties: race.penalties }, canAgain: !online() || mp.isHost });
+    const data = buildResults();
+    if (!flow.finish(data.rows)) return;
+    resultsAt = performance.now();
+    menu.open('results', 'pause', { data });
+  }
+
+  // the results screen is open: its table takes the new rows in place (a finish, a car leaving, the cars still out moving on)
+  function refreshResults() {
+    if (!menu.isOpen || flow.phase !== PHASE.RESULTS || !resultsHub.current) return;
+    const data = buildResults();
+    flow.results = data.rows;
+    resultsHub.current.update(data);
   }
 
   // The other cars for the race. Position uses the pose each car is drawn at (lap and s go together, from the same sample), so
@@ -97,6 +144,7 @@ export function createDirector(g) {
     if (!lobby.active) return out;
     for (const o of lobby.ghosts.map.values()) {
       if (!o.info) continue;
+      knownCars.set(o.id, { name: lobby.ghosts.nameOf(o), colour: o.livery.body, num: o.livery.number });
       const p = lobby.ghosts.shownPose(o);
       out.push({ id: o.id, name: lobby.ghosts.nameOf(o), laps: Math.max(0, o.info.lap - 1), lap: p.lap, s: p.s, best: o.info.bl || null });
     }
@@ -186,6 +234,7 @@ export function createDirector(g) {
     if (params.has('garage')) showMain('garage');
     else if (menuParam === 'race' || menuParam === 'practice') showMain([{ id: 'setup', params: { mode: menuParam } }]);
     else if (['settings', 'garage', 'online', 'times'].includes(menuParam)) showMain(menuParam);
+    else if (menuParam === 'results' && import.meta.env.DEV) menu.open('results', 'pause', { data: sampleResults() });   // dev only: the screen with sample rows (tools/shot.mjs "menu=results")
     else showMain();
   }
 
@@ -227,9 +276,10 @@ export function createDirector(g) {
         const others = otherCars();
         const r = flow.race.update(simTime, { laps: timer.lap, lap: timer.currentLap(), s: car.loc.s }, others, timer);   // the timer gives the track limit excursions to judge
         pos = r;
-        if (flow.race.finished && finishedAt === null) { finishedAt = now; }
+        if (flow.race.finished && finishedAt === null) { finishedAt = now; if (online()) lobby.announceFinish(finishMessage()); }
         if (finishedAt !== null && now - finishedAt > FINISH_DELAY_MS && !menu.isOpen) showResults();
       }
+      if (flow.phase === PHASE.RESULTS && menu.isOpen && now - resultsAt > 1000) { resultsAt = now; refreshResults(); }   // the cars still out move on
       sessHud.update(overlay(now, simTime));
       document.body.classList.toggle('in-session', flow.phase !== PHASE.MENU);
       tick = menu.tick;

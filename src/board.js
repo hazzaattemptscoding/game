@@ -34,7 +34,7 @@ const sectorBefore = (history, i, k = history.length) => min(history.slice(0, k)
 export function lapRows(history, n = HISTORY_N, personal = [null, null, null]) {
   const bestTime = min(history.filter(l => l.valid).map(l => l.time));
   return history.map((l, k) => ({
-    lap: l.lap, time: l.time, warnings: l.warnings, valid: l.valid, best: l.valid && bestTime != null && l.time <= bestTime + EPS,
+    lap: l.lap, time: l.time, warnings: l.warnings, jumped: !!l.jumped, valid: l.valid, best: l.valid && bestTime != null && l.time <= bestTime + EPS,
     sectors: l.sectors.map((t, i) => ({ time: t, cls: sectorClass(t, sectorBefore(history, i, k), personal[i], l.valid) })),
   })).slice(-n).reverse();
 }
@@ -115,7 +115,7 @@ export function createBoard(root, ctx) {
 
     const rows = lapRows(t.history, HISTORY_N, personal);
     html += `<section><h3>Laps</h3>${rows.length ? `<table><thead><tr><th>Lap</th><th>Time</th><th>S1</th><th>S2</th><th>S3</th><th>Track limits</th></tr></thead><tbody>${rows.map(r =>
-      `<tr class="${r.valid ? '' : 'invalid'}${r.best ? ' pb' : ''}"><td>${r.lap}</td><td>${fmtTime(r.time)}</td>${r.sectors.map(cell).join('')}<td class="amber">${r.valid ? '' : `${r.warnings} invalid`}</td></tr>`).join('')}</tbody></table>` : '<p class="bd-none">No finished laps yet.</p>'}</section>`;
+      `<tr class="${r.valid ? '' : 'invalid'}${r.best ? ' pb' : ''}"><td>${r.lap}</td><td>${fmtTime(r.time)}</td>${r.sectors.map(cell).join('')}<td class="amber">${r.valid ? '' : r.warnings ? `${r.warnings} invalid` : 'reset'}</td></tr>`).join('')}</tbody></table>` : '<p class="bd-none">No finished laps yet.</p>'}</section>`;
 
     if (ctx.lobby && ctx.lobby.active) {
       const players = ctx.lobby.board({ name: ctx.lobby.name(), laps: t.lap, best: t.best, last: t.last });

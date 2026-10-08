@@ -108,18 +108,52 @@ export class RaceTracker {
   elapsed(simTime) { return this.startSim === null ? 0 : Math.max(0, (this.finishSim === null ? simTime : this.finishSim) - this.startSim); }
 }
 
-// Results order. Finished cars first by total time (penalties included), then the cars still racing by distance driven.
-// entries: [{ id, name, me, finished, time, dist, ... }]. Returns a new list with `rank` and `gap` (seconds to the winner, for
-// finished cars; laps behind otherwise is left to the caller).
-export function orderResults(entries) {
-  const list = entries.map((e, i) => ({ ...e, _i: i }));
-  list.sort((a, b) => {
-    if (a.finished !== b.finished) return a.finished ? -1 : 1;
-    if (a.finished) return a.time - b.time || a._i - b._i;
-    return (b.dist || 0) - (a.dist || 0) || a._i - b._i;
+// The results table. entries: one per car, flat: { id, name, me, finished, dnf, time (race time with penalties, finished cars),
+// dist (race distance: lap * length + s; a finished car's is its full distance), best (best valid lap, s), sec ([s1, s2, s3], 0 = none),
+// pen ([{ s, why }]), warn (track limit warnings), grid (grid position, 1-based, or null), colour, num }.
+// Order: finished cars by time (penalties in it), then the cars still out by distance driven, then the cars that did not finish
+// (DNF) by grid position. The local car is not put first: it sorts like the others.
+// Returns new rows: the fields above plus: status ('finished' | 'racing' | 'dnf'), rank (1..n, null for DNF), gap (seconds to the
+// winner, finished cars behind it), lapsDown (whole laps behind the leader, cars still out), gained (grid - rank, when both are known),
+// penalty (seconds), secCls (per sector: 'best' overall fastest, 'near' within NEAR_S of it, 'slow' otherwise, null: no time) and
+// bestCls ('best' for the fastest lap of the race). total is the number of rows.
+export const NEAR_S = 0.3;
+export function raceRows(entries, { laps = 0, length = 3835 } = {}) {
+  const byId = (a, b) => (a.grid ?? 1e6) - (b.grid ?? 1e6) || String(a.id).localeCompare(String(b.id));
+  const cls = e => (e.dnf ? 2 : e.finished ? 0 : 1);
+  const list = entries.map(e => {
+    const dist = e.finished && laps > 0 ? laps * length : (e.dist || 0);   // a finished car is a whole race: the lap counter runs one ahead at the flag
+    return { ...e, dist, status: e.dnf ? 'dnf' : e.finished ? 'finished' : 'racing', pen: Array.isArray(e.pen) ? e.pen : [], warn: e.warn || 0 };
   });
-  const lead = list.length && list[0].finished ? list[0].time : null;
-  return list.map((e, k) => { const { _i, ...r } = e; return { ...r, rank: k + 1, gap: r.finished && lead !== null && k > 0 ? r.time - lead : null }; });
+  list.sort((a, b) => cls(a) - cls(b) || (cls(a) === 0 ? a.time - b.time || byId(a, b) : cls(a) === 1 ? b.dist - a.dist || byId(a, b) : byId(a, b)));
+  const lead = list.find(r => r.status === 'finished') || null;
+  const leadDist = Math.max(0, ...list.filter(r => r.status !== 'dnf').map(r => r.dist));
+  let rank = 0;
+  const rows = list.map(r => {
+    const out = { ...r };
+    out.rank = r.status === 'dnf' ? null : ++rank;
+    out.gap = r.status === 'finished' && lead && r !== lead ? r.time - lead.time : null;
+    const down = leadDist - r.dist;
+    out.lapsDown = r.status === 'racing' && length > 0 && down >= length ? Math.floor(down / length) : 0;
+    out.gained = r.status !== 'dnf' && r.grid != null ? r.grid - out.rank : null;
+    out.penalty = r.pen.reduce((a, p) => a + (p.s || 0), 0);
+    return out;
+  });
+  // the timing colours: the fastest of the race in each sector and in the lap, near = within NEAR_S of the fastest
+  const bestOf = i => { const v = rows.map(r => (r.sec && r.sec[i]) || 0).filter(x => x > 0); return v.length ? Math.min(...v) : null; };
+  const secBest = [0, 1, 2].map(bestOf), lapBest = Math.min(...rows.map(r => r.best || 0).filter(x => x > 0), Infinity);
+  const colourOf = (v, top) => (!(v > 0) || top == null ? null : v <= top + 1e-9 ? 'best' : v - top <= NEAR_S ? 'near' : 'slow');
+  for (const r of rows) {
+    r.secCls = [0, 1, 2].map(i => colourOf((r.sec && r.sec[i]) || 0, secBest[i]));
+    r.bestCls = r.best > 0 && r.best <= lapBest + 1e-9 ? 'best' : null;
+  }
+  return Object.assign(rows, { total: rows.length, leader: lead ? lead.id : null });
+}
+
+// Results order: the same rules as raceRows, for the plain entries { id, name, me, finished, time, dist }. Returns the rows with
+// `rank` and `gap` (seconds to the winner, for finished cars behind the winner).
+export function orderResults(entries) {
+  return raceRows(entries);
 }
 
 // --- the flow ---
@@ -200,9 +234,10 @@ export class Flow {
     return this.begin(s, now, o);
   }
 
-  finish(entries) {
+  // rows: the results table (raceRows); it is kept as it is
+  finish(rows) {
     if (this.phase !== PHASE.RUN || !this.race) return false;
-    this.results = orderResults(entries);
+    this.results = rows;
     this.go(PHASE.RESULTS);
     return true;
   }

@@ -72,7 +72,7 @@ function runLaps(t, laps) {
 const scenario = [
   { secs: [30, 31, 29] },                 // 90: valid, the session's best so far
   { secs: [28, 29, 27], warn: 1 },        // 84: faster, but warned: invalid, so it is no best and no purple
-  { secs: [31, 31, 31], jump: true },     // 93: valid but reset in the lap: not clean
+  { secs: [31, 31, 31], jump: true },     // 93: reset in the lap: invalid (a jump is like a warning), so not clean and never best
   { secs: [29, 30, 30], auto: true },     // 89: valid, the autopilot drove it
   { secs: [30, 31, 29] },                 // 90: valid
 ];
@@ -80,22 +80,26 @@ const scenario = [
   const t = runLaps(new LapTimer(track), scenario);
   const h = t.history;
   check(h.length === 5, `five laps recorded (got ${h.length})`);
-  check(h.map(l => l.valid).join() === 'true,false,true,true,true', `validity per lap (got ${h.map(l => l.valid)})`);
+  check(h.map(l => l.valid).join() === 'true,false,false,true,true', `validity per lap: a warning or a reset makes a lap invalid (got ${h.map(l => l.valid)})`);
   const validMin = (k) => Math.min(...h.filter(l => l.valid).map(l => l.sectors[k] ?? l.time));
   check(near(t.best, Math.min(...h.filter(l => l.valid).map(l => l.time)), 1e-6) && t.best > h[1].time, `the session best is the fastest VALID lap, not the faster warned lap (got ${t.best}, warned ${h[1].time})`);
   check(t.events.filter(e => e.type === 'lap').map(e => e.best).join() === 'true,false,false,true,false', 'only valid laps are flagged as the best when they finish, and invalid ones never');
   check(t.events.filter(e => e.type === 'lap')[1].valid === false && t.events.filter(e => e.type === 'lap')[1].time < 85, 'an invalid lap keeps its time and is marked invalid');
   check(near(t.bestSectors[0], validMin(0), 1e-6) && t.bestSectors[0] > h[1].sectors[0], `sector bests come from valid laps too: the warned lap's faster S1 does not count (got ${t.bestSectors[0]}, warned ${h[1].sectors[0]})`);
-  check(t.history[2].clean === false && t.history[0].clean === true && t.history[4].clean === true, 'a reset in the lap makes it unclean, the others stay clean');
+  check(t.history[2].clean === false && t.history[2].valid === false && t.history[2].jumped === true, 'a reset in the lap makes it invalid and unclean (jumped), the others stay clean');
+  check(t.history[0].clean === true && t.history[4].clean === true && !t.history[0].jumped && !t.history[4].jumped, 'the laps without a reset are clean and not jumped');
+  check(lapRows(h).find(r => r.lap === 3).valid === false, 'the lap list shows the reset lap as invalid');
   check(h.map(l => !!l.autopilot).join() === 'false,false,false,true,false', 'the autopilot flag is kept per lap');
   check(t.sectorPB.length === 3 && t.sectorPB.every(v => v === false), 'a lap that has just finished shows no purple sector until its next sector ends');
 }
 {
-  // a lap reset in place (markJump) that is the fastest of the session is valid, but it is not whole: it never becomes the
-  // session best, the PB flash or the delta reference, and it is not clean for the global times
+  // a lap reset in place (markJump) that is the fastest of the session is INVALID, like a lap with a track limit warning: it never
+  // becomes the session best, the PB flash, the delta reference or a purple sector, and it is not clean for the global times
   const t = runLaps(new LapTimer(track), [{ secs: [30, 31, 29] }, { secs: [27, 28, 26], jump: true }, { secs: [30, 31, 30] }]);
   const h = t.history, ev = t.events.filter(e => e.type === 'lap');
-  check(h[1].valid === true && h[1].clean === false, 'a reset lap is valid but not clean');
+  check(h[1].valid === false && h[1].clean === false && h[1].jumped === true, 'a reset lap is invalid and not clean');
+  check(t.bestSectors.every((b, i) => near(b, Math.min(...h.filter(l => l.valid).map(l => l.sectors[i])), 1e-9)) && t.bestSectors[0] > h[1].sectors[0], `sector bests come from the valid laps only: the reset lap's S1 (${h[1].sectors[0].toFixed(2)}) sets none (got ${t.bestSectors.map(b => b && b.toFixed(2))})`);
+  check(lapRows(h)[1].sectors.every(c => c.cls !== 'purple'), 'the reset lap has no purple sector in the lap list');
   check(near(t.best, h[0].time, 1e-6), `a reset lap does not become the session best (best ${t.best}, lap 1 ${h[0].time}, reset lap ${h[1].time})`);
   check(ev.map(e => e.best).join() === 'true,false,false', `no PB flash for the reset lap (got ${ev.map(e => e.best)})`);
   check(t.bestTrace !== null && near(t.bestTrace[t.bestTrace.length - 1], h[0].time, 1e-3), 'the delta reference is still lap 1, not the reset lap');
@@ -106,7 +110,7 @@ const scenario = [
   const t = new LapTimer(track);
   t.markJump();
   runLaps(t, [{ secs: [30, 31, 29] }]);
-  check(t.history.length === 1 && t.history[0].clean === true, 'a jump before the out lap does not spoil lap 1');
+  check(t.history.length === 1 && t.history[0].clean === true && t.history[0].valid === true, 'a jump before the out lap does not spoil lap 1');
 }
 {
   // the local list: valid laps the driver drove; no invalid laps, no autopilot laps
@@ -118,7 +122,7 @@ const scenario = [
   scenario.forEach(l => lapOf(bt, l));
   bd.update(state.t, 0);
   const list = loadBest(st, BEST_KEY);
-  check(list.length === 3 && list.map(e => Math.round(e.time)).join() === '90,90,93', `the local list has the three valid, non-autopilot laps (got ${list.map(e => e.time.toFixed(2))})`);
+  check(list.length === 2 && list.map(e => Math.round(e.time)).join() === '90,90', `the local list has the valid, non-autopilot laps: no warned lap, no reset lap (got ${list.map(e => e.time.toFixed(2))})`);
   check(!list.some(e => e.time < 85 || (e.time > 88 && e.time < 89.5)), 'neither the warned 84 nor the autopilot 89 is saved');
 }
 

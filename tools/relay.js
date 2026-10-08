@@ -112,6 +112,18 @@ const types = c => c.out.map(m => m.t || 'bin');
   eq(g1.out.at(-1), { t: 'race', laps: 3, startAt: 9, grid: ['h'], from: 0 }, 'to every guest, tagged with the host id');
   eq(g2.out.at(-1), { t: 'race', laps: 3, startAt: 9, grid: ['h'], from: 0 }, 'and to the other one too');
 }
+{ // the finish message (src/finish.js) is a player's: any guest's fin is forwarded to the others, tagged with its sender, and not back to it
+  const r = makeRoom();
+  const h = r.join('Host', 'h', true), g1 = r.join('G1', 'g1'), g2 = r.join('G2', 'g2');
+  const fin = { t: 'fin', time: 480.5, laps: 5, best: 92.4, sec: [29.8, 38.1, 24.5], pen: [{ s: 2, why: 'Track limits +2s' }], warn: 1 };
+  eq(r.say(g1, fin), 'forwarded', 'a guest finish message is forwarded');
+  eq(g2.out.at(-1), { ...fin, from: 1 }, 'to the other guest, tagged with the sender id');
+  eq(h.out.at(-1), { ...fin, from: 1 }, 'and to the host');
+  check(!g1.out.some(m => m.t === 'fin'), 'not back to the sender');
+  eq(r.say(h, { ...fin, to: 2 }), 'forwarded', 'a finish sent to one player is forwarded to that player only');
+  eq(g2.out.at(-1), { ...fin, to: 2, from: 0 }, 'the host finish reaches the guest it names (the relay passes `to` on, as for env)');
+  check(!g1.out.some(m => m.t === 'fin' && m.from === 0), 'and not the other guest');
+}
 { // the host secret: a room that has had a host keeps its key, and only the host that made the room gets it
   const r = makeRoom();
   const h = r.join('Host', 'h1', true);

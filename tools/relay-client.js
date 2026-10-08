@@ -343,6 +343,24 @@ console.log('RELAY ROOM DETAILS');
   check([...srv.rooms.values()].every(r => r.list.length === 0), 'no socket left behind');
 }
 
+{ // the finish message over the relay (src/finish.js): a guest's fin reaches the other players tagged with the sender's id, not the sender
+  console.log('FINISH MESSAGES (relay)');
+  const srv = makeFakeServer();
+  const FH = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'FH'), F1 = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'F1'), F2 = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'F2');
+  const got = { FH: [], F1: [], F2: [] };
+  FH.mp.onControl = (m, id) => { if (m.t === 'fin') got.FH.push(id); };
+  F1.mp.onControl = (m, id) => { if (m.t === 'fin') got.F1.push(id); };
+  F2.mp.onControl = (m, id) => { if (m.t === 'fin') got.F2.push(id); };
+  await FH.mp.host('FH'); await wait(30); await F1.mp.join(FH.mp.code, 'F1'); await F2.mp.join(FH.mp.code, 'F2'); await wait(80);
+  const fin = { t: 'fin', time: 480.5, laps: 5, best: 92.4, sec: [29.8, 38.1, 24.5], pen: [{ s: 2, why: 'Track limits +2s' }], warn: 1 };
+  F1.mp.sendControl(fin); await wait(40);
+  check(got.F2.length === 1 && got.F2[0] === 'r1' && got.FH.length === 1 && got.FH[0] === 'r1', 'a guest finish reaches the host and the other guest, from the sender id r1');
+  check(got.F1.length === 0, 'the sender does not get its own finish back');
+  FH.mp.sendControl(fin, 'r2'); await wait(40);
+  check(got.F2.length === 2 && got.F2[1] === 'r0' && got.F1.length === 0, 'a finish sent to one player (the late joiner rebroadcast) reaches only that player');
+  FH.mp.leave(); F1.mp.leave(); F2.mp.leave(); await wait(50);
+}
+
 { // the host's secret over the relay (the server side is the real protocol): a host that drops comes back with it, a thief without it is refused
   console.log('HOST TAKEOVER (relay)');
   const srv = makeFakeServer();

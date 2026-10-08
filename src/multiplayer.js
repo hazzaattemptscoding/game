@@ -170,7 +170,7 @@ export function makeCode(random = Math.random) {
 export const cleanCode = s => String(s || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
 export const hostId = code => `lakeside-${code}`;
 // one-off JSON control messages handed to onControl
-export const CONTROL_TYPES = new Set(['clk', 'clkr', 'race', 'env', 'scr', 'scrc', 'scrs', 'scrg']);
+export const CONTROL_TYPES = new Set(['clk', 'clkr', 'race', 'env', 'scr', 'scrc', 'scrs', 'scrg', 'fin']);
 const ID = /^lakeside-[A-Z]{5}(-[a-z0-9]{6})?$/;
 const randomSuffix = random => { let s = ''; for (let i = 0; i < 6; i++) s += 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(random() * 36)]; return s; };
 
