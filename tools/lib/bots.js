@@ -1,5 +1,6 @@
 // Fake players for the live page: each bot is a real physics car driven by the autopilot that talks the real relay protocol
-// (join, livery, state at 20 Hz as binary frames, telemetry while somebody watches, the host's room details), exactly as the game does.
+// (join, livery, state at 20 Hz as binary frames, telemetry while somebody watches, the host's room details), as the game does except
+// the rate: the game sends state at 30 Hz, the bots stay at 20 Hz.
 // Used by tools/live.js and tools/live-shot.mjs against worker/dev-relay.mjs. Plain Node (22+, global WebSocket).
 import { buildTrack } from '../../src/track.js';
 import { Car, STEP } from '../../src/physics.js';
@@ -56,7 +57,7 @@ export function startBots(o) {
       if (typeof e.data !== 'string') return;
       try { const m = JSON.parse(e.data); if (m.t === 'spec') { bot.spectators = m.n; log.specSeen = m.n; } else if (m.t === 'welcome' && m.spectators) bot.spectators = m.spectators; } catch { /* not ours */ }
     });
-    // physics in real time, the state 20 times a second, telemetry 10 times a second while somebody watches
+    // physics in real time, the state 20 times a second (the game sends 30), telemetry 10 times a second while somebody watches
     let last = Date.now(), acc = 0, n = 0;
     bot.timers.push(setInterval(() => {
       if (stopped) return;

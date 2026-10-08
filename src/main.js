@@ -165,7 +165,8 @@ const input = createInput(settings, { boardAllowed: () => !dir.menuOpen && !repo
 const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthesised sound, starts at the first key press or touch
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
-const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search, getLivery: myLivery });   // multiplayer: idle until a room is opened
+const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search, getLivery: myLivery, poseTime: () => poseAt });   // multiplayer: idle until a room is opened
+hud.pingOf = () => lobby.rtt;     // the relay round trip for the HUD readout (null when not online)
 // global times (src/globalTimes.js): valid, clean laps go to the relay's boards; the relay's address comes from multiplayer.json
 const BUILD = typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : '';
 const NAME_KEY = 'lakeside-mp-name';   // the name the lobby keeps (src/lobby.js); the name on the car's livery wins, like online
@@ -246,6 +247,7 @@ const dir = createDirector({
 const loop = new FixedStep(STEP);
 const stats = new FrameStats();
 let simTime = 0, last = performance.now(), hudDue = Infinity, audioDue = 0, frameNo = 0;
+let poseAt = performance.now();   // the clock time the car's pose is for: the last physics step, less the time not yet simulated (sent by src/lobby.js)
 document.addEventListener('visibilitychange', () => { last = performance.now(); });   // no frame time spans the time the tab was hidden
 
 function frame(now) {
@@ -264,7 +266,7 @@ function frame(now) {
     if (dir.menuOpen) continue;                              // the menu has the keyboard
     if (a === 'reset' && dir.phase !== 'start') { car.resetToTrack(); car.contactGrace = 1.5; timer.markJump(); }   // a reset is a jump: the lap is not clean
     if (a === 'camera') rig.next();
-    if (a === 'board-on') board.show();     // hold Tab
+    if (a === 'board-on') { board.show(); if (settings.debug) lobby.logPing(); }     // hold Tab; with the handling readout on, the round trip stats go to the console
     if (a === 'board-off') board.hide();
     if (a === 'board') board.toggle();      // the Times button on a touch screen
     if (a === 'line') {
@@ -288,8 +290,9 @@ function frame(now) {
   const drive = autopilot && !dir.hold ? () => autopilot.drive(car) : () => (dir.hold ? HOLD : dir.menuOpen ? IDLE : playerInput);
   if (!paused) {
     loop.add(dt);
-    let keysNow = null;
+    let keysNow = null, stepped = false;
     while (loop.due()) {
+      stepped = true;
       if (lobby.active) car.collideCars(lobby.solids(now - loop.acc * 1000));
       car.step(drive());
       audio.latch(car);
@@ -305,6 +308,7 @@ function frame(now) {
       while (history.inputs.length && history.inputs[0].t < simTime - 10) history.inputs.shift();
       while (history.telemetry.length && history.telemetry[0].t < simTime - 10) history.telemetry.shift();
     }
+    if (stepped) poseAt = now - loop.acc * 1000;
   }
 
   env.set(urlEnv || dir.api.environment());

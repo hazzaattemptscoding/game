@@ -103,7 +103,7 @@ timing tower, telemetry, track map, TV director and free cameras. It needs this 
   list when it empties, or 90 seconds after its last heartbeat. The list is kept by one extra Durable Object (`Directory`).
 * A spectator connects to `wss://HOST/room/<CODE>?spectator=1` and sends `{"t":"join","spectator":true,"name":"..."}`. It never takes one
   of the 8 player seats, up to 50 watch one room (`MAX_SPECTATORS`), it cannot send anything but a ping, and it receives the room's
-  cars at 10 Hz (`SPECTATOR_STATE_DIVIDER` = 2 of the players' 20 Hz), liveries, names, who joins and leaves, the race details and the
+  cars at 15 Hz (`SPECTATOR_STATE_DIVIDER` = 2 of the players' 30 Hz), liveries, names, who joins and leaves, the race details and the
   telemetry frames. Telemetry is sent by the game only while somebody is watching.
 * The host's game tells the relay what the room is doing with `{"t":"meta","mode":"Online race","laps":5,"started":true}` (cleaned and
   bounded by the relay; ignored from anybody but the host). The full wire description is at the top of `src/protocol.js`.
@@ -163,8 +163,12 @@ passes the connection to the Durable Object `Room` (`src/room.js`), one instance
 API (`ctx.acceptWebSocket`, `webSocketMessage`, `webSocketClose`, per-socket attachments), so it holds only the live sockets
 and is evicted from memory when quiet. The rules live in `src/protocol.js`, shared with `dev-relay.mjs`.
 
-Frames, all limited to 2048 bytes (bigger ones are dropped), 40 per second per socket (extras are dropped), 60 s of silence
-closes the socket (the game pings every 15 s):
+Frames, all limited to 2048 bytes (bigger ones are dropped), 80 per second per socket (extras are dropped), 60 s of silence
+closes the socket (the game pings every 15 s). A player sends about 40 a second at most: 30 Hz car state, 10 Hz telemetry while
+somebody watches, the livery every 2 s, a ping every 15 s. The limit is 80, not 40, so timers that bunch up after a background tab or
+a slow frame do not drop fresh car state. Costs: a player's incoming frames rise from 20 to 30 a second (50 percent) when nobody
+watches, and from 30 to 40 (a third) when somebody does; each spectator gets 15 car frames a second from every player, not 10.
+The game's state is about 85 bytes a frame, so a spectator of a full room receives about 11 KB a second.
 
 | Direction | Frame | Meaning |
 | --- | --- | --- |
@@ -180,6 +184,24 @@ closes the socket (the game pings every 15 s):
 
 The relay drops `env` and `race` frames sent by guests (only the host sets the weather and the race start), and the game
 ignores them from anybody but the host (`src/raceControl.js`).
+
+### Where a room lives
+
+A room's Durable Object is placed near the request that first creates it, so a room hosted in Europe is not served from America.
+The host's first socket carries `?host=1` (the game sends it only before the first welcome, never on a reconnect). The Worker
+then passes a Cloudflare location hint taken from `request.cf` (`locationHint()` in `src/protocol.js`): Eastern Europe `eeur`,
+the rest of Europe `weur`, the Gulf and Middle East `me`, North America `wnam` west of longitude 100 W and `enam` to the east,
+South America `sam`, Asia `apac`, Oceania `oc`, Africa `afr`. Anything else, or a request with no `request.cf` (the local
+`dev-relay.mjs`), gets no hint and Cloudflare chooses.
+
+Later joins need nothing. A Durable Object is addressed by its name (the room code), and the room keeps the place it was made in, so
+a guest anywhere reaches the same room. That is why the code does not carry a region letter. A guest's socket and a host's
+reconnect never send the hint. Not verified: the rule that a hint only takes effect when the object is first made (Cloudflare's
+data location documentation); check it on a deployed room before relying on the latency numbers.
+
+Known gap: a socket for a code nobody hosts yet (a guest, or a mistyped code) creates the object in that socket's region, and
+the host who makes the room later cannot move it. The room still works; only its place is the guest's. The lobby directory
+(`Directory`) and the lap times (`Times`) are not hinted and stay where they were first made.
 
 Close code 4004 means the same player token connected again and replaced this socket, 4008 means idle for 60 s.
 Player ids are the slot numbers 0 to 7. Message types `join`, `welcome`, `peer`, `bye`, `full`, `nohost`, `taken`, `pong`,

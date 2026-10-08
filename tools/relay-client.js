@@ -1,6 +1,6 @@
 // Game side of the relay: src/relay.js (socket client and room) and the relay path of Multiplayer in src/multiplayer.js,
 // tested with a fake WebSocket and a fake clock. No network. The server side is tested in tools/relay.js.
-import { encodeState, decodeState, packState, unpackState, Ghosts, DELAY, RELAY_EXTRA_DELAY, FIELDS } from '../src/ghosts.js';
+import { encodeState, decodeState, packState, unpackState, Ghosts, DELAY, RELAY_EXTRA_DELAY, MAX_DELAY, FIELDS } from '../src/ghosts.js';
 import { RelayClient, RelayRoom, RELAY, cleanRelayUrl } from '../src/relay.js';
 import { Multiplayer, BROKER, resolveConfig, applyConfigFile, brokerFromSearch } from '../src/multiplayer.js';
 import { createRaceControl } from '../src/raceControl.js';
@@ -93,7 +93,7 @@ console.log('CLIENT');
   const c = new RelayClient({ url: 'wss://relay.example', code: 'ABCDE', name: 'Ann', host: true, token: 'tok1', WebSocket: WS, timers: clock,
     handlers: { onWelcome: (m, f) => ev.welcome.push(f), onJSON: m => ev.json.push(m), onBinary: (id, b) => ev.bin.push([id, Array.from(b)]), onState: s => ev.states.push(s), onRefused: k => ev.refused.push(k), onRtt: ms => ev.rtt.push(ms) } });
   c.connect();
-  eq(WS.list.map(w => w.url), ['wss://relay.example/room/ABCDE'], 'connects to /room/<CODE>');
+  eq(WS.list.map(w => w.url), ['wss://relay.example/room/ABCDE?host=1'], 'connects to /room/<CODE>, host=1 on the first socket of a room it makes (the relay places the room)');
   WS.list[0].open();
   eq(WS.list[0].json(), [{ t: 'join', name: 'Ann', id: 'tok1', host: true }], 'sends join on open');
   check(WS.list[0].binaryType === 'arraybuffer', 'binary frames are read as ArrayBuffer');
@@ -140,6 +140,7 @@ console.log('CLIENT');
   eq(delays, [500, 1000, 2000, 4000, 8000, 8000], 'backoff delays in ms');
   // it comes back: join again with the SAME token, backoff starts over
   { const n = WS.list.length; clock.advance(8000); eq(WS.list.length, n + 1, 'tries again'); const w = WS.list.at(-1); w.open();
+    eq(w.url, 'wss://relay.example/room/ABCDE', 'a reconnect after the welcome has no host=1: the room exists, its place does not change');
     eq(w.json()[0], { t: 'join', name: 'Ann', id: 'tok1', host: true }, 'rejoins with the same token (keeps its slot)');
     w.got({ t: 'welcome', you: 0, host: 0, players: [] });
     eq(ev.welcome, [true, false], 'second welcome is not "first"');
@@ -186,7 +187,7 @@ function makeFakeServer() {
   srv.WS = class {
     constructor(url) {
       this.url = url; this.readyState = 0; this.bufferedAmount = 0; sockets.push(this);
-      const code = /\/room\/([A-Z]{5})$/.exec(url)[1];
+      const code = /\/room\/([A-Z]{5})(?:\?|$)/.exec(url)[1];   // the URL may carry ?host=1 or ?spectator=1
       const room = rooms.get(code) || rooms.set(code, { list: [], conns: () => rooms.get(code).list }).get(code);
       setTimeout(() => {
         if (srv.down) { this.readyState = 3; this.onclose && this.onclose({}); return; }
@@ -252,7 +253,8 @@ async function scenario(label, make, expectTransport) {
   const rows = a.ghosts.standings({ name: 'Ann', lap: 1, s: 100, speed: 30 }, 5000);
   check(rows.length === 3, say('standings has 3 rows'));
   const want = expectTransport === 'relay' ? DELAY + RELAY_EXTRA_DELAY : DELAY;
-  check(Math.abs(a.ghosts.delay - want) < 1e-9 && [...a.ghosts.map.values()].every(g => Math.abs(g.buf.delay - want) < 1e-9), say(`remote cars are drawn ${Math.round(want * 1000)} ms behind`));
+  // the transport's ceiling is set as asked; each car's buffer settles inside it (the adaptive delay in ghosts.js moves with the jitter)
+  check(Math.abs(a.ghosts.delay - want) < 1e-9 && [...a.ghosts.map.values()].every(g => g.buf.delay > 0 && g.buf.delay <= Math.max(MAX_DELAY, want) + 1e-9), say(`remote cars are drawn at most ${Math.round(want * 1000)} ms behind (ceiling)`));
   // rename
   b.mp.setName('Robert'); await wait(60);
   check([...a.mp.peers.values()].some(p => p.name === 'Robert') && [...c.mp.peers.values()].some(p => p.name === 'Robert'), say('a rename reaches everyone'));
@@ -455,7 +457,7 @@ console.log('FALLBACK');
   const WS7 = makeFakeWS(), s7 = [];
   const viaFile = new Multiplayer({ ghosts: new Ghosts(null), loadConfig: async () => resolveConfig('', { relay: 'wss://file.test' }), WebSocket: WS7, onStatus: s => s7.push(s), random: rnd, loadPeer: async () => fakeNetwork() });
   await viaFile.host('X'); await wait(5);
-  eq(WS7.list.map(w => w.url.replace(/\/room\/[A-Z]{5}$/, '')), ['wss://file.test'], 'the relay address from multiplayer.json is used');
+  eq(WS7.list.map(w => w.url.replace(/\/room\/[A-Z]{5}(\?.*)?$/, '')), ['wss://file.test'], 'the relay address from multiplayer.json is used');
   viaFile.leave();
 }
 
@@ -465,23 +467,26 @@ console.log('RACE CONTROL FROM THE ROOM');
   const rig = (isHost, hostPeerId) => {
     const sent = [], starts = [];
     const mp = { isHost, selfId: isHost ? 'r0' : 'r2', hostPeerId, peers: new Map([['r0', { id: 'r0', hello: true }], ['r1', { id: 'r1', hello: true }]]), sendControl: (o, to) => { sent.push({ o, to }); return true; } };
-    const rc = createRaceControl({ mp, now: () => 1000, random: () => 0.5, setTimeout: () => 0, onRace: r => starts.push(r) });
-    return { rc, mp, starts, sent };
+    // timers are queued and run by flush(): a guest with no clock sample waits for one (up to 1.5 s), then starts as a free drive
+    const timers = [];
+    const rc = createRaceControl({ mp, now: () => 1000, random: () => 0.5, setTimeout: f => { timers.push(f); }, onRace: r => starts.push(r) });
+    const flush = () => { while (timers.length) timers.shift()(); };
+    return { rc, mp, starts, sent, flush };
   };
   const race = () => ({ t: 'race', laps: 3, assists: 'off', racingLine: false, grid: ['r0', 'r2'], startAt: 5000, hold: 1500 });
   const g = rig(false, 'r0');
   g.rc.handle(race(), 'r1'); eq(g.starts.length, 0, 'a race from another guest does not start a race');
   g.rc.handle({ t: 'env', weather: 'fog', time: 'night' }, 'r1'); eq(g.rc.env, null, 'weather from another guest is not taken');
   g.rc.handle({ t: 'clkr', n: 1, c: 0, h: 5 }, 'r1'); eq(g.rc.offset, null, 'a clock reply from another guest is not taken');
-  g.rc.handle(race(), 'r0'); eq(g.starts.length, 1, 'the host race starts the race');
+  g.rc.handle(race(), 'r0'); g.flush(); eq(g.starts.length, 1, 'the host race starts the race (after the wait for a clock, no reply: a free drive)');
   g.rc.handle({ t: 'env', weather: 'fog', time: 'night' }, 'r0'); eq(g.rc.env && g.rc.env.weather, 'fog', 'the host weather is taken');
   g.rc.handle({ t: 'clkr', n: 1, c: 0, h: 5 }, 'r0'); check(g.rc.offset !== null, 'the host clock reply is taken');
   const h = rig(true, 'r0');
   h.rc.handle(race(), 'r0'); h.rc.handle(race(), 'r1'); eq(h.starts.length, 0, 'the host does not take a race message at all');
   h.rc.handle({ t: 'env', weather: 'fog', time: 'night' }, 'r1'); eq(h.rc.env, null, 'the host takes no weather from anybody');
-  const u = rig(false, 'r0'); u.rc.handle(race()); eq(u.starts.length, 1, 'with no sender given (the transport checked it already) the host message is taken');
+  const u = rig(false, 'r0'); u.rc.handle(race()); u.flush(); eq(u.starts.length, 1, 'with no sender given (the transport checked it already) the host message is taken');
   const early = rig(false, null); early.rc.handle(race(), 'r0'); eq(early.starts.length, 0, 'before the room names a host, nothing counts as the host');
-  const p = rig(false, 'lakeside-ABCDE'); p.rc.handle(race(), 'lakeside-ABCDE'); p.rc.handle(race(), 'lakeside-QWERT'); eq(p.starts.length, 1, 'peer to peer: the host id is its room id, another peer is refused');
+  const p = rig(false, 'lakeside-ABCDE'); p.rc.handle(race(), 'lakeside-ABCDE'); p.rc.handle(race(), 'lakeside-QWERT'); p.flush(); eq(p.starts.length, 1, 'peer to peer: the host id is its room id, another peer is refused');
 }
 
 console.log(fails ? `relay-client: ${fails} FAILED, ${passes} passed` : `relay-client: all ${passes} checks passed`);

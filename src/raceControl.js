@@ -8,15 +8,19 @@
 //                         startAt = lights out on the HOST's clock (ms); hold = the random hold before it, so everyone's lights look the same
 //   Only the host's id counts for clkr, env and race (a guest's copy is ignored, whichever way it got here).
 //
-// A guest takes 3 clock samples when it joins (shortest round trip wins, see start.js estimateOffset) and converts startAt to its
-// own clock with that offset. A guest that gets no reply trusts its own clock. Ids are the same on every machine (Multiplayer.selfId).
+// A guest takes 7 clock samples, 100 ms apart, when it joins, and again when a race message comes after its last sample is over 20 s old.
+// The offset is the median of the lowest-round-trip half (start.js estimateOffset) and converts startAt to its own clock. No sample
+// within 1.5 s of the race message: the guest starts as a free drive, never on its raw clock. Ids are the same on every machine (Multiplayer.selfId).
 // Pure JavaScript with the transport and clock injected, so tools/session.js tests it with a fake room.
 
 import { cleanEnv, sameEnv } from './weather.js';
 import { sampleOffset, estimateOffset, scheduleStart, sequenceFromMessage, pickHold, START } from './start.js';
 
-export const SAMPLES = 3;
-const SAMPLE_GAP_MS = 120;
+export const SAMPLES = 7;            // clock samples per sync run, SAMPLE_GAP_MS apart
+const SAMPLE_GAP_MS = 100;
+const KEEP = 14;                     // the newest samples the offset is taken from (two runs)
+export const RESYNC_MS = 20000;      // a sample older than this is not trusted; a race message after one takes a new run first
+export const WAIT_MS = 1500;         // a race message with no fresh clock waits at most this long for the run, then goes on without it
 
 const num = (v, lo, hi, d) => (Number.isFinite(+v) ? Math.max(lo, Math.min(hi, +v)) : d);
 
@@ -39,8 +43,9 @@ export function cleanRaceMessage(m) {
 // o: { mp (a Multiplayer or anything with sendControl, selfId, isHost, peers), now (ms clock), random, setTimeout, onRace({ msg, seq, slot, late }) }
 export function createRaceControl(o) {
   const mp = o.mp, now = o.now || (() => performance.now()), random = o.random || Math.random, later = o.setTimeout || ((f, ms) => setTimeout(f, ms));
-  const samples = [];
+  const samples = [];                    // { rtt, offset, at } on this machine's clock, oldest first
   let est = null, n = 0, current = null, lastStartAt = null, known = new Set(), hostEnv = null, sentEnv = null, envKnown = new Set();
+  let replies = 0, syncedAt = -Infinity, roomCode = null, pending = null;   // replies in the current run; the last reply's time; a race waiting for the clock
 
   const api = {
     get offset() { return est ? est.offset : null; },      // host clock = this clock + offset; null until measured
@@ -60,10 +65,11 @@ export function createRaceControl(o) {
       }
     },                     // the race message in force (host: the one it sent)
 
-    // guests: ask the host for a few clock samples (the replies come back through handle)
+    // guests: ask the host for clock samples (the replies come back through handle). The samples of an earlier room are not its clock.
     syncClock() {
       if (mp.isHost) return;
-      samples.length = 0; est = null;
+      if (mp.code !== roomCode) { roomCode = mp.code; samples.length = 0; est = null; pending = null; syncedAt = -Infinity; }
+      replies = 0;
       for (let k = 0; k < SAMPLES; k++) later(() => { if (mp.sendControl && !mp.isHost) mp.sendControl({ t: 'clk', n: ++n, c: now() }); }, k * SAMPLE_GAP_MS);
     },
 
@@ -100,8 +106,11 @@ export function createRaceControl(o) {
         if (mp.isHost && Number.isFinite(+m.n) && Number.isFinite(+m.c)) mp.sendControl({ t: 'clkr', n: +m.n, c: +m.c, h: now() }, from);
       } else if (m.t === 'clkr') {
         if (mp.isHost || !fromHost || !Number.isFinite(+m.c) || !Number.isFinite(+m.h)) return;
-        samples.push(sampleOffset(+m.c, +m.h, now()));
-        est = estimateOffset(samples);
+        const t = now();
+        samples.push({ ...sampleOffset(+m.c, +m.h, t), at: t });
+        replies++; syncedAt = t;
+        refresh(t);
+        if (pending && replies >= SAMPLES) settle(pending);
       } else if (m.t === 'env') {
         if (!mp.isHost && fromHost) hostEnv = cleanEnv(m);
       } else if (m.t === 'race') {
@@ -111,13 +120,40 @@ export function createRaceControl(o) {
         if ('weather' in m || 'time' in m) hostEnv = cleanEnv(m);
         lastStartAt = msg.startAt;
         current = msg;
-        const seq = sequenceFromMessage(msg, api.offset);
-        const slot = msg.grid.indexOf(mp.selfId);
-        // not on the grid, or the lights went out a while ago: take part as a free drive
-        const late = slot < 0 || now() > seq.goAt + 5000;
-        o.onRace && o.onRace({ msg, seq, slot: slot < 0 ? Math.min(7, msg.grid.length) : slot, late });
+        // a clock sample older than RESYNC_MS (or none): a new run first, and the start waits for it (see settle)
+        if (now() - syncedAt > RESYNC_MS) {
+          api.syncClock();
+          pending = { msg };
+          later(() => { if (pending && pending.msg === msg) settle(pending, true); }, WAIT_MS);
+        } else deliver(msg, est ? est.offset : null);
       }
     },
   };
   return api;
+
+  // drop samples older than RESYNC_MS and keep the newest KEEP; the offset is taken from what is left
+  function refresh(t) {
+    while (samples.length && samples[0].at < t - RESYNC_MS) samples.shift();
+    if (samples.length > KEEP) samples.splice(0, samples.length - KEEP);
+    est = estimateOffset(samples);
+  }
+
+  // the race goes out once the run has all its replies, or at the timeout with whatever arrived (null: none did, a free drive)
+  function settle(p, timedOut = false) {
+    if (pending !== p) return;
+    if (!timedOut && replies < SAMPLES) return;
+    pending = null;
+    deliver(p.msg, est ? est.offset : null);
+  }
+
+  // hand a race to the game: the sequence on this machine's clock, or (no clock) a free drive
+  function deliver(msg, offset) {
+    if (!o.onRace || current !== msg) return;      // the race was ended (or replaced) while waiting
+    const slot = msg.grid.indexOf(mp.selfId);
+    if (offset === null) { o.onRace({ msg, seq: null, slot: Math.min(7, msg.grid.length), late: true }); return; }
+    const seq = sequenceFromMessage(msg, offset);
+    // not on the grid, or the lights went out a while ago: take part as a free drive
+    const late = slot < 0 || now() > seq.goAt + 5000;
+    o.onRace({ msg, seq, slot: slot < 0 ? Math.min(7, msg.grid.length) : slot, late });
+  }
 }

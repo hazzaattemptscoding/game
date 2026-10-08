@@ -50,7 +50,7 @@ try {
   check(await until(A, () => [...document.querySelectorAll('.mp-tag')].some(t => !t.hidden && t.textContent === 'Bob'), null, 15000) || await until(B, () => [...document.querySelectorAll('.mp-tag')].some(t => t.textContent === 'Alice')), 'a name tag over the other car');
   check(await until(A, () => document.querySelectorAll('.stand-row').length === 2), 'standings list has 2 rows');
   console.log('  standings (host):', (await A.$$eval('.stand-row', rows => rows.map(r => r.textContent))).join(' | '));
-  check(await A.evaluate(() => lakeside.lobby.ghosts.delay) > 0.14, 'remote cars are drawn 150 ms behind over the relay');
+  check(await A.evaluate(() => lakeside.lobby.ghosts.delay) === 0.1, 'the relay asks for a 100 ms ceiling; remote cars are drawn 50 to 150 ms behind by their measured jitter');
   // the other car is really moving: sample the remote car of B on host A twice while B drives
   await B.evaluate(() => { const c = lakeside.car; c.placeAt(120, 0); c.contactGrace = 0; const v = 20; c.vx = Math.cos(c.heading) * v; c.vz = Math.sin(c.heading) * v; c.fwdSpeed = c.speed = v; });
   const seen = async () => A.evaluate(() => { const g = [...lakeside.lobby.ghosts.map.values()][0]; return g ? { x: g.info.x, z: g.info.z, t: g.info.t } : null; });

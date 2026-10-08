@@ -1,6 +1,7 @@
 // Relay tests: the protocol logic (worker/src/protocol.js, shared by the Cloudflare Durable Object and worker/dev-relay.mjs)
 // and an end to end run of dev-relay.mjs with three real WebSocket clients (Node's built in WebSocket).
-import { MAX_PLAYERS, MAX_BYTES, RATE, IDLE_MS, onOpen, onMessage, onClose, sweep, parseRoute, originAllowed, cleanName, lobbyEntry, Directory } from '../worker/src/protocol.js';
+import { MAX_PLAYERS, MAX_BYTES, RATE, BURST, IDLE_MS, onOpen, onMessage, onClose, sweep, parseRoute, originAllowed, cleanName, lobbyEntry, Directory, locationHint } from '../worker/src/protocol.js';
+import worker from '../worker/src/index.js';
 import { startRelay } from '../worker/dev-relay.mjs';
 
 let fails = 0, passes = 0;
@@ -190,23 +191,34 @@ const types = c => c.out.map(m => m.t || 'bin');
   check(e.att.name.length <= 16 && !/[<>]/.test(e.att.name), 'name is plain text, 16 characters at most');
   eq(r.join('', 'f').att.name, 'Player', 'an empty name becomes Player');
 }
-{ // rate limit: about 40 frames per second, extras dropped silently
+{ // rate limit: RATE (80) frames per second per socket, at most BURST at once, extras dropped silently
   const r = makeRoom();
   const a = r.join('A', 'a', true), b = r.join('B', 'b');
   const n0 = a.out.length;
   let got = 0;
   for (let i = 0; i < 200; i++) if (r.say(b, { t: 'm', i }, 5000) === 'forwarded') got++;
-  check(got >= RATE - 2 && got <= RATE + 1, `a burst of 200 at one instant lets about ${RATE} through (${got})`);
+  check(got >= BURST - 2 && got <= BURST + 1, `a burst of 200 at one instant lets about ${BURST} through (${got})`);
   eq(a.out.length - n0, got, 'dropped frames are really dropped');
   let steady = 0;
-  for (let i = 0; i < 100; i++) if (r.say(b, { t: 'm', i }, 6000 + i * 25) === 'forwarded') steady++;   // 40 per second exactly
-  check(steady >= 98, `40 frames per second is sustained (${steady} of 100)`);
+  for (let i = 0; i < 100; i++) if (r.say(b, { t: 'm', i }, 6000 + i * 1000 / RATE) === 'forwarded') steady++;   // RATE per second exactly
+  check(steady >= 98, `${RATE} frames per second is sustained (${steady} of 100)`);
   let fast = 0;
   for (let i = 0; i < 400; i++) if (r.say(b, { t: 'm', i }, 20000 + i * 5) === 'forwarded') fast++;       // 200 per second for 2 s
-  check(fast < 140, `200 per second is cut to about 40 per second (${fast} of 400 in 2 s)`);
-  const c = r.join('C', 'c');
-  let cn = 0; for (let i = 0; i < 60; i++) if (r.say(c, new Uint8Array([1, i]), 30000 + i * 50) === 'forwarded') cn++;
-  eq(cn, 60, 'the 20 Hz car state plus a ping every 15 s is nowhere near the limit');
+  check(fast >= 2 * RATE - 4 && fast <= 2 * RATE + BURST + 2, `200 per second is cut to about ${RATE} per second plus the burst (${fast} of 400 in 2 s)`);
+  // what one player really sends for a minute: 30 Hz car state, 10 Hz telemetry (somebody watches), a ping every 15 s, a livery every 2 s
+  const p = r.join('P', 'p'), watch = r.connect();
+  r.say(watch, { t: 'join', name: 'Watch', spectator: true }, 40000);
+  let refused = 0, sent = 0;
+  for (let ms = 0; ms < 60000; ms++) {
+    const now = 40000 + ms, frames = [];
+    if (Math.floor(ms * 30 / 1000) !== Math.floor((ms - 1) * 30 / 1000)) frames.push(new Uint8Array([1, ms & 255, 0, 0]));   // state, 30 a second
+    if (Math.floor(ms / 100) !== Math.floor((ms - 1) / 100)) frames.push(new Uint8Array([2, ms & 255, 0, 0]));              // telemetry, 10 a second
+    if (ms % 15000 === 0) frames.push({ t: 'ping', n: ms });
+    if (ms % 2000 === 0) frames.push({ t: 'lv', l: 'x' });
+    for (const f of frames) { sent++; if (r.say(p, f, now) === 'rate') refused++; }
+  }
+  eq(refused, 0, `a player's real traffic (${sent} frames in a minute) is never refused`);
+  check(watch.out.some(m => m instanceof Uint8Array), 'and the spectator gets the telemetry');
 }
 { // idle timeout
   const r = makeRoom(1000);
@@ -227,6 +239,33 @@ const types = c => c.out.map(m => m.t || 'bin');
   eq(sweep(r2, 1e6), 0, 'a socket with no record gets a fresh start');
   eq(sweep(r2, 1e6 + IDLE_MS + 1), 1, 'and then times out');
 }
+{ // where a room is placed: the host's first socket (host=1) gives a location hint, guests and later sockets give none
+  eq(locationHint({ continent: 'EU', country: 'PL' }), 'eeur', 'eastern Europe: eeur');
+  eq(locationHint({ continent: 'EU', country: 'FR' }), 'weur', 'the rest of Europe: weur');
+  eq(locationHint({ continent: 'NA', country: 'US', longitude: '-74.0' }), 'enam', 'east of the Rockies: enam');
+  eq(locationHint({ continent: 'NA', country: 'CA', longitude: '-123.1' }), 'wnam', 'the west: wnam');
+  eq(locationHint({ continent: 'SA', country: 'BR' }), 'sam', 'South America: sam');
+  eq(locationHint({ continent: 'AS', country: 'JP' }), 'apac', 'Asia: apac');
+  eq(locationHint({ continent: 'AS', country: 'AE' }), 'me', 'the Gulf states: me');
+  eq(locationHint({ continent: 'OC', country: 'AU' }), 'oc', 'Oceania: oc');
+  eq(locationHint({ continent: 'AF', country: 'ZA' }), 'afr', 'Africa: afr');
+  eq(locationHint({ continent: 'AN' }), undefined, 'no hint for Antarctica');
+  eq(locationHint(undefined), undefined, 'no hint without request.cf (dev)');
+  const calls = [];
+  const env = { ALLOWED_ORIGINS: '*', ROOM: { idFromName: n => 'do:' + n, get: (id, opts) => { calls.push({ id, opts }); return { fetch: async () => ({ status: 101 }) }; } } };
+  const req = (path, cf) => { const q = new Request('https://relay.example' + path, { headers: { Upgrade: 'websocket' } }); if (cf) Object.defineProperty(q, 'cf', { value: cf }); return q; };
+  await worker.fetch(req('/room/QWERT?host=1', { continent: 'EU', country: 'DE' }), env);
+  eq(calls.at(-1), { id: 'do:QWERT', opts: { locationHint: 'weur' } }, 'the host making the room passes its hint');
+  await worker.fetch(req('/room/QWERT', { continent: 'NA', country: 'US', longitude: '-122' }), env);
+  eq(calls.at(-1), { id: 'do:QWERT', opts: undefined }, 'a guest joining later: same object, no hint');
+  await worker.fetch(req('/room/qwert?spectator=1', { continent: 'AS', country: 'JP' }), env);
+  eq(calls.at(-1), { id: 'do:QWERT', opts: undefined }, 'a spectator too (any case of the code)');
+  await worker.fetch(req('/room/ABCDE?host=1', { continent: 'SA', country: 'BR' }), env);
+  eq(calls.at(-1), { id: 'do:ABCDE', opts: { locationHint: 'sam' } }, 'another room: its own hint');
+  await worker.fetch(req('/room/BCDEF?host=1'), env);
+  eq(calls.at(-1), { id: 'do:BCDEF', opts: undefined }, 'no request.cf: no hint, Cloudflare chooses');
+}
+
 { // routing and origins
   eq(parseRoute('/room/ABCDE'), { kind: 'room', code: 'ABCDE' }, 'room route');
   eq(parseRoute('/room/abcde'), { kind: 'room', code: 'ABCDE' }, 'room code is upper-cased');

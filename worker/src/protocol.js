@@ -30,7 +30,7 @@
 //                         telemetry frame of each player as binary frames (with the sender id byte), so the view fills immediately.
 //                         A room with no players answers {t:'nohost'} (close 4002), a 51st spectator {t:'full', spectator:true} (4001).
 //    binary frames        a player's state frame (first byte TAG_STATE = 1) goes to the other players and, every 2nd frame, to spectators
-//                         (SPECTATOR_DIVIDER, 10 Hz); a telemetry frame (first byte TAG_TELEMETRY = 2, 14 bytes, src/shared/telemetry.js)
+//                         (SPECTATOR_DIVIDER, 15 Hz); a telemetry frame (first byte TAG_TELEMETRY = 2, 14 bytes, src/shared/telemetry.js)
 //                         goes to SPECTATORS ONLY, never to other players.
 //    {t:'spec', n}        to everybody when the spectator count changes (players send telemetry only while n > 0). The welcome of a
 //                         player carries `spectators` when it is above 0.
@@ -38,7 +38,7 @@
 //    {t:'ev', k, ...}     a player's event (lap, limits, jump, best, contact, join, leave), forwarded like any other message.
 // Lobby directory: rooms with at least one player publish themselves (lobbyEntry, Directory below); GET /lobbies lists them.
 //
-// Limits: 8 players, frames over 2048 bytes dropped, 40 frames per second per socket (token bucket, extras dropped),
+// Limits: 8 players, frames over 2048 bytes dropped, 80 frames per second per socket (token bucket, extras dropped),
 // sockets with no traffic for 60 s closed (4008), garbage dropped silently. Nothing is stored beyond the live sockets,
 // the snapshot for new spectators (memory only) and the lobby directory.
 //
@@ -48,10 +48,13 @@
 
 export const MAX_PLAYERS = 8;
 export const MAX_BYTES = 2048;
-export const RATE = 40;            // frames per second (20 Hz state + 10 Hz telemetry + pings and messages stay well under)
-export const BURST = 40;
+// Frames per second a socket may send, and the most that may arrive at once (a token bucket). A player sends about 40 a second at most:
+// 30 Hz car state, 10 Hz telemetry while somebody watches, pings, the livery every 2 s. The rest is headroom: a timer that runs late and
+// then fires in a bunch (a background tab, a slow frame) must not drop fresh car state. Was 40 when the state was 20 Hz.
+export const RATE = 80;
+export const BURST = 80;
 export const MAX_SPECTATORS = 50;
-export const SPECTATOR_DIVIDER = 2;   // spectators get every 2nd state frame (10 Hz). Override with room.cfg.specDivider (env SPECTATOR_STATE_DIVIDER).
+export const SPECTATOR_DIVIDER = 2;   // spectators get every 2nd state frame (15 Hz at 30 Hz). Override with room.cfg.specDivider (env SPECTATOR_STATE_DIVIDER).
 export const TAG_STATE = 1;           // first byte of a car state frame (src/ghosts.js BIN_STATE)
 export const TAG_TELEMETRY = 2;       // first byte of a telemetry frame (src/shared/telemetry.js TAG_TELEMETRY; tools/live.js checks both)
 export const EVENT_RING = 30;         // events kept for a new spectator
@@ -89,6 +92,21 @@ export function originAllowed(origin, allowed) {
   return list.includes(String(origin).replace(/\/+$/, '').toLowerCase());
 }
 
+// Where a new room's Durable Object is placed: a Cloudflare location hint, from request.cf of the request that makes the room (the host's
+// first socket, see src/relay.js). The hint is used only when the object is first made: after that the room keeps its place, and a
+// guest reaches it from anywhere by its code. cf may be missing (dev-relay.mjs), then there is no hint and Cloudflare chooses.
+const EASTERN_EUROPE = new Set(['PL', 'CZ', 'SK', 'HU', 'RO', 'BG', 'UA', 'BY', 'MD', 'LT', 'LV', 'EE', 'RU']);
+const MIDDLE_EAST = new Set(['AE', 'BH', 'IL', 'IQ', 'IR', 'JO', 'KW', 'LB', 'OM', 'PS', 'QA', 'SA', 'SY', 'YE']);
+const CONTINENT_HINT = { EU: 'weur', SA: 'sam', AS: 'apac', OC: 'oc', AF: 'afr' };
+export function locationHint(cf) {
+  if (!cf || typeof cf !== 'object') return undefined;
+  const country = String(cf.country || '').toUpperCase(), continent = String(cf.continent || '').toUpperCase();
+  if (EASTERN_EUROPE.has(country)) return 'eeur';
+  if (MIDDLE_EAST.has(country)) return 'me';
+  if (continent === 'NA') return +cf.longitude < -100 ? 'wnam' : 'enam';     // the Rockies and west: wnam
+  return CONTINENT_HINT[continent];                                          // undefined for Antarctica or no answer: no hint
+}
+
 const utf8Length = s => { let n = 0; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); n += c < 0x80 ? 1 : c < 0x800 ? 2 : c >= 0xd800 && c < 0xdc00 ? (i++, 4) : 3; } return n; };
 const isPlayer = c => typeof c.att?.id === 'number';
 const isSpec = c => c.att?.spec === true;
@@ -99,7 +117,7 @@ const sendJSON = (c, o) => c.send(JSON.stringify(o));
 const toBytes = d => d instanceof Uint8Array ? d : ArrayBuffer.isView(d) ? new Uint8Array(d.buffer, d.byteOffset, d.byteLength) : new Uint8Array(d);
 
 // What the room remembers for new spectators. Memory only: if the Durable Object is evicted it starts empty and fills again from
-// the live traffic (players repeat their livery every 2 s, a state arrives 20 times a second).
+// the live traffic (players repeat their livery every 2 s, a state arrives 30 times a second).
 // room.store is created here on first use; room.cfg is { maxSpectators, specDivider } (optional).
 function store(room) { return room.store || (room.store = { lv: {}, name: {}, state: {}, tele: {}, count: {}, events: [], meta: {} }); }
 const cfgOf = room => ({ maxSpectators: MAX_SPECTATORS, specDivider: SPECTATOR_DIVIDER, ...(room.cfg || {}) });

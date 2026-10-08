@@ -138,13 +138,17 @@ export function cinematicPose(u, car) {
 // it back at c1. The host clock reads (guest clock + offset). The host's stamp was taken about half way through the round trip.
 export const sampleOffset = (c0, h, c1) => ({ rtt: c1 - c0, offset: h - (c0 + c1) / 2 });
 
-// The best of a few samples: the one with the shortest round trip, because that one has the least room for lopsided delay.
-// Returns { offset, rtt, n } or null with no usable sample.
+// The offset from several samples. A short round trip has the least room for lopsided delay, so only the lowest-round-trip half
+// counts (at least one sample), and the median of their offsets is the answer: one lucky or unlucky stamp cannot set it.
+// Returns { offset, rtt (the shortest round trip), n (samples given) } or null with no usable sample.
 export function estimateOffset(samples) {
   const ok = (samples || []).filter(s => s && Number.isFinite(s.offset) && Number.isFinite(s.rtt) && s.rtt >= 0);
   if (!ok.length) return null;
-  const best = ok.reduce((a, b) => (b.rtt < a.rtt ? b : a));
-  return { offset: best.offset, rtt: best.rtt, n: ok.length };
+  const byRtt = [...ok].sort((a, b) => a.rtt - b.rtt);
+  const offs = byRtt.slice(0, Math.max(1, Math.floor(ok.length / 2))).map(s => s.offset).sort((a, b) => a - b);
+  const m = offs.length >> 1;
+  const offset = offs.length % 2 ? offs[m] : (offs[m - 1] + offs[m]) / 2;
+  return { offset, rtt: byRtt[0].rtt, n: ok.length };
 }
 
 // host clock -> this machine's clock, and back
@@ -157,8 +161,8 @@ export function scheduleStart(hostNow, hold, lead = START.LEAD_MS) {
   return { t0, startAt: t0 + goOffset(hold), hold };
 }
 
-// What a guest builds from the host's message: the sequence on its own clock. offset is null when no clock sample exists yet
-// (then the guest trusts its own clock, which is off by however far the two clocks differ; the lobby measures first).
+// What a guest builds from the host's message: the sequence on its own clock. offset is the host clock minus this clock. The game
+// never passes null: raceControl waits for an offset (or starts the guest as a free drive) instead of guessing with the raw clocks.
 export function sequenceFromMessage(msg, offset) {
   return StartSequence.lightsOut(toLocalTime(msg.startAt, offset || 0), msg.hold);
 }

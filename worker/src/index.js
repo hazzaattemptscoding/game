@@ -1,8 +1,9 @@
 // Lakeside relay Worker. GET /room/<CODE> with Upgrade: websocket goes to the Durable Object for that code (add ?spectator=1 to watch),
 // GET /lobbies lists the open rooms (GET /lobbies/<CODE> one room), GET /health answers ok.
+// ?host=1 on the room URL (the host's first socket) places the room's Durable Object near the host (locationHint in protocol.js).
 // POST /times and GET /times, GET /ghost are the global lap times (the Times Durable Object, rules in times.js).
 // ALLOWED_ORIGINS (comma separated, or *) decides which websites may connect.
-import { parseRoute, originAllowed } from './protocol.js';
+import { parseRoute, originAllowed, locationHint } from './protocol.js';
 import { parseTimesRoute, MAX_BODY } from './times.js';
 export { Room } from './room.js';
 export { Directory } from './directory.js';
@@ -51,7 +52,10 @@ export default {
     if (route?.kind === 'room') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket', { status: 426 });
       if (!allowed) return new Response('Origin not allowed. Add your site to ALLOWED_ORIGINS.', { status: 403 });
-      const stub = env.ROOM.get(env.ROOM.idFromName(route.code));
+      // host=1 is sent only on the host's first socket (src/relay.js), the one that makes the room: its Durable Object is placed near
+      // the host. Guests and reconnects get no hint; the place of a room that exists does not change.
+      const id = env.ROOM.idFromName(route.code), hint = url.searchParams.get('host') === '1' ? locationHint(request.cf) : undefined;
+      const stub = hint ? env.ROOM.get(id, { locationHint: hint }) : env.ROOM.get(id);
       const forward = new Request(request);
       forward.headers.set('x-lakeside-code', route.code);
       return stub.fetch(forward);

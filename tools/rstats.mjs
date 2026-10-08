@@ -17,7 +17,7 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 const page = await browser.newPage({ viewport: { width: 1280, height: 640 } });
 page.on('pageerror', e => console.log('PAGE ERROR', e.message));
 
-// the remote cars: seven fake players on the track beside the camera, fed states 20 times a second like the relay would
+// the remote cars: seven fake players on the track beside the camera, fed states 20 times a second (the game sends 30; this tool only counts draw calls)
 const CARS = `(() => {
   const L = window.lakeside, T = L.track, g = L.lobby.ghosts, t0 = performance.now();
   const base = Math.round(T.N * 100 / T.length);

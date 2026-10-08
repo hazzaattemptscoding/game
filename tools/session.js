@@ -7,7 +7,7 @@
 import { StartSequence, START, pickHold, goOffset, gridSlot, pitSlot, sampleOffset, estimateOffset, toLocalTime, scheduleStart, sequenceFromMessage, cinematicPose, orbitPose } from '../src/start.js';
 import { makeSession, Flow, PHASE, RaceTracker, RACE, orderResults, timeTrialRows, hasStartLights } from '../src/session.js';
 import { buildTrack } from '../src/track.js';
-import { createRaceControl, cleanRaceMessage } from '../src/raceControl.js';
+import { createRaceControl, cleanRaceMessage, SAMPLES } from '../src/raceControl.js';
 import { TIMES, WEATHERS, resolveEnv, blendEnv, cleanEnv, cleanWeather, cleanTime, envFromParams, shadowsOn, DEFAULT_ENV } from '../src/weather.js';
 import { migrateSettings } from '../src/settings.js';
 import { boltShape } from '../src/environment.js';
@@ -334,7 +334,7 @@ console.log('ONLINE: A FAKE ROOM WITH SKEWED CLOCKS AND UNEVEN LATENCY');
   for (const x of [H, A, B]) for (const y of [H, A, B]) if (x !== y) x.mp.peers.set(y.id, { id: y.id, hello: true });
   A.rc.syncClock(); B.rc.syncClock();
   run(1000);
-  check(A.rc.estimate && A.rc.estimate.n === 3 && B.rc.estimate && B.rc.estimate.n === 3, 'both guests took 3 clock samples');
+  check(A.rc.estimate && A.rc.estimate.n === SAMPLES && B.rc.estimate && B.rc.estimate.n === SAMPLES, 'both guests took 7 clock samples');
   check(Math.abs(A.rc.offset - 819000) < 40 && Math.abs(B.rc.offset - 776995) < 40, `clock offsets found (A error ${Math.abs(A.rc.offset - 819000).toFixed(1)} ms, B ${Math.abs(B.rc.offset - 776995).toFixed(1)} ms)`);
   const r = H.rc.hostStart({ laps: 3, assists: 'off', racingLine: false });
   check(r && r.msg.t === 'race' && r.msg.grid.join() === 'host,g1,g2' && r.slot === 0 && r.msg.laps === 3, 'the host builds the message with the grid in join order');

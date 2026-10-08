@@ -8,7 +8,8 @@ import { encodeLivery } from './livery.js';
 import { Ghosts, threeFactory, makeProjector, stateFromCar, encodeState } from './ghosts.js';
 import { encodeTelemetry, telemetryFromCar, TELEMETRY_HZ } from './shared/telemetry.js';
 
-const SEND_MS = 50;           // 20 Hz
+const SEND_MS = 33;           // 30 Hz (the relay allows 80 frames a second per socket, worker/src/protocol.js)
+const HELD_MS = 250;          // a pose older than this is not moving on (paused, or a hidden tab): see the sender below
 const NAME_KEY = 'lakeside-mp-name';
 const COLLAPSE_KEY = 'lakeside-mp-standings';
 const NO_CARS = [];
@@ -18,7 +19,8 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } },
 };
 
-// ctx: { scene, camera, car, timer, track, search, getLivery } where getLivery() is the player's own livery (a normalised livery object)
+// ctx: { scene, camera, car, timer, track, search, getLivery, poseTime } where getLivery() is the player's own livery (a normalised livery
+// object) and poseTime() is the performance.now() time that the car's pose belongs to (the last physics step, see src/main.js)
 const LIVERY_MS = 2000;       // our livery goes out again every 2 s (the low rate control state)
 export function createLobby(ctx) {
   const $ = id => document.getElementById(id);
@@ -40,7 +42,7 @@ export function createLobby(ctx) {
     onStatus: s => render(s),
     onDiag: t => { el.diag.textContent = t; el.details.hidden = !t; },
     onPlayers: () => { renderWho(); lastStand = ''; },
-    onRtt: () => renderVia(),
+    onRtt: ms => { rttSeen.push(ms); if (rttSeen.length > 500) rttSeen.shift(); renderVia(); },
   });
 
   el.name.value = store.get(NAME_KEY) || 'Driver' + (100 + Math.floor(Math.random() * 900));
@@ -63,7 +65,10 @@ export function createLobby(ctx) {
     setTimeout(() => { el.copy.textContent = 'Copy code'; }, 1500);
   });
 
+  // the round trips of this room (ms), for the console (logPing); cleared when a connection starts
+  let rttSeen = [];
   function render(s) {
+    if (s.phase === 'connecting') rttSeen = [];
     const inRoom = s.phase === 'hosting' || s.phase === 'joined' || s.phase === 'connecting';
     el.start.hidden = el.joinrow.hidden = inRoom;
     el.room.hidden = !inRoom;
@@ -121,9 +126,20 @@ export function createLobby(ctx) {
   }
 
   // --- per frame ---
-  // the car goes out 20 times a second on a timer, not on the frame, so a slow frame rate does not make us look silent
+  // The car goes out 30 times a second on a timer, not on the frame, so a slow frame rate does not make us look silent. Its stamp is
+  // the time of the physics step that made the pose (ctx.poseTime), so a remote car is drawn where it was at that time, whatever the
+  // frame rate. When the pose has not moved on for HELD_MS (the game is paused or the tab is hidden) the car goes out stood still,
+  // stamped now, so it stays on the other screens instead of dropping out after a few seconds.
+  let sentStamp = -Infinity;
   setInterval(() => {
-    if (mp.players > 1 || mp.spectators > 0) mp.sendState(encodeState(stateFromCar(ctx.car, ctx.timer.currentLap(), mp.col, name(), performance.now(), ctx.timer.best, ctx.timer.last)));
+    if (!(mp.players > 1 || mp.spectators > 0)) return;
+    const now = performance.now(), pose = ctx.poseTime(), held = now - pose > HELD_MS;
+    if (!held && pose <= sentStamp) return;                  // no physics step since the last one we sent
+    const stamp = Math.max(held ? now : pose, sentStamp + 0.001);
+    sentStamp = stamp;
+    const st = stateFromCar(ctx.car, ctx.timer.currentLap(), mp.col, name(), stamp, ctx.timer.best, ctx.timer.last);
+    if (held) { st.vx = 0; st.vz = 0; st.yr = 0; }
+    mp.sendState(encodeState(st));
   }, SEND_MS);
   // the livery goes with the hello and again every 2 s, so a late or lost one still arrives and a repaint reaches everyone
   const sendLivery = () => { const l = liveryNow(); if (l) { mp.setLivery(encodeLivery(l)); } };
@@ -141,6 +157,13 @@ export function createLobby(ctx) {
   let size = { w: innerWidth, h: innerHeight }, project = null;
   return {
     get active() { return mp.active; },
+    get rtt() { return mp.active ? mp.rtt : null; },      // the relay round trip in ms, null when not online (the HUD readout)
+    // the round trip over this room: min, average and max in ms, to the console (Tab, with the handling readout on, src/main.js)
+    logPing() {
+      if (!rttSeen.length) { console.log('ping: no round trip yet'); return; }
+      const avg = rttSeen.reduce((a, b) => a + b, 0) / rttSeen.length;
+      console.log(`ping (relay): min ${Math.min(...rttSeen)} ms, avg ${avg.toFixed(1)} ms, max ${Math.max(...rttSeen)} ms, ${rttSeen.length} samples`);
+    },
     get joined() { return ghosts.size > 0; },
     ghosts,       // for tests and the console
     mp,           // the Multiplayer: the director reads its phase and sends the race start through it

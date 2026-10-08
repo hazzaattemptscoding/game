@@ -9,7 +9,7 @@
 // Framing: JSON control messages as text frames; car state as ONE binary frame (ghosts.js packState). The relay prefixes the
 // sender's player id (one byte, 0 to 7) to binary frames it forwards, and adds `from` to JSON ones.
 
-import { decodeState, packState, unpackState, cleanName, MAX_PLAYERS, DELAY, RELAY_EXTRA_DELAY } from './ghosts.js';
+import { decodeState, packState, unpackState, cleanName, MAX_PLAYERS, DELAY } from './ghosts.js';
 
 export const RELAY = {
   CONNECT_MS: 6000,                         // no welcome within this long: the relay is unreachable
@@ -47,7 +47,9 @@ export class RelayClient {
 
   openSocket() {
     let ws;
-    try { ws = new this.WS(`${this.url}/room/${this.code}${this.spectator ? '?spectator=1' : ''}`); } catch (e) { this.lost(); return; }
+    // host=1 only on the host's first socket, the one that makes the room: the relay places the room near the host (worker/src/index.js)
+    const query = [this.spectator ? 'spectator=1' : '', this.host && !this.everWelcomed ? 'host=1' : ''].filter(Boolean).join('&');
+    try { ws = new this.WS(`${this.url}/room/${this.code}${query ? '?' + query : ''}`); } catch (e) { this.lost(); return; }
     this.ws = ws;
     try { ws.binaryType = 'arraybuffer'; } catch (e) { /* fixed by the implementation */ }
     // a host sends the room's secret (from its welcome) on every join, so a reconnect after a drop gets its room back
@@ -209,7 +211,9 @@ export class RelayRoom {
     this.name = cleanName(name) || 'Driver';
     this.reset();
     this.isHost = isHost; this.code = code;
-    if (this.ghosts) this.ghosts.delay = DELAY + RELAY_EXTRA_DELAY;
+    // Ghosts.delay is the most this transport asks for: the ceiling of each car's adaptive delay (src/ghosts.js). RELAY_EXTRA_DELAY
+    // is 0 and only kept for old imports; the clock offset already measures the relay's hop.
+    if (this.ghosts) this.ghosts.delay = DELAY;
     const gen = this.gen;
     this.status('connecting', 'Connecting to the relay...');
     this.client = new RelayClient({
@@ -327,7 +331,7 @@ export class RelayRoom {
   // a telemetry frame (src/shared/telemetry.js): the relay passes it to spectators only, so send it only while somebody watches
   sendTelemetry(bytes) { if (this.client && this.spectators > 0) this.client.sendBinary(bytes); }
 
-  // Broadcast our car (the array from encodeState) as one binary frame. About 20 times a second; never waits.
+  // Broadcast our car (the array from encodeState) as one binary frame. About 30 times a second; never waits.
   sendState(arr) {
     if (this.client && (this.peers.size || this.spectators)) this.client.sendBinary(packState(arr));
   }
