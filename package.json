@@ -20,6 +20,8 @@
     "cursor": "node tools/cursor.js",
     "board": "node tools/board.js",
     "multiplayer": "node tools/multiplayer.js",
+    "netsim": "node tools/netsim.js",
+    "startsync": "node tools/startsync.js",
     "multiplayer-live": "node tools/multiplayer-live.mjs",
     "relay-live": "node tools/relay-live.mjs",
     "live": "node tools/live.js",
