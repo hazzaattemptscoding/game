@@ -3,6 +3,7 @@
 import { encodeState, decodeState, packState, unpackState, Ghosts, DELAY, RELAY_EXTRA_DELAY, FIELDS } from '../src/ghosts.js';
 import { RelayClient, RelayRoom, RELAY, cleanRelayUrl } from '../src/relay.js';
 import { Multiplayer, BROKER, resolveConfig, applyConfigFile, brokerFromSearch } from '../src/multiplayer.js';
+import { createRaceControl } from '../src/raceControl.js';
 import { onOpen, onMessage, onClose, CLOSE } from '../worker/src/protocol.js';
 import { fakeNetwork } from './lib/fakepeer.js';
 
@@ -340,6 +341,64 @@ console.log('RELAY ROOM DETAILS');
   check([...srv.rooms.values()].every(r => r.list.length === 0), 'no socket left behind');
 }
 
+{ // the host's secret over the relay (the server side is the real protocol): a host that drops comes back with it, a thief without it is refused
+  console.log('HOST TAKEOVER (relay)');
+  const srv = makeFakeServer();
+  const H = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'H'), G = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'G');
+  const raced = { H: [], G: [] };
+  H.mp.onControl = m => { if (m.t === 'race') raced.H.push(m); };
+  G.mp.onControl = m => { if (m.t === 'race') raced.G.push(m); };
+  await H.mp.host('H'); await wait(30);
+  const code = H.mp.code, key = H.mp.relayRoom.client.hostKey;
+  check(typeof key === 'string' && key.length === 32, 'the host has the room secret from its welcome');
+  await G.mp.join(code, 'G'); await wait(60);
+  check(H.mp.hostPeerId === 'r0' && G.mp.hostPeerId === 'r0' && G.mp.relayRoom.hostPeer === 'r0', 'both sides know the host is r0');
+  // a race frame from a guest reaches nobody; the host's reaches the guest
+  G.mp.sendControl({ t: 'race', laps: 1, grid: [], startAt: Date.now() + 5000, hold: 1500 }); await wait(40);
+  check(raced.H.length === 0 && raced.G.length === 0, 'a race frame from a guest reaches nobody');
+  H.mp.sendControl({ t: 'race', laps: 2, grid: ['r0', 'r1'], startAt: Date.now() + 5000, hold: 1500 }); await wait(40);
+  check(raced.G.length === 1 && raced.G[0].laps === 2, 'the host race frame reaches the guest');
+  // the host's socket dies: at once a thief asks for the room, first with no secret, then with a wrong one
+  const refusals = [];
+  const thief = (hostKey, token) => { const t = new RelayClient({ url: 'wss://relay.test', code, name: 'T', host: true, token, hostKey, WebSocket: srv.WS, handlers: { onRefused: k => refusals.push(k) } }); t.connect(); };
+  const hostSocket = H.mp.relayRoom.client.ws;
+  hostSocket.shut(1006); await wait(5);
+  thief(undefined, 'thief1'); await wait(40);
+  thief('0'.repeat(32), 'thief2'); await wait(40);
+  eq(refusals, ['taken', 'taken'], 'a host join without the secret, and with a wrong one, are both refused');
+  // the host reconnects (after its backoff) with the secret: same code, its slot and the guest back
+  await wait(900);
+  check(H.mp.phase === 'hosting' && H.mp.code === code && H.mp.players === 2 && H.mp.relayRoom.client.ws !== hostSocket, `the real host is back in its room with the secret (${H.mp.phase}, ${H.mp.players} players)`);
+  check(G.mp.phase === 'joined' && G.mp.players === 2, 'the guest is still in the room');
+  check(!JSON.stringify(G.statuses).includes(key) && !JSON.stringify(raced.G).includes(key), 'the guest has never seen the secret');
+  H.mp.leave(); G.mp.leave(); await wait(50);
+  // a host whose secret no longer matches is told the room is gone, and is not moved to another code by itself
+  const H2 = makePlayer({ relayUrl: 'wss://relay.test' }, srv, 'H2');
+  await H2.mp.host('H2'); await wait(30);
+  H2.mp.relayRoom.client.hostKey = '0'.repeat(32);
+  H2.mp.relayRoom.client.ws.shut(1006); await wait(900);
+  check(H2.mp.phase === 'error' && /taken over/.test(H2.last().text), 'a host with a secret that no longer matches gets an error: ' + H2.last().text);
+  check(srv.rooms.size >= 1 && [...srv.rooms.values()].every(r => r.list.length === 0), 'and nothing is left open');
+}
+
+{ // the secret of a room: a RelayClient keeps the host's, from its welcome, and sends it on every join; a guest never sends one
+  console.log('HOST SECRET (client)');
+  const WS = makeFakeWS(), clock = makeClock();
+  const c = new RelayClient({ url: 'wss://r', code: 'ABCDE', name: 'Ann', host: true, token: 'tk', WebSocket: WS, timers: clock, handlers: {} });
+  c.connect(); WS.list[0].open();
+  eq(WS.list[0].json()[0], { t: 'join', name: 'Ann', id: 'tk', host: true }, 'the first join carries no secret');
+  WS.list[0].got({ t: 'welcome', you: 0, host: 0, players: [], hostKey: 'k3y' });
+  WS.list[0].drop(); clock.advance(600);
+  WS.list[1].open();
+  eq(WS.list[1].json()[0], { t: 'join', name: 'Ann', id: 'tk', host: true, hostKey: 'k3y' }, 'a reconnect sends the secret it got from the welcome');
+  c.stop();
+  const WG = makeFakeWS(), cg = new RelayClient({ url: 'wss://r', code: 'ABCDE', name: 'Bob', host: false, token: 'tb', WebSocket: WG, timers: clock, handlers: {} });
+  cg.connect(); WG.list[0].open(); WG.list[0].got({ t: 'welcome', you: 1, host: 0, players: [], hostKey: 'not-for-guests' });
+  WG.list[0].drop(); clock.advance(600); WG.list[1].open();
+  eq(WG.list[1].json()[0], { t: 'join', name: 'Bob', id: 'tb', host: false }, 'a guest never sends a secret');
+  cg.stop();
+}
+
 // ---------------------------------------------------------------- 6. fallback to peer to peer after 6 s
 console.log('FALLBACK');
 {
@@ -398,6 +457,31 @@ console.log('FALLBACK');
   await viaFile.host('X'); await wait(5);
   eq(WS7.list.map(w => w.url.replace(/\/room\/[A-Z]{5}$/, '')), ['wss://file.test'], 'the relay address from multiplayer.json is used');
   viaFile.leave();
+}
+
+// ---------------------------------------------------------------- 7. race control: only the host's race, weather and clock reply count
+console.log('RACE CONTROL FROM THE ROOM');
+{
+  const rig = (isHost, hostPeerId) => {
+    const sent = [], starts = [];
+    const mp = { isHost, selfId: isHost ? 'r0' : 'r2', hostPeerId, peers: new Map([['r0', { id: 'r0', hello: true }], ['r1', { id: 'r1', hello: true }]]), sendControl: (o, to) => { sent.push({ o, to }); return true; } };
+    const rc = createRaceControl({ mp, now: () => 1000, random: () => 0.5, setTimeout: () => 0, onRace: r => starts.push(r) });
+    return { rc, mp, starts, sent };
+  };
+  const race = () => ({ t: 'race', laps: 3, assists: 'off', racingLine: false, grid: ['r0', 'r2'], startAt: 5000, hold: 1500 });
+  const g = rig(false, 'r0');
+  g.rc.handle(race(), 'r1'); eq(g.starts.length, 0, 'a race from another guest does not start a race');
+  g.rc.handle({ t: 'env', weather: 'fog', time: 'night' }, 'r1'); eq(g.rc.env, null, 'weather from another guest is not taken');
+  g.rc.handle({ t: 'clkr', n: 1, c: 0, h: 5 }, 'r1'); eq(g.rc.offset, null, 'a clock reply from another guest is not taken');
+  g.rc.handle(race(), 'r0'); eq(g.starts.length, 1, 'the host race starts the race');
+  g.rc.handle({ t: 'env', weather: 'fog', time: 'night' }, 'r0'); eq(g.rc.env && g.rc.env.weather, 'fog', 'the host weather is taken');
+  g.rc.handle({ t: 'clkr', n: 1, c: 0, h: 5 }, 'r0'); check(g.rc.offset !== null, 'the host clock reply is taken');
+  const h = rig(true, 'r0');
+  h.rc.handle(race(), 'r0'); h.rc.handle(race(), 'r1'); eq(h.starts.length, 0, 'the host does not take a race message at all');
+  h.rc.handle({ t: 'env', weather: 'fog', time: 'night' }, 'r1'); eq(h.rc.env, null, 'the host takes no weather from anybody');
+  const u = rig(false, 'r0'); u.rc.handle(race()); eq(u.starts.length, 1, 'with no sender given (the transport checked it already) the host message is taken');
+  const early = rig(false, null); early.rc.handle(race(), 'r0'); eq(early.starts.length, 0, 'before the room names a host, nothing counts as the host');
+  const p = rig(false, 'lakeside-ABCDE'); p.rc.handle(race(), 'lakeside-ABCDE'); p.rc.handle(race(), 'lakeside-QWERT'); eq(p.starts.length, 1, 'peer to peer: the host id is its room id, another peer is refused');
 }
 
 console.log(fails ? `relay-client: ${fails} FAILED, ${passes} passed` : `relay-client: all ${passes} checks passed`);

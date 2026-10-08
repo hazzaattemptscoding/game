@@ -32,10 +32,10 @@ export function cleanRelayUrl(s) {
 }
 
 export class RelayClient {
-  // o: url (cleaned), code, name, host (bool), token, WebSocket (class), timers, and the handlers
+  // o: url (cleaned), code, name, host (bool), hostKey (a host's room secret, kept from its welcome), token, WebSocket (class), timers, and the handlers
   // onWelcome(msg, first), onJSON(msg), onBinary(id, bytes), onState('open' | 'reconnecting'), onRefused('full' | 'nohost' | 'taken'), onRtt(ms)
   constructor(o) {
-    Object.assign(this, { name: 'Driver', host: false, handlers: {} }, o);
+    Object.assign(this, { name: 'Driver', host: false, handlers: {}, hostKey: null }, o);
     this.WS = o.WebSocket || globalThis.WebSocket;
     this.t = o.timers || defaultTimers;
     this.ws = null; this.closed = false; this.welcomed = false; this.everWelcomed = false;
@@ -50,7 +50,8 @@ export class RelayClient {
     try { ws = new this.WS(`${this.url}/room/${this.code}${this.spectator ? '?spectator=1' : ''}`); } catch (e) { this.lost(); return; }
     this.ws = ws;
     try { ws.binaryType = 'arraybuffer'; } catch (e) { /* fixed by the implementation */ }
-    ws.onopen = () => { if (this.ws === ws) { this.lastRecv = this.t.now(); this.send(this.spectator ? { t: 'join', name: this.name, spectator: true } : { t: 'join', name: this.name, id: this.token, host: this.host }); } };
+    // a host sends the room's secret (from its welcome) on every join, so a reconnect after a drop gets its room back
+    ws.onopen = () => { if (this.ws === ws) { this.lastRecv = this.t.now(); this.send(this.spectator ? { t: 'join', name: this.name, spectator: true } : { t: 'join', name: this.name, id: this.token, host: this.host, ...(this.host && this.hostKey ? { hostKey: this.hostKey } : {}) }); } };
     ws.onmessage = e => { if (this.ws === ws) this.receive(e.data); };
     ws.onerror = () => { /* a failed socket is followed by close */ };
     ws.onclose = () => { if (this.ws === ws) { this.ws = null; this.lost(); } };
@@ -70,6 +71,7 @@ export class RelayClient {
       case 'welcome': {
         const first = !this.everWelcomed;
         this.welcomed = this.everWelcomed = true; this.attempt = 0;
+        if (typeof m.hostKey === 'string') this.hostKey = m.hostKey;      // only the host that made the room gets one
         this.startPing();
         this.handlers.onWelcome?.(m, first);
         break;
@@ -169,6 +171,7 @@ export class RelayRoom {
     this.isHost = false;
     this.client = null;
     this.me = null;
+    this.hostPeer = null;      // the host's peer id ('r<n>') as the relay reported it in the welcome, or the host's own join
     this.reconnecting = false;
     this.rtt = null;
     this.spectators = 0;       // how many people are watching (the live timing page): while it is above 0 we send state and telemetry even when alone
@@ -231,6 +234,9 @@ export class RelayRoom {
   }
 
   refused(kind, tries) {
+    // a code another host has: try another code, unless this host already had its room (then it has lost the room, see below)
+    const had = !!(this.client && this.client.hostKey);
+    if (kind === 'taken' && this.isHost && had) { this.fail('Your room was taken over while you were away (the host key did not match). Start a new room.', 'taken'); return; }
     if (kind === 'taken' && this.isHost && tries < 4) { const name = this.name; this.teardown(); this.reset(); this.host(name, tries + 1); return; }
     if (kind === 'nohost') this.fail(`No room with the code ${this.code}. Check the letters, or ask the host to start it again.`, 'nohost');
     else if (kind === 'full') this.fail(`Room ${this.code} is full (${MAX_PLAYERS} players). Playing single player.`, 'full');
@@ -240,6 +246,7 @@ export class RelayRoom {
   welcome(m, first) {
     this.timers.clearTimeout(this.timer);
     this.me = m.you; this.reconnecting = false;
+    this.hostPeer = typeof m.host === 'number' ? peerId(m.host) : null;
     this.spectators = Math.max(0, Math.min(50, Math.round(+m.spectators || 0)));
     const seen = new Set();
     for (const p of Array.isArray(m.players) ? m.players.slice(0, MAX_PLAYERS) : []) {
@@ -258,6 +265,7 @@ export class RelayRoom {
   control(m) {
     if (m.t === 'peer' && typeof m.id === 'number' && m.id !== this.me && this.peers.size < MAX_PLAYERS - 1) {
       const id = peerId(m.id);
+      if (m.host === true) this.hostPeer = id;
       this.peers.set(id, { id, name: cleanName(m.name) || 'Player', hello: true });
       this.changed();
       this.sendLivery();      // the newcomer has not seen our paint yet
@@ -287,6 +295,7 @@ export class RelayRoom {
 
   dropPeer(id, announce) {
     if (!this.peers.delete(id)) return;
+    if (this.hostPeer === id) this.hostPeer = null;
     if (this.ghosts) this.ghosts.remove(id);
     if (announce && (this.phase === 'joined' || this.phase === 'hosting')) this.status(this.phase, this.roomText());
     this.onPlayers();

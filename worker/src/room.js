@@ -1,5 +1,6 @@
-// The Durable Object: one instance per room code. It holds nothing but the live sockets (WebSocket Hibernation API),
-// so it can be evicted from memory between messages, plus a small snapshot for new spectators (memory only). All the rules are in protocol.js.
+// The Durable Object: one instance per room code. It holds the live sockets (WebSocket Hibernation API), so it can be evicted
+// from memory between messages, plus a small snapshot for new spectators (memory only), and the room's host key (storage, so a
+// host who reconnects after a drop still has it). All the rules are in protocol.js.
 // It also tells the lobby directory (directory.js) when players join or leave and every 30 s while occupied.
 import { onOpen, onMessage, onClose, sweep, lobbyEntry, Publisher, MAX_PLAYERS, MAX_SPECTATORS, CODE_RE } from './protocol.js';
 
@@ -23,7 +24,10 @@ export class Room {
     this.room = {
       conns: () => this.ctx.getWebSockets().map(ws => this.wrap(ws)), cfg,
       notify: (urgent, now) => { this.pub.poke(urgent, now); this.ctx.waitUntil(this.arm()); },
+      // the host secret (protocol.js): written when the room is made, read back before any event after hibernation
+      saveKey: key => this.ctx.waitUntil(this.ctx.storage.put('hostKey', key)),
     };
+    this.ctx.blockConcurrencyWhile(async () => { this.room.hostKey = await this.ctx.storage.get('hostKey'); });
     // woken from hibernation with players in the room: the directory already lists us
     if (this.room.conns().some(c => typeof c.att.id === 'number')) this.pub.listed = true;
   }

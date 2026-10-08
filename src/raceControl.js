@@ -6,6 +6,7 @@
 //   race  host -> all     { t:'race', laps, assists, racingLine, grid: [ids in slot order], startAt, hold }
 //   env   host -> all     { t:'env', weather, time }   the room's weather and time of day (visual only); also inside `race`. Old clients ignore both.
 //                         startAt = lights out on the HOST's clock (ms); hold = the random hold before it, so everyone's lights look the same
+//   Only the host's id counts for clkr, env and race (a guest's copy is ignored, whichever way it got here).
 //
 // A guest takes 3 clock samples when it joins (shortest round trip wins, see start.js estimateOffset) and converts startAt to its
 // own clock with that offset. A guest that gets no reply trusts its own clock. Ids are the same on every machine (Multiplayer.selfId).
@@ -92,16 +93,19 @@ export function createRaceControl(o) {
     // everything that arrives from the room
     handle(m, from) {
       if (!m || typeof m !== 'object') return;
+      // the host's messages (weather, race start, clock reply) only count from the host. from is undefined only when the transport
+      // has checked the sender already (the relay drops these frames from guests), so it is let through
+      const fromHost = from === undefined || from === mp.hostPeerId;
       if (m.t === 'clk') {
         if (mp.isHost && Number.isFinite(+m.n) && Number.isFinite(+m.c)) mp.sendControl({ t: 'clkr', n: +m.n, c: +m.c, h: now() }, from);
       } else if (m.t === 'clkr') {
-        if (mp.isHost || !Number.isFinite(+m.c) || !Number.isFinite(+m.h)) return;
+        if (mp.isHost || !fromHost || !Number.isFinite(+m.c) || !Number.isFinite(+m.h)) return;
         samples.push(sampleOffset(+m.c, +m.h, now()));
         est = estimateOffset(samples);
       } else if (m.t === 'env') {
-        if (!mp.isHost) hostEnv = cleanEnv(m);
+        if (!mp.isHost && fromHost) hostEnv = cleanEnv(m);
       } else if (m.t === 'race') {
-        if (mp.isHost) return;
+        if (mp.isHost || !fromHost) return;
         const msg = cleanRaceMessage(m);
         if (!msg || msg.startAt === lastStartAt) return;
         if ('weather' in m || 'time' in m) hostEnv = cleanEnv(m);

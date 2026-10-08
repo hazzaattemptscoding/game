@@ -1,6 +1,6 @@
 // Relay tests: the protocol logic (worker/src/protocol.js, shared by the Cloudflare Durable Object and worker/dev-relay.mjs)
 // and an end to end run of dev-relay.mjs with three real WebSocket clients (Node's built in WebSocket).
-import { MAX_PLAYERS, MAX_BYTES, RATE, IDLE_MS, onOpen, onMessage, onClose, sweep, parseRoute, originAllowed, cleanName } from '../worker/src/protocol.js';
+import { MAX_PLAYERS, MAX_BYTES, RATE, IDLE_MS, onOpen, onMessage, onClose, sweep, parseRoute, originAllowed, cleanName, lobbyEntry, Directory } from '../worker/src/protocol.js';
 import { startRelay } from '../worker/dev-relay.mjs';
 
 let fails = 0, passes = 0;
@@ -17,7 +17,7 @@ function makeRoom(t0 = 1000) {
     list.push(c); onOpen(c, t0); return c;
   };
   room.say = (c, o, now = t0) => onMessage(room, c, typeof o === 'string' || o instanceof Uint8Array ? o : JSON.stringify(o), now);
-  room.join = (name, id, host = false, now = t0) => { const c = room.connect(); room.say(c, { t: 'join', name, id, host }, now); return c; };
+  room.join = (name, id, host = false, now = t0, hostKey) => { const c = room.connect(); room.say(c, { t: 'join', name, id, host, ...(hostKey !== undefined ? { hostKey } : {}) }, now); return c; };
   room.drop = c => { c.dead = true; onClose(room, c); };
   return room;
 }
@@ -27,7 +27,9 @@ const types = c => c.out.map(m => m.t || 'bin');
 {
   const r = makeRoom();
   const a = r.join('Alice', 'ta', true);
-  eq(a.out[0], { t: 'welcome', you: 0, host: 0, players: [] }, 'host welcome');
+  const { hostKey: aKey, ...aWelcome } = a.out[0];
+  eq(aWelcome, { t: 'welcome', you: 0, host: 0, players: [] }, 'host welcome');
+  check(typeof aKey === 'string' && aKey.length === 32, 'the host welcome also carries the room secret');
   const b = r.join('Bob', 'tb');
   eq(b.out[0], { t: 'welcome', you: 1, host: 0, players: [{ id: 0, name: 'Alice', host: true }] }, 'guest welcome lists the others, not itself');
   eq(a.out[1], { t: 'peer', id: 1, name: 'Bob', host: false }, 'existing player told about the joiner');
@@ -83,8 +85,8 @@ const types = c => c.out.map(m => m.t || 'bin');
   check(h2.closed?.code === 4003, 'and is closed');
   const g2 = r.join('Guest', 'g1');
   eq(g2.out[0].t, 'welcome', 'guest joins once a host exists');
-  const h1b = r.join('Host', 'h1', true);
-  eq(h1b.out[0].you, 0, 'the host reconnecting with its token keeps being host');
+  const h1b = r.join('Host', 'h1', true, 1000, h.out[0].hostKey);
+  eq(h1b.out[0].you, 0, 'the host reconnecting with its token and secret keeps being host');
   r.drop(h1b);
   const late = r.join('Late', 'l1');
   eq(types(late), ['nohost'], 'after the host left a new guest gets nohost');
@@ -102,6 +104,57 @@ const types = c => c.out.map(m => m.t || 'bin');
   const m = [h.out.length, g1.out.length, g2.out.length];
   eq(r.say(g1, { t: 'env', weather: 'heavyrain', time: 'night' }), 'ignored', 'an env message from a guest is ignored');
   eq([h.out.length, g1.out.length, g2.out.length], m, 'and reaches nobody');
+  // the race start is the host's too: a guest's race frame is not forwarded, the host's is
+  eq(r.say(g2, { t: 'race', laps: 1, startAt: 5, grid: ['g2'] }), 'ignored', 'a race frame from a guest is ignored');
+  eq([h.out.length, g1.out.length, g2.out.length], m, 'and reaches nobody, not even the other guests');
+  eq(r.say(h, { t: 'race', laps: 3, startAt: 9, grid: ['h'] }), 'forwarded', 'the host race frame is forwarded');
+  eq(g1.out.at(-1), { t: 'race', laps: 3, startAt: 9, grid: ['h'], from: 0 }, 'to every guest, tagged with the host id');
+  eq(g2.out.at(-1), { t: 'race', laps: 3, startAt: 9, grid: ['h'], from: 0 }, 'and to the other one too');
+}
+{ // the host secret: a room that has had a host keeps its key, and only the host that made the room gets it
+  const r = makeRoom();
+  const h = r.join('Host', 'h1', true);
+  const key = h.out[0].hostKey;
+  check(typeof key === 'string' && /^[0-9a-f]{32}$/.test(key), 'the first host gets a 128 bit secret in its welcome');
+  check(r.hostKey === key, 'the room keeps the secret (on the room object, which the Durable Object stores)');
+  const g = r.join('Guest', 'g1');
+  const shown = s => JSON.stringify(s);
+  check(!shown(g.out).includes(key) && !shown(h.out.slice(1)).includes(key), 'guests never see the secret, not even in the peer announcements');
+  r.say(h, { t: 'hello', x: 1 }); r.say(g, { t: 'hello', x: 2 });
+  check(!shown(g.out).includes(key), 'nor in what the room forwards to them');
+  const ghost = r.join('Thief', 't1', true);
+  eq(types(ghost), ['taken'], 'while the host is connected a second host is refused');
+  r.drop(h);
+  const thief = r.join('Thief', 't2', true);
+  eq(types(thief), ['taken'], 'the host dropped for a moment: a host join without the secret is refused');
+  check(thief.closed?.code === 4003 && !thief.att.host, 'and the thief is closed without a slot');
+  const wrong = r.join('Thief', 't3', true, 1000, 'not the key');
+  eq(types(wrong), ['taken'], 'a wrong secret is refused too');
+  const nothing = r.join('Thief', 't4', true, 1000, '');
+  eq(types(nothing), ['taken'], 'an empty secret is refused too');
+  check(!r.conns().some(c => c.att.tok === 't2' || c.att.tok === 't3' || c.att.tok === 't4'), 'no refused join left a socket behind');
+  const back = r.join('Host', 'h1', true, 1000, key);
+  eq(back.out[0].you, 0, 'the real host comes back with the secret and is host again');
+  check(back.out[0].hostKey === undefined, 'a host that rejoins is not sent the secret again');
+  eq(g.out.at(-1).t, 'peer', 'the guest is still there');
+  check(g.out.some(m => m.t === 'bye' && m.id === 0) && g.out.some(m => m.t === 'peer' && m.id === 0 && m.host === true), 'the guest saw the host leave and come back');
+  check(!shown(g.out).includes(key), 'and still has not seen the secret');
+  // the room empties: the secret stays with the room (storage), so nobody else can take it
+  r.drop(back); r.drop(g);
+  eq(types(r.join('Late', 'l9', true)), ['taken'], 'an empty room with a secret still refuses a host without it');
+  const again = r.join('Host', 'h1', true, 1000, key);
+  eq(again.out[0].you, 0, 'and the real host can still come back to it');
+  // the directory: the entry for the room is what the lobby lists, and it has no secret
+  const e = lobbyEntry(r);
+  const d = new Directory(); d.update('ABCDE', e, 1000);
+  check(e && !JSON.stringify([e, d.list(1000), d.get('ABCDE', 1000)]).includes(key), 'the lobby listing never has the secret');
+  eq(lobbyEntry({ conns: () => [] }), null, 'a room with nobody in it is not listed');
+}
+{ // a fresh room: the first host join makes the secret, and each room has its own
+  const r1 = makeRoom(), r2 = makeRoom();
+  const k1 = r1.join('A', 'a', true).out[0].hostKey, k2 = r2.join('B', 'b', true).out[0].hostKey;
+  check(k1 && k2 && k1 !== k2, 'every room gets its own secret');
+  eq(types(r2.join('X', 'x', true)), ['taken'], 'the first host of a room makes it; a second is refused');
 }
 { // full room
   const r = makeRoom();
@@ -230,6 +283,12 @@ try {
     check(P.bins.every(b => b.length === 4 && b[0] === 1 && b[3] === 200 + (b[2] % 50)), `${n}: binary has the 1 byte sender prefix`);
   }
   check(!B.msgs.some(m => m.t === 'seq') && B.bins.length === 0, 'sender gets none of its own');
+  // the race start: a guest's race frame goes nowhere, the host's reaches the guests
+  B.send({ t: 'race', startAt: 1, grid: [] }); A.send({ t: 'race', startAt: 2, grid: [] });
+  check(await C.until(() => C.msgs.some(m => m.t === 'race')), 'the host race frame reaches a guest');
+  await new Promise(r => setTimeout(r, 100));
+  check(!A.msgs.some(m => m.t === 'race') && !C.msgs.some(m => m.t === 'race' && m.from === 1), 'a guest race frame is not forwarded to the host or the other guest');
+  check(C.msgs.filter(m => m.t === 'race').length === 1 && C.msgs.find(m => m.t === 'race').from === 0, 'and only the host one arrived, tagged with the host id');
   // ping and pong over the wire
   B.send({ t: 'ping', n: 123 });
   check(await B.until(() => B.msgs.some(m => m.t === 'pong' && m.n === 123)), 'ping is answered with pong');
@@ -251,15 +310,27 @@ try {
   const nine = client('EIGHT', { t: 'join', name: 'P9', id: 'p9' });
   check(await nine.until(() => nine.closed !== null), 'the ninth is closed');
   eq([nine.msgs.map(m => m.t), nine.closed], [['full'], 4001], 'with full and code 4001');
+  // the host secret over the wire: only the host's welcome has it, the lobby listing does not, and a host that dropped comes back only with it
+  const key = A.msgs.find(m => m.t === 'welcome').hostKey;
+  check(typeof key === 'string' && key.length === 32, 'the host got the secret in its welcome');
+  check(!B.msgs.some(m => JSON.stringify(m).includes(key)) && !C.msgs.some(m => JSON.stringify(m).includes(key)), 'guests never see the secret');
+  const lobby = await (await fetch(`http://127.0.0.1:${relay.port}/lobbies`)).text();
+  check(lobby.includes('"QWERT"') && !lobby.includes(key), 'the lobby lists the room and not its secret');
+  A.ws.close();
+  check(await B.until(() => B.msgs.some(m => m.t === 'bye' && m.id === 0)), 'the host dropped: the guest is told');
+  const T = client('QWERT', { t: 'join', name: 'Thief', id: 'thief', host: true });
+  check(await T.until(() => T.closed !== null) && T.closed === 4003 && T.msgs.map(m => m.t).join() === 'taken', 'with the host away, a host join without the secret is refused (4003)');
+  const A2 = client('QWERT', { t: 'join', name: 'Alice', id: 'a1', host: true, hostKey: key });
+  check(await A2.until(() => A2.msgs.some(m => m.t === 'welcome')) && A2.msgs[0].you === 0 && A2.msgs[0].host === 0, 'the host comes back with the secret, as host');
   // oversized frame from a real client is dropped and the connection survives
   B.send(JSON.stringify({ t: 'big', pad: 'x'.repeat(3000) })); B.send({ t: 'after' });
-  check(await A.until(() => A.msgs.some(m => m.t === 'after')) && !A.msgs.some(m => m.t === 'big'), 'oversized frame dropped, the next one arrives');
+  check(await A2.until(() => A2.msgs.some(m => m.t === 'after')) && !A2.msgs.some(m => m.t === 'big'), 'oversized frame dropped, the next one arrives');
   // a bad origin is refused at the handshake
   const refused = await new Promise(res => { const s = new WebSocket(`${base}/room/QWERT`, { headers: { Origin: 'http://evil.example' } }); s.addEventListener('open', () => res('open')); s.addEventListener('error', () => res('refused')); s.addEventListener('close', () => res('refused')); });
   check(refused === 'refused', 'a websocket from an unlisted origin is refused: ' + refused);
   const goodOrigin = await new Promise(res => { const s = new WebSocket(`${base}/room/QWERT`, { headers: { Origin: 'http://ok.example' } }); s.addEventListener('open', () => { s.close(); res('open'); }); s.addEventListener('error', () => res('refused')); });
   check(goodOrigin === 'open', 'a websocket from a listed origin is accepted: ' + goodOrigin);
-  for (const p of [A, B, X, ...room8]) p.ws.close();
+  for (const p of [A2, B, X, ...room8]) p.ws.close();
   await new Promise(r => setTimeout(r, 50));
   check(relay.rooms.size === 0, 'rooms disappear when empty (nothing kept): ' + relay.rooms.size);
 } catch (e) { fails++; console.log('  exception', e); }

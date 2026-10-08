@@ -189,10 +189,15 @@ check(MAX_SPECTATORS === 50, 'a room holds 50 spectators');
   const r3 = makeRoom();
   const hc = r3.connect(); r3.say(hc, { t: 'join', name: 'H', id: 'h', host: true, meta: { mode: 'Time trial', laps: 3 } });
   eq(lobbyEntry(r3).mode, 'Time trial', 'meta in the host join is taken');
-  // a new room starts clean
+  // the room keeps its host key after the host leaves: nobody else can take it, so the old room stays empty
   r3.drop(hc);
   const hc2 = r3.join('H2', 'h2', true);
-  eq(lobbyEntry(r3).mode, 'Free practice', 'a new room starts with no old details');
+  eq(hc2.closed && hc2.closed.reason, 'taken', 'a new host cannot take a room that has had a host, without its key');
+  check(lobbyEntry(r3) === null, 'and the room is empty in the lobby');
+  // a fresh room starts clean
+  const r4 = makeRoom();
+  r4.join('H3', 'h3', true);
+  eq(lobbyEntry(r4).mode, 'Free practice', 'a new room starts with no old details');
 }
 
 // ================= 2. directory =================

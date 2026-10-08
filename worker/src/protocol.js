@@ -4,20 +4,23 @@
 // Wire format (one WebSocket per player, to wss://HOST/room/<CODE>, CODE = 5 letters A to Z):
 //
 //  client -> relay (JSON text frames)
-//    {t:'join', name, id, host?}   first frame. id is a random token the client keeps for the session, so a reconnect
+//    {t:'join', name, id, host?, hostKey?}   first frame. id is a random token the client keeps for the session, so a reconnect
 //                                  takes its old slot back. host:true marks the room as hosted (the room's creator).
+//                                  The first host:true join of a room gets a host key back in its welcome; every later host:true
+//                                  join must send it as hostKey (see join below).
 //    {t:'ping', n}                 every 15 s. Answered to the sender only with {t:'pong', n}. Also keeps the socket alive.
 //    {to?, ...anything else}       forwarded to all OTHER players as {...message, from:<sender id>}; with `to:<id>` only to that player.
 //  client -> relay (binary frames)  any bytes (car state). Forwarded to all OTHER players as [sender id (1 byte)] + the bytes.
 //
 //  relay -> client (JSON text frames)
-//    {t:'welcome', you, host, players:[{id,name,host}]}   you = your player id (0 to 7), host = the host's id or null,
-//                                  players = everybody ELSE already in the room.
+//    {t:'welcome', you, host, players:[{id,name,host}], hostKey?}   you = your player id (0 to 7), host = the host's id or null,
+//                                  players = everybody ELSE already in the room. hostKey only in the welcome of the host that made
+//                                  the room: it is never sent to anybody else, nor listed in the directory.
 //    {t:'peer', id, name, host}    somebody joined.      {t:'bye', id}    somebody left.
 //    {t:'pong', n}                 reply to ping.
 //    {t:'full'}                    the room has 8 players, socket is closed (4001).
 //    {t:'nohost'}                  a guest joined a room nobody is hosting, socket is closed (4002).
-//    {t:'taken'}                   host:true join on a room that already has a host, socket is closed (4003).
+//    {t:'taken'}                   host:true join on a room that already has a host, or without the room's host key, socket is closed (4003).
 //  Player ids are slot numbers 0 to 7 and are reused after a player leaves (always preceded by its {t:'bye'}).
 //
 // Spectators (the live timing page, live.html): {t:'join', spectator:true, name?} or ?spectator=1 on the socket URL. They never count
@@ -39,8 +42,9 @@
 // sockets with no traffic for 60 s closed (4008), garbage dropped silently. Nothing is stored beyond the live sockets,
 // the snapshot for new spectators (memory only) and the lobby directory.
 //
-// A "room" given to these functions is { conns() } and a "conn" is { att, setAtt(obj), mem, send(stringOrBytes), close(code, reason) }.
+// A "room" given to these functions is { conns(), hostKey?, saveKey?(key) } and a "conn" is { att, setAtt(obj), mem, send(stringOrBytes), close(code, reason) }.
 // att is the small per-socket record that survives hibernation (id, name, tok, host, last); mem is a plain object that does not.
+// room.hostKey is the room's host secret, kept by the room's storage (saveKey writes it); a room that has none has never had a host.
 
 export const MAX_PLAYERS = 8;
 export const MAX_BYTES = 2048;
@@ -144,6 +148,7 @@ export function onMessage(room, conn, data, now) {
   if (isSpec(conn)) return 'ignored';
   if (m.t === 'meta') return metaFromHost(room, conn, m, now);
   if (m.t === 'env' && !conn.att.host) return 'ignored';       // the room's weather is the host's to set; a guest's env frame is not forwarded
+  if (m.t === 'race' && !conn.att.host) return 'ignored';      // so is the race start (src/raceControl.js); a guest's race frame is not forwarded
   if ((m.t === 'scr' || m.t === 'scrs' || m.t === 'scrg') && !conn.att.host) return 'ignored';   // the gantry screen is the host's too (a guest with access sends scrc)
   if (RESERVED.has(m.t)) return 'ignored';
   const st = store(room), from = conn.att.id;
@@ -184,6 +189,20 @@ function metaFromHost(room, conn, m, now) {
   return 'forwarded';
 }
 
+// The host secret. Random hex, 128 bits, from the platform's crypto (Workers and Node both have it).
+export function makeHostKey() {
+  const b = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(b);
+  return Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+}
+// Compares without stopping at the first different character. A missing or non-text key never matches.
+function sameKey(given, key) {
+  if (typeof given !== 'string' || given.length !== key.length) return false;
+  let diff = 0;
+  for (let i = 0; i < key.length; i++) diff |= given.charCodeAt(i) ^ key.charCodeAt(i);
+  return diff === 0;
+}
+
 function join(room, conn, m, now) {
   const all = joined(room).filter(c => c !== conn && c.att.id !== undefined);
   const tok = (typeof m.id === 'string' || typeof m.id === 'number') ? String(m.id).slice(0, 40) : '';
@@ -192,8 +211,13 @@ function join(room, conn, m, now) {
   const hostConn = all.find(c => c.att.host);
   const refuse = (t, code) => { sendJSON(conn, { t }); conn.close(code, t); return t; };
   if (host && hostConn && hostConn !== old) return refuse('taken', CLOSE.taken);
+  // a room that has had a host keeps its key: a host join needs it, so a host who dropped can come back but nobody else can take the room
+  if (host && room.hostKey && !sameKey(m.hostKey, room.hostKey)) return refuse('taken', CLOSE.taken);
   if (!host && !hostConn) return refuse('nohost', CLOSE.nohost);
   if (all.length - (old ? 1 : 0) >= MAX_PLAYERS) return refuse('full', CLOSE.full);
+  // the first host join makes the room and its key, which goes back to that host only
+  let key = null;
+  if (host && !room.hostKey) { key = room.hostKey = makeHostKey(); if (typeof room.saveKey === 'function') room.saveKey(key); }
   let id;
   if (old) { id = old.att.id; old.setAtt({}); old.close(CLOSE.replaced, 'replaced'); }
   else { const used = new Set(all.map(c => c.att.id)); id = 0; while (used.has(id)) id++; }
@@ -207,6 +231,7 @@ function join(room, conn, m, now) {
   const specs = spectators(room).length;
   const welcome = { t: 'welcome', you: id, host: hostNow, players: others.map(c => ({ id: c.att.id, name: c.att.name, host: !!c.att.host })) };
   if (specs) welcome.spectators = specs;
+  if (key) welcome.hostKey = key;
   sendJSON(conn, welcome);
   const peer = { t: 'peer', id, name, host };
   if (!old) { for (const c of others) sendJSON(c, peer); for (const c of spectators(room)) sendJSON(c, peer); }

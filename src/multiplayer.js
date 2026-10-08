@@ -587,8 +587,9 @@ export class Multiplayer {
 
   // --- control messages: one-off JSON that is not car state (clock samples, the host's race start). onControl(msg, fromId) is set by
   // the game (src/raceControl.js). Ids are the same on every machine: the peer id, or 'r<n>' over the relay. ---
-  // the host's id as the room sees it: PeerJS rooms are named after the host; on the relay the host is the first to join, id 0
-  get hostPeerId() { return this.relayRoom ? 'r0' : hostId(this.code); }
+  // the host's id as the room sees it: PeerJS rooms are named after the host; on the relay the relay says which slot the host has
+  // (null while there is no host). A message's `from` is compared with this to tell the host's messages from a guest's.
+  get hostPeerId() { return this.relayRoom ? this.relayRoom.hostPeer : hostId(this.code); }
   get selfId() { return this.relayRoom ? (this.relayRoom.me == null ? '' : 'r' + this.relayRoom.me) : (this.peer ? this.peer.id : ''); }
   // to everybody in the room (toId undefined) or one player; returns false when there is nobody to send to
   sendControl(obj, toId) {

@@ -12,6 +12,7 @@ import { encodeState, decodeState, stateFromCar, StateBuffer, Ghosts, cleanName,
 import { defaultLivery, liveryEquals } from '../src/livery.js';
 import { fakeNetwork } from './lib/fakepeer.js';
 import { Multiplayer, makeCode, cleanCode, parseBroker, brokerFromSearch, BROKER, hostId, DEFAULT_ICE_SERVERS, applyConfigFile, cleanIceServers, fetchConfigFile, resolveConfig, loadConfig, hasTurn, rtcConfig, newDiag, diagText, failureReason, NO_OUTSIDE, NEEDS_RELAY } from '../src/multiplayer.js';
+import { createRaceControl } from '../src/raceControl.js';
 
 const fails = [];
 const check = (ok, msg) => { if (!ok) fails.push(msg); };
@@ -222,6 +223,22 @@ const player = (Peer, name, statuses = []) => {
   h.mp.receive(kp.id, 'ctl', { t: 'peers', ids: ['evil'] }); h.mp.receive(kp.id, 'ctl', 'junk'); h.mp.receive(kp.id, 'st', [1, 2, 3]); h.mp.receive('nobody', 'st', encodeState(mkState(0)));
   check(h.ghosts.size === 0, 'junk messages create no cars');
   h.mp.leave(); k.mp.leave(); await wait(300);
+}
+{
+  // the race and the weather come from the host only, over peer to peer too: a guest's copy is ignored by the others
+  const Peer = fakeNetwork();
+  const h = player(Peer, 'H'), g = player(Peer, 'G'), k = player(Peer, 'K');
+  await h.mp.host('H'); await wait(20); await g.mp.join(h.mp.code, 'G'); await wait(40); await k.mp.join(h.mp.code, 'K'); await wait(60);
+  const rig = p => { const got = { races: [] }; const rc = createRaceControl({ mp: p.mp, now: () => Date.now(), random: () => 0.5, setTimeout: f => setTimeout(f, 0), onRace: r => got.races.push(r) }); p.mp.onControl = (m, id) => rc.handle(m, id); return { rc, got }; };
+  const rg = rig(g), rk = rig(k);
+  check(h.mp.hostPeerId === hostId(h.mp.code) && g.mp.hostPeerId === hostId(h.mp.code), 'peer to peer: the host id is the room id on every machine');
+  const race = { t: 'race', laps: 2, grid: [], startAt: Date.now() + 60000, hold: 1500 };
+  g.mp.sendControl({ ...race }); g.mp.sendControl({ t: 'env', weather: 'fog', time: 'night' }); await wait(40);
+  check(rk.got.races.length === 0 && rk.rc.env === null, 'a guest race and weather reach the other guest and are ignored there');
+  check(rg.got.races.length === 0, 'and the sender does not hear itself');
+  h.mp.sendControl({ ...race }); h.mp.sendControl({ t: 'env', weather: 'lightrain', time: 'dusk' }); await wait(40);
+  check(rk.got.races.length === 1 && rk.rc.env && rk.rc.env.weather === 'lightrain' && rg.got.races.length === 1, 'the host race and weather are taken by the guests');
+  h.mp.leave(); g.mp.leave(); k.mp.leave(); await wait(300);
 }
 {
   // broker settings
