@@ -1,5 +1,6 @@
-// Which parts of the HUD are shown, the HUD scale and the track map options. Plain data and functions with no page needed,
-// so tools/hudsettings.js tests them in node. The settings object keeps three keys: `hud` (one on/off flag per element), `hudScale` (percent) and `trackMap` (the minimap options, src/miniMap.js).
+// Which parts of the HUD are shown, the HUD scale, the track map options and the ping readout. Plain data and functions with no page needed,
+// so tools/hudsettings.js tests them in node. The settings object keeps these keys: `hud` (one on/off flag per element), `hudScale` (percent),
+// `trackMap` (the minimap options, src/miniMap.js) and `showPing` (the relay round trip in the top corner while online, on by default).
 // Anything missing or out of range in a saved file falls back to the default, so saves from before these keys existed still load.
 
 // [key, label, note]. The order is the order of the Interface screen.
@@ -60,13 +61,17 @@ export function normaliseTrackMap(raw) {
 
 export const normaliseScale = v => Math.round(num(v, SCALE_MIN, SCALE_MAX, 100));
 
-// the three settings keys, filled in. Called by migrateSettings for every save.
+// the settings keys above, filled in. Called by migrateSettings for every save.
 export function normaliseHudSettings(s) {
   s.hud = normaliseHud(s.hud);
   s.trackMap = normaliseTrackMap(s.trackMap);
   s.hudScale = normaliseScale(s.hudScale);
+  s.showPing = bool(s.showPing, true);
   return s;
 }
+
+// The colour step of the ping readout: 'good' under 60 ms, 'mid' under 120, 'bad' from 120 up.
+export const pingTone = ms => (ms < 60 ? 'good' : ms < 120 ? 'mid' : 'bad');
 
 const sameElements = (a, b) => HUD_KEYS.every(k => a[k] === b[k]);
 

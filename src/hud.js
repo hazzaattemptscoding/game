@@ -3,7 +3,7 @@
 // with position, minimap and weather comes in phase 4.
 
 import { SURF, SURF_NAMES } from './track.js';
-import { hudClasses, HUD_KEYS } from './hudSettings.js';
+import { hudClasses, HUD_KEYS, pingTone } from './hudSettings.js';
 import { MINISECTORS } from './minisectors.js';
 
 const SURF_NAME = SURF_NAMES;
@@ -20,6 +20,7 @@ const cls = (el, v) => { if (el._c !== v) { el._c = v; el.className = v; } };
 const style = (el, v) => { if (el._s !== v) { el._s = v; el.style.transform = v; } };
 
 const fmtDelta = d => (d < 0 ? '-' : '+') + Math.abs(d).toFixed(3);
+const PING_COLOUR = { good: 'var(--green)', mid: 'var(--amber)', bad: 'var(--red)' };
 
 export class Hud {
   constructor(root, settings) {
@@ -37,6 +38,7 @@ export class Hud {
         <div class="hud-limits" id="h-limits" hidden></div>
         <div class="hud-stand" id="h-stand" hidden></div>
         <div class="hud-fps" id="h-fps">FPS 0</div>
+        <div id="h-ping" style="margin-top:4px;font-size:13px;opacity:.8" hidden></div>
       </div>
       <div class="hud-flash" id="h-flash"></div>
       <div class="hud-warn" id="h-warn"></div>
@@ -57,10 +59,11 @@ export class Hud {
       <pre class="hud-debug" id="h-debug"></pre>
       <div class="hud-help" id="h-help">Arrows or WASD to drive · Space for DRS · R reset · C camera · L racing line · Esc menu</div>`;
     const $ = id => root.querySelector('#' + id);
-    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), mini: $('h-mini'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), live: $('h-live'), liveT: $('h-live-t'), liveBar: $('h-live-bar'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr') };
+    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), mini: $('h-mini'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), ping: $('h-ping'), live: $('h-live'), liveT: $('h-live-t'), liveBar: $('h-live-bar'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr') };
     this.root = root;
     this._layout = '';
     this.perf = 'FPS';    // the FPS readout text, set from the loop (src/main.js)
+    this.pingOf = null;   // () => the relay round trip in ms or null, set by src/main.js
     this.flashUntil = 0;
     this.warnUntil = 0;
     this.warnLap = -1;   // the lap the counter was last drawn for
@@ -102,6 +105,15 @@ export class Hud {
     const e = this.el, s = this.settings;
     this.applyLayout();
     if (s.hud.fps) text(e.fps, this.perf);
+    // the relay round trip while online, small and coloured by its step (hudSettings.js pingTone)
+    const rtt = s.showPing !== false && this.pingOf ? this.pingOf() : null;
+    if (rtt == null) { if (!e.ping.hidden) e.ping.hidden = true; }
+    else {
+      if (e.ping.hidden) e.ping.hidden = false;
+      text(e.ping, `${rtt} ms`);
+      const col = PING_COLOUR[pingTone(rtt)];
+      if (e.ping.dataset.c !== col) { e.ping.dataset.c = col; e.ping.style.color = col; }
+    }
     if (input && (s.hud.pedals || s.hud.inputOverlay)) {
       style(e.thr, `scaleY(${Math.max(0, Math.min(1, input.throttle)).toFixed(2)})`);
       style(e.brk, `scaleY(${Math.max(0, Math.min(1, input.brake)).toFixed(2)})`);

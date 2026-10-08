@@ -221,6 +221,9 @@ function settingsScreen() {
             for (const k of keys) add(grp, onOff(info[k][1], () => settings.hud[k], v => { settings.hud[k] = v; }, info[k][2]));
             p.append(grp);
           }
+          const online = h('div', 'm-group', h('div', 'm-gtitle', 'Online'));
+          add(online, onOff('Ping readout', () => settings.showPing !== false, v => { settings.showPing = v; }, 'The round trip to the relay in ms, in the top corner while online. Green under 60 ms, amber under 120, red above.'));
+          p.append(online);
           const tm = settings.trackMap, mg = h('div', 'm-group', h('div', 'm-gtitle', 'Track map'));
           const mrow = row => add(mg, row);
           const set = (k, v) => { tm[k] = v; persist(); sync(); };

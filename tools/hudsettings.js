@@ -4,8 +4,9 @@
 //   3. presets: full, minimal and off, detection, and the H key cycle
 //   4. the hide classes the HUD puts on the page
 //   5. the track map: option checks, view transform, corner numbers, bounds
+//   6. the ping readout: on by default, saved, and its colour steps
 import { migrateSettings, loadSettings } from '../src/settings.js';
-import { HUD_KEYS, FULL, MINIMAL, OFF, DEFAULT_TRACK_MAP, normaliseHudSettings, detectPreset, applyPreset, cyclePreset, hudClasses, hudOn, SCALE_MIN, SCALE_MAX } from '../src/hudSettings.js';
+import { HUD_KEYS, FULL, MINIMAL, OFF, DEFAULT_TRACK_MAP, normaliseHudSettings, detectPreset, applyPreset, cyclePreset, hudClasses, hudOn, SCALE_MIN, SCALE_MAX, pingTone } from '../src/hudSettings.js';
 import { viewTransform, project, trackBounds, cornerMarks, LOCAL_SPAN } from '../src/miniMap.js';
 import { buildTrack } from '../src/track.js';
 
@@ -75,6 +76,11 @@ const m = normaliseHudSettings({}); applyPreset(m, 'minimal');
 check(hudClasses(m).includes('hx-no-sectors') && hudClasses(m).includes('hx-no-assists') && !hudClasses(m).includes('hx-no-speed') && !hudClasses(m).includes('hx-no-lights'), 'minimal hides sectors and assists but keeps the speed block and its lights');
 const o = normaliseHudSettings({}); applyPreset(o, 'off');
 check(hudClasses(o).length === HUD_KEYS.length + 1 && hudClasses(o).includes('hx-no-lights'), 'off hides every part and the light row');
+
+console.log('PING READOUT');
+check(migrateSettings({}).showPing === true && migrateSettings({ showPing: 'no' }).showPing === true, 'the ping readout is on by default, and junk gives the default');
+check(migrateSettings({ showPing: false }).showPing === false && migrateSettings(JSON.parse(JSON.stringify(migrateSettings({ showPing: false })))).showPing === false, 'a switched off ping readout stays off through a save');
+check(pingTone(0) === 'good' && pingTone(59) === 'good' && pingTone(60) === 'mid' && pingTone(119) === 'mid' && pingTone(120) === 'bad' && pingTone(900) === 'bad', 'green under 60 ms, amber under 120, red from 120');
 
 console.log('TRACK MAP');
 const T = buildTrack();
