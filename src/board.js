@@ -17,24 +17,25 @@ const min = list => { const v = list.filter(x => x != null); return v.length ? M
 
 // Sector colour: purple = the best of this session so far (nothing earlier in the session was faster),
 // green = faster than or equal to your personal best from before this session, yellow = slower than both.
-// `sessionBefore` is the best of that sector over the earlier laps this session, `personal` your best from earlier sessions.
-export function sectorClass(t, sessionBefore, personal) {
+// `sessionBefore` is the best of that sector over the earlier valid laps this session, `personal` your best from earlier sessions.
+// A lap with track limit warnings (valid false) is never purple.
+export function sectorClass(t, sessionBefore, personal, valid = true) {
   if (t == null) return '';
-  if (sessionBefore == null || t <= sessionBefore + EPS) return 'purple';
+  if (valid && (sessionBefore == null || t <= sessionBefore + EPS)) return 'purple';
   if (personal != null && t <= personal + EPS) return 'green';
   return 'yellow';
 }
 
-// the best time of sector i over the laps before index k of the history (all laps when k is omitted)
-const sectorBefore = (history, i, k = history.length) => min(history.slice(0, k).map(l => l.sectors[i]));
+// the best time of sector i over the valid laps before index k of the history (all laps when k is omitted)
+const sectorBefore = (history, i, k = history.length) => min(history.slice(0, k).filter(l => l.valid).map(l => l.sectors[i]));
 
 // The lap list, newest first, at most n: { lap, time, sectors: [{ time, cls }], warnings, valid, best }.
-// Colours are as they were when the lap was driven.
+// Colours are as they were when the lap was driven. The best is the best valid lap: an invalid lap is never best.
 export function lapRows(history, n = HISTORY_N, personal = [null, null, null]) {
-  const bestTime = min(history.map(l => l.time));
+  const bestTime = min(history.filter(l => l.valid).map(l => l.time));
   return history.map((l, k) => ({
-    lap: l.lap, time: l.time, warnings: l.warnings, valid: l.valid, best: bestTime != null && l.time <= bestTime + EPS,
-    sectors: l.sectors.map((t, i) => ({ time: t, cls: sectorClass(t, sectorBefore(history, i, k), personal[i]) })),
+    lap: l.lap, time: l.time, warnings: l.warnings, valid: l.valid, best: l.valid && bestTime != null && l.time <= bestTime + EPS,
+    sectors: l.sectors.map((t, i) => ({ time: t, cls: sectorClass(t, sectorBefore(history, i, k), personal[i], l.valid) })),
   })).slice(-n).reverse();
 }
 
@@ -42,12 +43,13 @@ export function lapRows(history, n = HISTORY_N, personal = [null, null, null]) {
 // otherwise the last lap) and the delta to your best lap ({ value, text } or null).
 export function sessionView(timer, simTime, personal = [null, null, null]) {
   const h = timer.history, running = timer.running(simTime);
-  const bestLap = h.reduce((b, l) => (!b || l.time < b.time ? l : b), null);
+  const bestLap = h.reduce((b, l) => (l.valid && (!b || l.time < b.time) ? l : b), null);
   const live = timer.current.length > 0;
   const src = live ? timer.current : timer.lastSectors || [];
+  const lastValid = live || !h.length || h[h.length - 1].valid;   // the lap in progress is not judged until it ends
   const cells = [0, 1, 2].map(i => {
     const t = src[i] == null ? null : src[i];
-    return { time: t, cls: sectorClass(t, sectorBefore(h, i, live ? h.length : h.length - 1), personal[i]) };
+    return { time: t, cls: sectorClass(t, sectorBefore(h, i, live ? h.length : h.length - 1), personal[i], lastValid) };
   });
   let delta = null;
   if (bestLap) {
@@ -140,6 +142,7 @@ export function createBoard(root, ctx) {
       }
       for (; seen < h.length; seen++) {
         const l = h[seen];
+        if (!l.valid || l.autopilot) continue;   // only the driver's valid laps go on the list (not invalid laps, not autopilot laps)
         fresh = { time: l.time, sectors: l.sectors.slice(), date: today(), warn: l.warnings };
         best = addBest(best, fresh);
         saveBest(best, storage, key);

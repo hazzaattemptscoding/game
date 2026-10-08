@@ -116,7 +116,7 @@ export class Hud {
     style(e.rev, `scaleX(${Math.min(1, rev).toFixed(3)})`);
     cls(e.rev, car.rpm > car.cfg.upshiftRpm - 300 ? 'hot' : '');
 
-    cls(e.drs, car.drs ? 'on' : !car.reversed && track.inDRS(car.loc.s) ? 'zone' : '');
+    cls(e.drs, car.drs ? 'on' : track.inDRS(car.loc.s) ? 'zone' : '');
     cls(e.pit, car.pitLimiter ? 'on' : '');
     // each assist chip: struck through and dim when that assist is switched off, lit when it is working, grey when it is ready
     cls(e.tc, car.assistTc ? (car.tc ? 'act' : 'arm') : 'off');
@@ -143,9 +143,9 @@ export class Hud {
     // sector splits for the current lap, coloured against your best
     const cells = [];
     for (let i = 0; i < 3; i++) {
-      const t = timer.current[i], best = timer.bestSectors[i];
+      const t = timer.current[i];
       if (t == null) { cells.push(`<i>S${i + 1}</i>`); continue; }
-      const cls = best != null && t <= best + 1e-6 ? 'pb' : 'slow';
+      const cls = timer.sectorPB[i] ? 'pb' : 'slow';   // purple, decided when the sector ended (src/timing.js)
       const d = s.hud.delta && timer.lastSectors && timer.lastSectors[i] != null ? ' ' + fmtDelta(t - timer.lastSectors[i]) : '';
       cells.push(`<i class="${cls}">S${i + 1} ${t.toFixed(2)}${d}</i>`);
     }
@@ -162,11 +162,8 @@ export class Hud {
     }
 
     for (const ev of timer.takeEvents()) {
-      if (ev.type === 'lap') this.flash((ev.best ? 'Best lap ' : 'Lap ') + fmtTime(ev.time), simTime, ev.best ? 'pb' : '');
-      else if (ev.index < 2) {
-        const best = timer.bestSectors[ev.index];
-        this.flash(`S${ev.index + 1}  ${ev.time.toFixed(3)}`, simTime, ev.time <= best + 1e-6 ? 'pb' : '');
-      }
+      if (ev.type === 'lap') this.flash((ev.best ? 'Best lap ' : 'Lap ') + fmtTime(ev.time) + (ev.valid ? '' : ' invalid'), simTime, ev.best ? 'pb' : '');
+      else if (ev.index < 2) this.flash(`S${ev.index + 1}  ${ev.time.toFixed(3)}`, simTime, ev.best ? 'pb' : '');
     }
     if (this.flashUntil && simTime > this.flashUntil) { e.flash.className = 'hud-flash'; this.flashUntil = 0; }
 

@@ -199,7 +199,12 @@ function settingsScreen() {
             { note: 'Auto keeps the frame rate up by lowering the render scale when the screen is too demanding. High is the full look; Medium and Low use a smaller shadow map and a lower pixel density.' }));
           p.append(segRow('FPS readout', [[false, 'Hide'], [true, 'Show']], () => !!settings.hud.fps, v => { settings.hud.fps = v; persist(); }, { note: 'Frame rate and frame time in the top corner. The F key switches it too.' }));
           p.append(segRow('Handling readout', [[false, 'Hide'], [true, 'Show']], () => !!settings.debug, v => { settings.debug = v; persist(); }));
-          p.append(segRow('Autopilot demo lap', [[false, 'Off'], [true, 'On']], () => api.getAutopilot(), v => api.setAutopilot(v)));
+          // the autopilot drives the forward line only: in a reverse session it is switched off (main.js) and cannot be turned on
+          const reverseNow = !!(api.session && api.session() && api.session().reverse);
+          const ap = segRow('Autopilot demo lap', [[false, 'Off'], [true, 'On']], () => api.getAutopilot(), v => api.setAutopilot(v),
+            reverseNow ? { note: 'Not in a reverse session: the autopilot drives the forward line only.' } : {});
+          if (reverseNow) for (const b of ap.buttons) b.disabled = true;
+          p.append(ap);
         },
         Interface(p) {
           // every switch writes into settings.hud / settings.trackMap; the HUD reads them each frame. `rows` are re-synced after any
@@ -400,7 +405,7 @@ function timesScreen() {
           const s = ctx.api.session && ctx.api.session();
           const wantRev = board.dir === 'rev';
           if (s && s.mode === 'practice' && !!s.reverse === wantRev) ctx.api.resume();
-          else ctx.api.startPractice({ start: 'pit', reverse: wantRev });
+          else ctx.api.startPractice({ start: ctx.settings.practiceStart === 'standing' ? 'standing' : 'pit', reverse: wantRev });
         }));
         r.append(cell);
         return r;

@@ -44,6 +44,7 @@ export class MinisectorTracker {
   reset() { this.best.fill(null); this.last = null; this.lastClasses = null; this.history = []; this.startLap(false); }
 
   startLap(on) {
+    this.bestAtStart = this.best.slice();   // put back if this lap turns out invalid (a track limit warning)
     this.dirty = false;
     this.on = on;           // false on the out lap and before the first crossing
     this.index = 0;         // the minisector being driven
@@ -52,21 +53,23 @@ export class MinisectorTracker {
     this.classes = [];
   }
 
-  // a minisector has been completed at `elapsed` seconds into the lap (null when a jump hid where it ended)
-  finish(elapsed, timed) {
+  // a minisector has been completed at `elapsed` seconds into the lap (null when a jump hid where it ended).
+  // clean: the lap has no track limit warning so far. Only a clean minisector can be purple (the session best).
+  finish(elapsed, timed, clean = true) {
     const i = this.times.length;
     if (!timed) { this.times.push(null); this.classes.push(null); this.mark = elapsed; return; }
     const t = elapsed - this.mark;
     this.mark = elapsed;
     let cls;
-    if (this.best[i] === null || t <= this.best[i] + EPS) { this.best[i] = this.best[i] === null ? t : Math.min(this.best[i], t); cls = PURPLE; }
+    if (clean && (this.best[i] === null || t <= this.best[i] + EPS)) { this.best[i] = this.best[i] === null ? t : Math.min(this.best[i], t); cls = PURPLE; }
     else if (this.last && this.last[i] != null && t < this.last[i] - EPS) cls = GREEN;
-    else cls = YELLOW;
+    else cls = this.last ? YELLOW : null;   // nothing to compare with yet (first lap, not clean): no colour
     this.times.push(t); this.classes.push(cls);
   }
 
   // one step of the car in lap order: from prevS to s, ds > 0 when it moved forward. elapsed = time into the lap.
-  update(prevS, s, ds, elapsed) {
+  // clean: no track limit warning on this lap so far (see LapTimer)
+  update(prevS, s, ds, elapsed, clean = true) {
     if (!this.on) return;
     if (ds < -30) this.dirty = true;   // put back up the road: the minisector order no longer matches the lap
     if (ds <= 0) return;
@@ -74,14 +77,21 @@ export class MinisectorTracker {
     let k = this.index, hit = 0;
     while (k + hit < this.n - 1 && prevS < B[k + hit + 1] && s >= B[k + hit + 1]) hit++;
     // a step that crosses two boundaries (a jump, not driving) cannot say when the first one was passed
-    for (let j = 0; j < hit; j++) this.finish(elapsed, hit === 1);
+    for (let j = 0; j < hit; j++) this.finish(elapsed, hit === 1, clean);
     this.index += hit;
   }
 
   // the line was crossed. `counted` is true when the lap just finished was a whole lap (what LapTimer counts as one).
-  finishLap(elapsed, counted) {
+  // valid: false when the lap has a track limit warning. Its times and colours are kept as the last lap, but it is never
+  // the session best: the bests go back to what they were before the lap, and its purple pieces are recoloured.
+  finishLap(elapsed, counted, valid = true) {
     if (counted && this.on && !this.dirty) {
-      while (this.times.length < this.n) this.finish(elapsed, this.times.length === this.n - 1 && this.index === this.n - 1);
+      while (this.times.length < this.n) this.finish(elapsed, this.times.length === this.n - 1 && this.index === this.n - 1, valid);
+      if (!valid) {
+        this.best = this.bestAtStart.slice();
+        const ref = this.last;
+        this.classes = this.classes.map((c, i) => c !== PURPLE ? c : ref && ref[i] != null && this.times[i] < ref[i] - EPS ? GREEN : YELLOW);
+      }
       this.last = this.times.slice(); this.lastClasses = this.classes.slice();
       this.history.push({ times: this.last, classes: this.lastClasses });
     }

@@ -262,12 +262,16 @@ function frame(now) {
     if (reportTool.opened && a !== 'report') continue;      // the report screen owns the keyboard while it is open
     if (a === 'settings') { if (!menuToggled) dir.escape(); continue; }
     if (dir.menuOpen) continue;                              // the menu has the keyboard
-    if (a === 'reset' && dir.phase !== 'start') { car.resetToTrack(); car.contactGrace = 1.5; }
+    if (a === 'reset' && dir.phase !== 'start') { car.resetToTrack(); car.contactGrace = 1.5; timer.markJump(); }   // a reset is a jump: the lap is not clean
     if (a === 'camera') rig.next();
     if (a === 'board-on') board.show();     // hold Tab
     if (a === 'board-off') board.hide();
     if (a === 'board') board.toggle();      // the Times button on a touch screen
-    if (a === 'line') { settings.racingLine = !settings.racingLine; saveSettings(settings); hud.flash(settings.racingLine ? 'Racing line on' : 'Racing line off', simTime); }
+    if (a === 'line') {
+      // a reverse practice or a race does not allow the line (src/session.js): say so instead of flashing a state that is not shown
+      if (!dir.api.racingLineAllowed()) hud.flash('Racing line not available in this session', simTime, 'force');
+      else { settings.racingLine = !settings.racingLine; saveSettings(settings); hud.flash(settings.racingLine ? 'Racing line on' : 'Racing line off', simTime); }
+    }
     if (a === 'map') { settings.trackMap.on = !settings.trackMap.on; saveSettings(settings); hud.flash(settings.trackMap.on ? 'Track map on' : 'Track map off', simTime, 'force'); }
     if (a === 'hud') { const name = cyclePreset(settings); saveSettings(settings); hud.flash('HUD ' + PRESET_NAMES[name].toLowerCase(), simTime, 'force'); }
     if (a === 'fps') { settings.hud.fps = !settings.hud.fps; saveSettings(settings); hud.flash(settings.hud.fps ? 'FPS readout on' : 'FPS readout off', simTime, 'force'); }
@@ -279,6 +283,8 @@ function frame(now) {
   const playerInput = input.read(dt, car.speed);
   dir.frame(now, dt, playerInput);
   const paused = dir.inMenu || (dir.menuOpen && !lobby.active) || reportTool.opened;     // in a room the car keeps rolling behind the menu
+  // the autopilot only drives the forward line (src/autopilot.js): it is off in a reverse session
+  if (autopilot && dir.session && dir.session.reverse) autopilot = null;
   const drive = autopilot && !dir.hold ? () => autopilot.drive(car) : () => (dir.hold ? HOLD : dir.menuOpen ? IDLE : playerInput);
   if (!paused) {
     loop.add(dt);
@@ -288,6 +294,7 @@ function frame(now) {
       car.step(drive());
       audio.latch(car);
       simTime += STEP;
+      if (autopilot) timer.noteAutopilot();
       timer.update(car.loc.s, simTime);
       timer.checkLimits(car, simTime);
       const post = lapWatch.step(simTime, car);
@@ -337,7 +344,7 @@ function frame(now) {
   for (const ev of timer.events) {
     if (ev.type !== 'lap' || lapsShown.has(ev)) continue;
     lapsShown.add(ev);
-    gantryScreen.lap({ lap: timer.lap, time: ev.time, kind: ev.best ? 'pb' : null, delta: ev.best ? null : ev.time - timer.best });
+    gantryScreen.lap({ lap: timer.lap, time: ev.time, kind: ev.best ? 'pb' : null, delta: ev.best || timer.best == null ? null : ev.time - timer.best });
   }
   if (now - gantryDrawn > 33 && rig.camera.position.distanceTo(trackScene.userData.gantryPosition) < 900) {
     gantryScreen.draw(now / 1000);

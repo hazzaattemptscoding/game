@@ -40,9 +40,10 @@ export const project = (t, size, x, z, out = {}) => {
   return out;
 };
 
-// corner numbers in lap order: [{ n, name, i (track sample), side (+1 right, -1 left, the outside of the bend) }]
-export function cornerMarks(track, corners = CORNERS) {
-  return [...corners].filter(c => Number.isFinite(c.apexS)).sort((a, b) => a.apexS - b.apexS).map((c, n) => ({
+// corner numbers in driving order: [{ n, name, i (track sample), side (+1 right, -1 left, the outside of the bend) }].
+// reverse: the order a car driven the other way round meets them, from the line (the highest apex first)
+export function cornerMarks(track, corners = CORNERS, reverse = false) {
+  return [...corners].filter(c => Number.isFinite(c.apexS)).sort((a, b) => (reverse ? b.apexS - a.apexS : a.apexS - b.apexS)).map((c, n) => ({
     n: n + 1, name: c.name, i: Math.round(c.apexS / track.ds) % track.N, side: c.outside === 'L' ? -1 : 1,
   }));
 }
@@ -51,7 +52,7 @@ export function cornerMarks(track, corners = CORNERS) {
 export const MINI_COLOURS = { purple: '#b36bff', green: '#3ddc84', yellow: '#ffd21f' };
 
 export function createMiniMap(root, { track, car, lobby, settings, ownColour, timer }) {
-  const bounds = trackBounds(track), marks = cornerMarks(track);
+  const bounds = trackBounds(track), marks = cornerMarks(track), marksBack = cornerMarks(track, CORNERS, true);
   const el = document.createElement('div');
   el.id = 'trackmap';
   const canvas = document.createElement('canvas');
@@ -150,7 +151,7 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour, ti
 
     if (st.labels === 'numbers') {
       g.font = '700 10px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      for (const m of marks) {
+      for (const m of timer && timer.reverse ? marksBack : marks) {
         const off = 11 / t.k * m.side;   // 11 px out from the road, on the outside of the bend
         project(t, size, track.x[m.i] + track.nx[m.i] * off, track.z[m.i] + track.nz[m.i] * off, pt);
         if (pt.x < 4 || pt.y < 4 || pt.x > size - 4 || pt.y > size - 4) continue;

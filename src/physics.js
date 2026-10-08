@@ -140,7 +140,9 @@ export class Car {
     this.bumpSpacing = spacing;
 
     // --- DRS: opens in a zone when asked, shuts on the brakes or leaving the zone ---
-    const inZone = !this.reversed && T.inDRS(loc.s);   // the DRS zones are laid out for the normal direction
+    // A zone is a stretch of road, not a direction: a car driven the other way round has DRS wherever it is in one.
+    // There is no separate activation point, so it opens on the button anywhere inside, from either end.
+    const inZone = T.inDRS(loc.s);
     if (inZone && inp.drs && inp.brake < 0.05 && this.gear > 0) this.drs = true;
     if (!inZone || inp.brake > 0.05) this.drs = false;
 

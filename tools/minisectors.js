@@ -1,7 +1,8 @@
 // Minisector and marshal light test. Run with `npm run minisectors` (also part of `npm run check`). No browser needed.
 //   1. boundaries: about 25 pieces of about equal length, the three sector boundaries among them, mirrored in reverse
 //   2. timing: every lap's minisector times add up to the lap time and to each sector time, forward and reverse
-//   3. colours: purple (session best), green (better than the last lap), yellow (slower); a jump leaves gaps instead of wrong times
+//   3. colours: purple (session best), green (better than the last lap), yellow (slower); a jump leaves gaps instead of wrong times;
+//      a lap with a track limit warning is never purple and never sets the bests
 //   4. marshal posts: one per boundary, behind the wall, off the pit lane, clear of stands and barrier lines
 //   5. light panels: states, flashing, and the automatic yellow for a stopped or off-track car
 import { buildTrack, SURF } from '../src/track.js';
@@ -110,6 +111,31 @@ console.log('JUMPS');
   for (let s = 300; s < L; s += 0.4) stepB(s);
   for (let s = 0; s < 50; s += 0.4) stepB(s);
   check(back.lap === 1 && back.minis.history.length === 0, 'a lap with a car put back is not kept as a minisector lap');
+}
+
+console.log('INVALID LAPS');
+{
+  // lap 1: 50 m/s (the reference). lap 2: 60 m/s, faster everywhere, but a track limit warning comes on piece 12, so the lap is
+  // invalid: its earlier purple pieces must go back to green, and the session bests stay lap 1's. lap 3: 50 m/s again, the
+  // same as lap 1, so it is purple everywhere (equal to the best), not against lap 2.
+  const timer = new LapTimer(T);
+  let warned = false;
+  drive(timer, 3, (lap, m) => {
+    if (lap === 1 && m >= 12 && !warned) { warned = true; timer.limits.byLap[timer.currentLap()] = 1; }   // a cut, counted the way TrackLimits counts it
+    return lap === 1 ? 60 : 50;
+  });
+  const h = timer.minis.history;
+  check(warned && timer.history[1].valid === false && timer.history[0].valid && timer.history[2].valid, 'the warning makes lap 2 invalid and only lap 2');
+  check(h.length === 3, 'three minisector laps kept');
+  check(h[1].classes.every(c => c !== PURPLE), 'invalid lap 2: no piece is purple (the ones before the warning are green again)');
+  check(h[1].classes.slice(0, 12).every(c => c === GREEN), 'invalid lap 2: pieces 1 to 12 are green, faster than lap 1 (' + h[1].classes.join() + ')');
+  // the bests are the fastest valid lap of each piece (lap 1 or lap 3; they differ by up to a physics step), never lap 2's
+  check(timer.minis.best.every((b, m) => near(b, Math.min(h[0].times[m], h[2].times[m]), 1e-9)), 'the session bests come from the valid laps only (the invalid lap 2 never sets one)');
+  check(h[2].classes.every(c => c === PURPLE || c === YELLOW) && h[2].classes.includes(PURPLE), 'lap 3 is judged against the session best (purple) and the slower last lap (yellow), no green');
+  // a warning from the first counted lap on: none of its pieces are purple, and its best is not set
+  const t2 = new LapTimer(T), w2 = { on: false };
+  drive(t2, 2, (lap) => { if (lap === 0 && t2.lapStart !== null && !w2.on) { w2.on = true; t2.limits.byLap[t2.currentLap()] = 1; } return 50; });
+  check(t2.minis.history.length === 2 && t2.minis.history[0].classes.every(c => c !== PURPLE) && t2.minis.history[1].classes.includes(PURPLE), 'a warning on the first counted lap: none of its pieces are purple, the next valid lap is');
 }
 
 console.log('MARSHAL POSTS');

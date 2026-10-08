@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { createMenu } from './menu.js';
 import { registerScreens } from './menuScreens.js';
 import { resultsScreen } from './results.js';
-import { createSessionHud } from './sessionHud.js';
+import { createSessionHud, limitBanner } from './sessionHud.js';
 import { Flow, PHASE, makeSession, timeTrialRows, raceDistance, MODE_NAMES } from './session.js';
 import { START, gridSlot, pitSlot, orbitPose, cinematicPose } from './start.js';
 import { createScreenControl } from './screenControl.js';
@@ -146,7 +146,9 @@ export function createDirector(g) {
 
   function showMain(screen) {
     const spot = gridSlot(track, 0);
-    car.placeAt(spot.s, spot.d);
+    car.placeAt(spot.s, spot.d);   // forward, on the grid: the timer goes back to forward too (the boards read it)
+    timer.reverse = false;
+    timer.markJump();
     view.update(car, 1);
     menu.open('main', 'main');
     if (screen) { for (const s of [].concat(screen)) menu.push(s.id || s, s.params); }
@@ -215,7 +217,7 @@ export function createDirector(g) {
     after(now, simTime) {
       if (flow.phase === PHASE.RUN && flow.race) {
         const others = otherCars();
-        const r = flow.race.update(simTime, { laps: timer.lap, lap: timer.currentLap(), s: car.loc.s }, others);
+        const r = flow.race.update(simTime, { laps: timer.lap, lap: timer.currentLap(), s: car.loc.s }, others, timer);   // the timer gives the track limit excursions to judge
         pos = r;
         if (flow.race.finished && finishedAt === null) { finishedAt = now; }
         if (finishedAt !== null && now - finishedAt > FINISH_DELAY_MS && !menu.isOpen) showResults();
@@ -273,6 +275,7 @@ export function createDirector(g) {
       if (flow.seq.jump && now < jumpShownUntil) v.banner = { text: `Jump start, +${START.PENALTY_S} s`, kind: 'jump' };
     }
     if (flow.race && flow.race.finished) v.banner = { text: 'Chequered flag', kind: 'flag' };
+    const limit = limitBanner(flow.race, simTime); if (limit) v.banner = limit;   // the latest track limits penalty, a few seconds
     return v;
   }
 
