@@ -116,14 +116,19 @@ then open the game with `?broker=your-machine:9000` (for a quick test on one net
 | Steer | Arrows / A D | Left stick |
 | Throttle | Up / W | Right trigger |
 | Brake (hold when stopped to reverse) | Down / S | Left trigger |
-| DRS (in the zones) | Space | A / cross |
-| Back on track | R | Y / triangle |
+| DRS (in the zones; in a reverse session the zone is the same stretch, and braking in it shuts DRS) | Space | A / cross |
+| Back on track (a reset makes the lap not clean) | R | Y / triangle |
 | Camera | C | X / square |
 | Settings | Esc | Start |
 | Handling readout | I or F3 | |
 | Lap times, sectors, leaderboard (hold) | Tab | |
 
 Touch: drag anywhere on the left half of the screen to steer, pedals and DRS bottom right, Reset, Camera, Times (the Tab board) and Settings top right.
+
+Racing line: L switches it on or off (where the session allows it). Track limits: three wheels on the grass or gravel beyond the
+inside white line (or two, with the centre off the track as well) is a cut, and it shows a warning and makes the lap invalid. Kerbs and run-off are legal. In races a cut that gains
+time costs a penalty (rounded up to whole seconds). An invalid lap keeps its time but is never a best lap, a purple sector or a
+global time. The autopilot drives the forward line only, so it is off in reverse sessions. Details are in `docs/CHANGELOG.md`.
 
 Settings has traction control, ABS and stability control as three separate switches, and Steering: Keyboard or Cursor. In Cursor mode the mouse's sideways position in the window steers (a small dead zone in the middle, full lock at the edges, sensitivity slider); the pedals stay on the keyboard and the steering keys add to the cursor.
 

@@ -120,28 +120,35 @@ at most every 5 seconds per room.
 
 ## Global times
 
-The Worker also keeps the global lap-times leaderboard, in one more Durable Object (`Times`, binding `TIMES`, code in `src/times.js` and
-`src/times-do.js`). It is on the same Worker and the same `ALLOWED_ORIGINS` list, so nothing new has to be set up.
+The Worker also keeps the global lap-times leaderboard, in one more Durable Object (`Times`, binding `TIMES`, code in
+`worker/src/times-do.js` with the rules in `worker/src/times.js`). It is on the same Worker and the same `ALLOWED_ORIGINS` list,
+so nothing new has to be set up.
 
-* `POST /times` takes a finished lap (`{name, time, sectors:[s1,s2,s3], board:{weather,mode,dir,assists}, build, ghost?}` as JSON, at most 64 KB)
-  and answers `{ok, improved, rank, best, entries}`. It needs an allowed `Origin` (403 otherwise) and refuses invalid laps with 400 and
-  a plain reason. At most 20 laps per 10 minutes per client address (429 after that).
+* `POST /times` takes a finished lap as JSON, at most 64 KB (413 above that):
+  `{name, time, sectors:[s1,s2,s3], board:{weather,mode,dir,assists}, build?, token, ghost}`.
+  It answers `{ok, improved, rank, best, entries}`. It needs an allowed `Origin` (403 otherwise). A lap that fails a check is
+  refused with 400 and a plain reason. At most 20 laps per 10 minutes per client address (429 after that).
 * `GET /times?board=dry-solo-fwd-on&n=50&name=Harry` answers the top `n` (default 20, at most 100) of one board and the row of `name`.
 * `GET /ghost?board=dry-solo-fwd-on&name=Harry` answers that driver's stored ghost line, or 404.
 * There are 16 boards: weather (`dry`, `wet`) x mode (`solo`, `online`) x direction (`fwd`, `rev`) x assists (`on`, `off`).
 
+What the Worker checks before it keeps a lap:
+
+* The name is 1 to 16 characters: letters, digits, space, `.`, `_`, `-`. The board must be one of the 16 above.
+* The time is 60 to 900 seconds and at least 72.4 s, the fastest a lap of this length can be posted (the lap is 3835 m, and no
+  average above 53 m/s is allowed). Each of the three sectors is at least 5 s, and the sectors add up to the time within 0.05 s.
+* `token` is the driver's ownership token: 32 lowercase hex characters, sent with every lap. The Worker keeps only its SHA-256 hash.
+  The first token to post a name owns that name on every board. Another token with the same name gets 403
+  (`that name belongs to another driver`). Names are not case sensitive: "Harry" and "harry" are one driver.
+* `ghost` is required: the line of the lap, about 8 to 12 samples a second, four little-endian float32 values per sample
+  (time, x, z, yaw), base64 encoded. It must start at 0 s (within 0.5 s) and end at the posted time (within 0.05 s). Its path must
+  be at least 90 % of the lap length (3451 m) and no faster than 53 m/s on average, no step faster than 120 m/s, every sample
+  within 60 m of the centreline, and the first and last samples within 30 m of the start/finish line. It must pass within 30 m of
+  each sector boundary.
+
 What is stored, per driver and board (their best lap only): the name, the lap time, the three sector times, the time the lap was set,
-and the ghost line (position and heading about 10 times a second) for the top 10 of the board only. Nothing else. IP addresses are
-used for the rate limit in memory only and are never stored. A driver is the lowercase name, so "Harry" and "harry" are one row.
-The Worker checks every lap before keeping it (time and sector limits, and a ghost that has to be a plausible full lap).
-
-Deploying: the next deploy creates the new storage by itself, through migration `v3` in `wrangler.toml`. A push to `main` redeploys
-the Worker, or run `cd worker && npx wrangler deploy`. Check it with `https://<worker>/times?board=dry-solo-fwd-on` (must answer
-`{"board":"dry-solo-fwd-on","entries":[],"you":null}`). The relay and the lobby list keep working as before.
-
-Free plan cost: one request per finished valid lap, plus one per time someone opens a leaderboard page (a ghost download is one more).
-It runs in one object that sleeps when nobody asks, so it is far below the daily limits next to the relay's 3,600 requests per player
-hour. Storage is a few kilobytes per ghost and 160 ghosts at most (10 on each of the 16 boards).
+and the ghost line for the top 10 of the board only. Nothing else. The token is stored only as its hash. IP addresses are used for
+the rate limit in memory only and are never stored.
 
 Clearing the board: there is no admin route. To wipe everything, delete the `Times` class and create it again with two more migrations
 in `wrangler.toml`, deployed one after the other: first `tag = "v4"` with `deleted_classes = ["Times"]` (this deletes all its data and
@@ -161,15 +168,18 @@ closes the socket (the game pings every 15 s):
 
 | Direction | Frame | Meaning |
 | --- | --- | --- |
-| client to relay | `{t:'join', name, id, host?}` | first frame; `id` is a random token so a reconnect gets the same slot; `host:true` opens the room |
+| client to relay | `{t:'join', name, id, host?, hostKey?}` | first frame; `id` is a random token so a reconnect gets the same slot; `host:true` opens the room. The first host join gets a `hostKey` back in its welcome; any later host join of that room must send it, or gets `taken` |
 | client to relay | `{t:'ping', n}` | answered with `{t:'pong', n}` to the sender only |
 | client to relay | any other JSON object | forwarded to everyone else as `{...it, from:<sender id>}`; with `to:<id>` to that player only |
 | client to relay | binary | forwarded to everyone else as one byte (the sender id, 0 to 7) followed by the same bytes |
-| relay to client | `{t:'welcome', you, host, players:[{id,name,host}]}` | your id, the host's id, everybody else in the room |
+| relay to client | `{t:'welcome', you, host, players:[{id,name,host}], hostKey?}` | your id, the host's id, everybody else in the room. `hostKey` only in the welcome of the host that made the room |
 | relay to client | `{t:'peer', id, name, host}` / `{t:'bye', id}` | somebody joined / left |
 | relay to client | `{t:'full'}` (close 4001) | 8 players already |
 | relay to client | `{t:'nohost'}` (close 4002) | a guest joined a code nobody is hosting |
-| relay to client | `{t:'taken'}` (close 4003) | a second host for the same code (pick another code) |
+| relay to client | `{t:'taken'}` (close 4003) | a second host for the same code, or a host join without the room's `hostKey` (pick another code) |
+
+The relay drops `env` and `race` frames sent by guests (only the host sets the weather and the race start), and the game
+ignores them from anybody but the host (`src/raceControl.js`).
 
 Close code 4004 means the same player token connected again and replaced this socket, 4008 means idle for 60 s.
 Player ids are the slot numbers 0 to 7. Message types `join`, `welcome`, `peer`, `bye`, `full`, `nohost`, `taken`, `pong`,

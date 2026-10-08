@@ -1,5 +1,42 @@
 # Changelog
 
+## Bug pass 1: reverse DRS, track limits, lap bests, global times hardening
+
+- **Reverse DRS.** The DRS zone is a stretch of road, so a car driven the other way round has DRS in the same stretch. The zone opens
+  on the button at the end the reverse car reaches first, and braking in the zone shuts it. With the button up it never opens.
+  `tools/reversedrs.js` checks this and the mirrored distance.
+- **Autopilot off in reverse.** The autopilot drives the forward line only, so it is switched off in a reverse session and the menu
+  says so (`src/main.js`, `src/menuScreens.js`).
+- **Mini map numbering.** In a reverse session the corner numbers on the mini map run in the order the reverse lap meets them.
+- **Racing line toggle.** The L key shows "Racing line on" or "Racing line off". In a race that does not allow it, it shows
+  "Racing line not available in this session" and changes nothing.
+- **A reset makes the lap not clean.** A reset (R) or any jump marks the lap (`timer.markJump()`). Such a lap is kept in the list,
+  with its time, but it is never the session best, never the PB flash, never the delta reference, and never a global time.
+- **Invalid laps never set a best.** A lap with a track limit warning keeps its time but cannot set the session best, the best
+  lap PB flash, a purple sector or a purple minisector. Its sector and minisector bests are put back to what they were before the
+  lap (`src/timing.js`, `src/minisectors.js`).
+- **Track limits rework** (`src/trackLimits.js`):
+  * a zone for each of the 14 corners with an inside side, the apex plus or minus 12 m, widened to the inside kerbs;
+  * a cut is three wheels on grass or gravel beyond the white line, or two wheels there with the centre off as well. One wheel on
+    the line while the other three are off is a cut;
+  * kerbs, sausage kerbs, the run-off and the pit lane are legal and never a cut;
+  * every cut is counted and logged (no rate limit); only the banner is rate limited (3 s per corner);
+  * a race penalty is given only when the excursion gained more than TOLERANCE (0.15 s) over the car's best whole lap for the same
+    stretch. The penalty is the gain rounded up to whole seconds, and the banner says "Track limits +Ns";
+  * the session setting `trackLimits` is `'warn'` (a warning and an invalid lap, the default for free practice and time trial) or
+    `'penalty'` (also the time penalty, the default for solo and online races).
+- **Guest race and environment refused.** The relay drops `race` and `env` frames from guests, and the game ignores them from anybody
+  but the host (`worker/src/protocol.js`, `src/raceControl.js`).
+- **Host secret for relay rooms.** The first host join of a room gets a `hostKey` in its welcome. Any later host join must send it,
+  or it is refused with `taken`. A host who drops can come back with the key, nobody else can take the room
+  (`worker/src/protocol.js`, `src/relay.js`).
+- **Global times hardening** (`worker/src/times.js`):
+  * a ghost is required with every lap, and the lap is refused without a plausible line (see `worker/README.md`);
+  * a lap under 72.4 s is refused (the lap is 3835 m, and no average above 53 m/s is allowed);
+  * the ownership token `token` (32 lowercase hex, stored only as a hash): a name belongs to the first token that posts it, and another
+    driver gets 403;
+  * bodies over 64 KB get 413; a lap from a website that is not in `ALLOWED_ORIGINS` gets 403.
+
 ## Global times (game side)
 
 Every valid lap goes to the global boards on the relay (the server side is the entry below): no track limit warnings, driven all the way round with no reset or jump (`clean`, new in `timer.history`), and no autopilot at any moment of it. 16 boards: dry or wet, solo or online, normal or reverse, assists on or off; a lap that was partly wet counts as wet, partly assisted as assisted. One row per driver, their best.
