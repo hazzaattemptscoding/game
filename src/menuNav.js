@@ -1,6 +1,6 @@
 // Menu navigation from the keyboard and a gamepad, so a menu works without a mouse (and with one at the same time).
 //
-//   const nav = createMenuNav(dir => { ... });   // dir: 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'tab-left' | 'tab-right' | 'start'
+//   const nav = createMenuNav(dir => { ... });   // dir: 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'tab-left' | 'tab-right' | 'start' | 'digit:1'..'digit:7'
 //   each frame: nav.update(dt)                    // polls the gamepad (the keyboard is event driven and needs no update)
 //   nav.enabled = false                           // pause it while the game itself is being driven
 //   nav.dispose()
@@ -18,6 +18,8 @@ const PAD_BUTTONS = { 0: 'confirm', 1: 'back', 4: 'tab-left', 5: 'tab-right', 9:
 const PAD_DIRS = { 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
 const KEY_DIRS = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
 const KEY_BUTTONS = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'confirm', Escape: 'back', Backspace: 'back', KeyQ: 'tab-left', PageUp: 'tab-left', KeyE: 'tab-right', PageDown: 'tab-right' };
+// number keys 1 to 7 (top row and keypad): emitted as 'digit:1' .. 'digit:7', the main menu opens that entry
+const KEY_DIGITS = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Digit6: 6, Digit7: 7, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5, Numpad6: 6, Numpad7: 7 };
 
 const isTyping = el => !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) && !(el.tagName === 'INPUT' && ['range', 'button', 'checkbox', 'radio', 'submit'].includes(el.type)));
 
@@ -50,13 +52,16 @@ export function createMenuNav(handler, opts = {}) {
   // ---- keyboard: event driven, so a key press is never missed between frames
   const onKey = e => {
     if (!api.enabled || e.ctrlKey || e.metaKey || e.altKey) return;
-    const dir = KEY_DIRS[e.code], btn = KEY_BUTTONS[e.code];
+    const dir = KEY_DIRS[e.code], btn = KEY_BUTTONS[e.code], digit = KEY_DIGITS[e.code];
     const el = active();
     if (isTyping(el)) {
       if (e.code === 'Escape') emit('back');     // Escape still leaves a text field
       return;
     }
-    if (dir) {
+    if (digit) {
+      if (e.preventDefault) e.preventDefault();
+      if (!e.repeat) emit('digit:' + digit);
+    } else if (dir) {
       if (e.preventDefault) e.preventDefault();
       emit(dir);
     } else if (btn) {

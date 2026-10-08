@@ -43,6 +43,9 @@ import powermediaLogo from './assets/powermedia-white.png';
 import deltadashLogo from './assets/deltadash.png';
 import '@fontsource/barlow-condensed/600.css';
 import '@fontsource/barlow-condensed/800-italic.css';
+import '@fontsource/barlow/latin-400.css';
+import '@fontsource/barlow/latin-500.css';
+import '@fontsource/barlow/latin-600.css';
 
 import { createCarFx } from './carFx.js';
 const params = new URLSearchParams(location.search);

@@ -32,6 +32,7 @@ console.log('SESSIONS');
   check(makeSession('race', { laps: 500 }).laps === 99 && makeSession('race', { laps: 0 }).laps === 1, 'custom laps are clamped to 1 to 99');
   check(makeSession('race', { slot: 3 }).slot === 3 && makeSession('race', { slot: -2 }).slot === 0, 'grid slot');
   check(makeSession('nonsense').mode === 'practice', 'unknown mode falls back to practice');
+  check(makeSession('race').trackLimits === 'penalty' && makeSession('race', { trackLimits: 'warn' }).trackLimits === 'warn' && makeSession('race', { trackLimits: 'bogus' }).trackLimits === 'penalty', 'the race setup Track limits choice reaches the session (warn or penalty)');
   check(makeSession('practice', { start: 'standing' }).start === 'standing', 'practice may start on the grid');
   check(p.weather === 'clear' && p.time === 'midday' && makeSession('race', { weather: 'heavyrain', time: 'night' }).weather === 'heavyrain' && makeSession('race', { weather: 'x', time: 9 }).time === 'midday', 'weather and time are part of the session, bad values fall back to clear midday');
   check(!hasStartLights(p) && !hasStartLights(t) && hasStartLights(r) && hasStartLights(makeSession('online')), 'only races have start lights');

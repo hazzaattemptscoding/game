@@ -361,6 +361,10 @@ console.log('MENU NAV');
   key('Enter', { repeat: true }); check(take() === '', 'a held Enter does not confirm again');
   key('ArrowDown', { repeat: true }); check(take() === 'down', 'a held arrow repeats');
   key('KeyR'); key('KeyC'); check(take() === '', 'game keys are not menu keys');
+  check(key('Digit3') === true && take() === 'digit:3' && key('Numpad7') === true && take() === 'digit:7', 'number keys 1 to 7 (top row and keypad) send digit:N, which the main menu opens as entries');
+  key('Digit3', { repeat: true }); check(take() === '', 'a held number key does not open its entry again and again');
+  focus = { tagName: 'INPUT', type: 'text' }; key('Digit2'); check(take() === '', 'a number typed in a text field is not a menu key');
+  focus = { tagName: 'BUTTON' };
   key('ArrowDown', { ctrlKey: true }); check(take() === '', 'a modifier makes it a shortcut, not navigation');
   check(key('Enter') === true && take() === 'confirm', 'a handled key is prevented, so the browser does not click twice');
   // a button held when the menu opens is ignored until released

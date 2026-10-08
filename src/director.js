@@ -58,6 +58,7 @@ export function createDirector(g) {
   function launch(s, o = {}) {
     const now = performance.now();
     session = s;
+    if (settings.lastMode !== s.mode && ['practice', 'timetrial', 'race', 'online'].includes(s.mode)) { settings.lastMode = s.mode; g.save(settings); }   // the main menu's Resume button
     if (!o.keepPlacement) { const spot = s.start === 'standing' ? gridSlot(track, s.slot, s.reverse) : pitSlot(track, s.reverse); car.placeAt(spot.s, spot.d, !!s.reverse); }
     car.contactGrace = 1.5;
     timer.reverse = !!s.reverse;
@@ -109,6 +110,7 @@ export function createDirector(g) {
     envLocked: () => online() && !mp.isHost,     // a guest cannot change the room's weather
     inRoom: online,
     lobby,
+    track: { N: track.N, x: track.x, z: track.z },   // the circuit outline for the race setup's track map
     hasRacingLine: () => true,
     racingLineAllowed,
     screen: sc,

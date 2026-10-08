@@ -1,13 +1,16 @@
-// The screens of the menu: main menu, pause, race setup, settings (tabs), online lobby, garage and the placeholders.
-// Registered on the menu by registerScreens(menu). The game's side of each button is `ctx.api` (director.js).
+// The screens of the menu: main menu, pause, race setup, settings (categories), online lobby, garage, global times and the
+// placeholders. Registered on the menu by registerScreens(menu). The game's side of each button is `ctx.api` (director.js).
+// The look is the Lakeside UI system (.interface-design/system.md): a rail on the left, groups of rows, one control per setting.
 
 import { LAP_CHOICES } from './session.js';
 import { weatherRows, lightningRows } from './weatherMenu.js';
 import { QUALITY_SETTINGS, QUALITY_LABELS } from './quality.js';
 import { HUD_ELEMENTS, MAP_SIZES, MAP_POSITIONS, PRESET_ORDER, PRESET_NAMES, SCALE_MIN, SCALE_MAX, MAP_OPACITY_MIN, detectPreset, applyPreset } from './hudSettings.js';
-
 import { boardLabel, cleanName as cleanTimesName } from './globalTimes.js';
 import { fmtTime } from './hud.js';
+import { loadBest, bestKey } from './board.js';
+import { ownLivery, localPlayerId, STRIPE_STYLES } from './livery.js';
+import { TIME_NAMES, WEATHER_NAMES } from './weather.js';
 
 export const h = (tag, cls, ...kids) => {
   const e = document.createElement(tag);
@@ -17,61 +20,177 @@ export const h = (tag, cls, ...kids) => {
 };
 const btn = (label, cls, onClick) => { const b = h('button', cls, label); b.type = 'button'; if (onClick) b.addEventListener('click', onClick); return b; };
 
-// A labelled row of choices: opts [[value, label]...]; get() the current value, set(v) stores it. Returns the row element with .sync().
+// The circuit as the gantry shows it. Hard-coded: the track length is 3835 m (src/director.js, session.js).
+const CIRCUIT = { name: 'Lakeside Circuit', facts: '3.83 km · 14 turns · 2 DRS zones' };
+const DEFAULT_LAP_S = 95;             // the estimate for a lap until the driver has one saved (1:35)
+
+// --- rows: one component for every setting (system.md: row, switch, segmented control, stepper, slider) ----------------------
+
+// A labelled row of choices: opts [[value, label]...]; get() the current value, set(v) stores it. Returns the row with .sync().
 export function segRow(label, opts, get, set, { note } = {}) {
-  const row = h('div', 'm-row'), lab = h('div', 'm-label', label), seg = h('div', 'm-seg');
+  const row = h('div', 'row'), lab = h('div', 'row-l', h('b', '', label));
+  if (note) lab.append(h('span', '', note));
+  const seg = h('div', 'seg');
   seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', label);
-  const bs = opts.map(([v, text]) => { const b = btn(text, 'm-opt', () => { set(v); sync(); }); b.dataset.v = String(v); b.setAttribute('role', 'radio'); seg.append(b); return b; });
-  const sync = () => { for (const b of bs) { const on = b.dataset.v === String(get()); b.classList.toggle('sel', on); b.setAttribute('aria-checked', String(on)); } };
-  row.append(lab, seg);
-  if (note) row.append(h('div', 'm-note', note));
+  const bs = opts.map(([v, text]) => { const b = btn(text, '', () => { set(v); sync(); }); b.dataset.v = String(v); b.setAttribute('role', 'radio'); seg.append(b); return b; });
+  const sync = () => { for (const b of bs) { const on = b.dataset.v === String(get()); b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); } };
+  row.append(lab, h('div', 'row-c', seg));
   row.sync = sync; row.buttons = bs;
   sync();
   return row;
 }
 
-export function sliderRow(label, { min, max, step, get, set, fmt = v => `${Math.round(v)}` }) {
-  const row = h('div', 'm-row'), lab = h('div', 'm-label', label), val = h('span', 'm-val'), input = h('input', 'm-range');
-  input.type = 'range'; input.min = min; input.max = max; input.step = step; input.value = get(); input.setAttribute('aria-label', label);
-  const sync = () => { input.value = get(); val.textContent = fmt(+input.value); };
-  input.addEventListener('input', () => { set(+input.value); val.textContent = fmt(+input.value); });
-  lab.append(val);
-  row.append(lab, input);
+// An on/off row as a switch. get() true or false, set(v) stores it. The row has .sync() and .buttons (the switch).
+export function boolRow(label, get, set, { note } = {}) {
+  const row = h('div', 'row'), lab = h('div', 'row-l', h('b', '', label));
+  if (note) lab.append(h('span', '', note));
+  const sw = h('button', 'sw');
+  sw.type = 'button'; sw.setAttribute('role', 'switch'); sw.setAttribute('aria-label', label);
+  const sync = () => { const on = !!get(); sw.classList.toggle('on', on); sw.setAttribute('aria-checked', String(on)); };
+  sw.addEventListener('click', () => { set(!get()); sync(); });
+  row.append(lab, h('div', 'row-c', sw));
+  row.sync = sync; row.buttons = [sw];
+  sync();
+  return row;
+}
+
+// A number with a visible value: a slider and its value. Fills the track in purple as it moves.
+export function sliderRow(label, { min, max, step, get, set, fmt = v => `${Math.round(v)}`, note }) {
+  const row = h('div', 'row'), lab = h('div', 'row-l', h('b', '', label));
+  if (note) lab.append(h('span', '', note));
+  const input = h('input', ''), val = h('output', 'val');
+  input.type = 'range'; input.min = min; input.max = max; input.step = step; input.setAttribute('aria-label', label);
+  const paint = () => { input.style.setProperty('--fill', `${((+input.value - min) / ((max - min) || 1)) * 100}%`); val.textContent = fmt(+input.value); };
+  const sync = () => { input.value = String(get()); paint(); };
+  input.addEventListener('input', () => { set(+input.value); paint(); });
+  row.append(lab, h('div', 'row-c slider', input, val));
   row.sync = sync; row.input = input;
   sync();
   return row;
 }
 
-const setupDefaults = { laps: 5, custom: false, assists: 'any', racingLine: true };
+// A label and a text field or other control on one row
+const fieldRow = (label, control) => h('div', 'row', h('div', 'row-l', h('b', '', label)), h('div', 'row-c', control));
+
+// A titled group of rows: the title is a small uppercase label, the rows sit in one card
+export function group(title, ...kids) { return h('section', 'group', h('div', 'gtitle', title), h('div', 'rows', ...kids)); }
+// the first group of a screen gets the leaning chip for its title
+const primary = g => { const t = g.querySelector('.gtitle'); if (t) t.classList.add('chip'); return g; };
+
+const setupDefaults = { laps: 5, custom: false, assists: 'any', racingLine: true, trackLimits: 'penalty' };
 export const raceSetup = settings => ({ ...setupDefaults, ...(settings.raceSetup || {}) });
+
+// the best valid lap saved in this browser (board.js keeps the list, fastest first), or null
+const bestTime = reverse => { const l = loadBest(undefined, bestKey(!!reverse)); return l.length ? l[0].time : null; };
+
+// The circuit outline for the summary card: the track's own points, thinned to about 160 and fitted to the box.
+function trackSvg(track) {
+  const NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 120'); svg.setAttribute('aria-hidden', 'true');
+  if (!track || !track.N) return svg;
+  const step = Math.max(1, Math.floor(track.N / 160));
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (let i = 0; i < track.N; i += step) { x0 = Math.min(x0, track.x[i]); x1 = Math.max(x1, track.x[i]); z0 = Math.min(z0, track.z[i]); z1 = Math.max(z1, track.z[i]); }
+  const pad = 10, k = Math.min((200 - 2 * pad) / ((x1 - x0) || 1), (120 - 2 * pad) / ((z1 - z0) || 1));
+  const ox = (200 - (x1 - x0) * k) / 2, oz = (120 - (z1 - z0) * k) / 2;
+  const pt = i => [ox + (track.x[i] - x0) * k, oz + (track.z[i] - z0) * k];
+  let d = '';
+  for (let i = 0, n = 0; i < track.N; i += step, n++) { const [x, y] = pt(i); d += `${n ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`; }
+  const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d + 'Z');
+  const [sx, sy] = pt(0), dot = document.createElementNS(NS, 'circle');
+  dot.setAttribute('cx', sx.toFixed(1)); dot.setAttribute('cy', sy.toFixed(1)); dot.setAttribute('r', '4'); dot.setAttribute('class', 'start');
+  svg.append(path, dot);
+  return svg;
+}
+
+// --- the rail (main menu, and the other screens of the main menu and the pause menu) ------------------------------------
+
+const HOME = [
+  ['practice', 'Free practice'],
+  ['timetrial', 'Time trial'],
+  ['race', 'Race'],
+  ['online', 'Online'],
+  ['times', 'Global times'],
+  ['garage', 'Garage'],
+  ['settings', 'Settings'],
+];
+
+// Opens one of the seven entries. Practice and race open their setup; time trial starts at once.
+function openEntry(ctx, id) {
+  const m = ctx.menu;
+  if (id === 'practice') return m.jump('setup', { mode: 'practice' });
+  if (id === 'race') return m.jump('setup', { mode: 'race' });
+  if (id === 'timetrial') return ctx.api.startTimeTrial();
+  return m.jump(id);
+}
+
+// The yellow button at the top of the main menu: resumes the last mode used (settings.lastMode, saved on each start)
+function resumeButton(ctx) {
+  const { settings, api } = ctx;
+  const mode = settings.lastMode || 'practice';
+  const reverse = mode === 'practice' && settings.practiceReverse === true;
+  const bests = { practice: () => bestTime(reverse), timetrial: () => bestTime(false) };
+  const best = bests[mode] ? bests[mode]() : null;
+  const R = {
+    practice: ['Drive free practice', () => api.startPractice({ start: settings.practiceStart === 'standing' ? 'standing' : 'pit', reverse })],
+    timetrial: ['Drive time trial', () => api.startTimeTrial()],
+    race: ['Set up a race', () => openEntry(ctx, 'race')],
+    online: ['Go online', () => openEntry(ctx, 'online')],
+  };
+  const [label, go] = R[mode] || R.practice;
+  const b = h('button', 'btn primary resume', h('b', '', label), best ? h('span', '', `Best lap ${fmtTime(best)}`) : null);
+  b.type = 'button'; b.dataset.first = '1';
+  b.addEventListener('click', go);
+  return b;
+}
+
+function navList(ctx, activeId) {
+  const nav = h('nav', 'nav');
+  nav.setAttribute('aria-label', 'Main menu');
+  HOME.forEach(([id, label], i) => {
+    // Online shows a lake dot while the driver is in a room (live state)
+    const live = id === 'online' && ctx.api.inRoom && ctx.api.inRoom() ? h('i', 'live-dot') : null;
+    const b = h('button', 'nav-item', h('span', '', label, live), h('kbd', '', String(i + 1)));
+    b.type = 'button';
+    b.style.setProperty('--i', String(i));
+    if (id === activeId) b.setAttribute('aria-current', 'page');
+    b.addEventListener('click', () => openEntry(ctx, id));
+    nav.append(b);
+  });
+  return nav;
+}
+
+// the driver: race number and name from the paint (settings.livery), the stripe style under it
+function driverChip(ctx) {
+  const l = ownLivery(ctx.settings.livery, localPlayerId());
+  const lobbyName = ctx.api.lobby && typeof ctx.api.lobby.name === 'function' ? ctx.api.lobby.name() : '';
+  const style = l.style ? STRIPE_STYLES[l.style] : null;
+  return h('div', 'driver', h('b', 'no', l.number >= 0 ? String(l.number) : '-'),
+    h('span', '', h('strong', '', l.name || lobbyName || 'Driver'), h('small', '', style ? `GT · ${style}` : 'GT')));
+}
+
+function railNodes(ctx, top) {
+  const main = ctx.menu.kind === 'main';
+  const brand = h(main ? 'button' : 'div', 'rail-brand', h('b', '', 'Lakeside'), h('span', '', 'GT racing in the browser'));
+  if (main) { brand.type = 'button'; brand.addEventListener('click', () => ctx.menu.jump('main')); }
+  const out = [brand];
+  if (main) {
+    if (top.id === 'main') out.push(resumeButton(ctx));
+    const active = top.id === 'setup' ? ((top.params && top.params.mode) || 'race') : top.id;
+    out.push(navList(ctx, active));
+  }
+  out.push(driverChip(ctx));
+  return out;
+}
 
 // --- home -------------------------------------------------------------------------------------------------------------
 
-const HOME = [
-  ['practice', 'Free practice', 'The whole circuit to yourself. No rules, no results.'],
-  ['timetrial', 'Time trial', 'A standing start from the pit exit. Every lap counted and saved.'],
-  ['race', 'Race', 'Set up a race: laps, assists, the racing line. Lights and a start.'],
-  ['online', 'Online', 'Host a room or join one with a code and race your friends.'],
-  ['times', 'Global times', 'The best valid laps from everyone. Pick one and race its ghost.'],
-  ['garage', 'Garage', 'Paint your car: colours, number, stripes and sponsors.'],
-  ['settings', 'Settings', 'Units, assists, steering, display, sound, controls.'],
-];
-
 function homeScreen() {
   return {
-    home: true, title: '',
-    mount(c, ctx) {
-      const brand = h('div', 'home-brand', h('h1', '', 'Lakeside'), h('p', '', 'GT racing in the browser'));
-      const list = h('nav', 'home-list');
-      for (const [id, label, text] of HOME) {
-        const b = h('button', 'home-item', h('b', '', label), h('span', '', text));
-        b.type = 'button'; b.dataset.go = id;
-        b.addEventListener('click', () => ctx.api.go(id));
-        list.append(b);
-      }
-      const foot = h('p', 'home-foot', h('span', '', 'Arrows and Enter, mouse, touch or a gamepad. Esc goes back.'), h('span', 'home-build', ctx.build ? `Build ${ctx.build}` : 'Development build'));
-      c.append(brand, list, foot);
-      list.firstChild.dataset.first = '1';
+    home: true, rail: true, title: '',
+    onDigit: (n, mounted, ctx) => { const e = HOME[n - 1]; if (e) openEntry(ctx, e[0]); },
+    mount(c) {
+      c.append(h('div', 'm-caption', h('b', '', CIRCUIT.name), h('span', '', CIRCUIT.facts)));
       return null;
     },
   };
@@ -81,14 +200,14 @@ function homeScreen() {
 
 function pauseScreen() {
   return {
-    title: 'Paused', backable: false,
+    title: 'Paused', backable: false, rail: true,
     mount(c, ctx) {
       const s = ctx.api.session && ctx.api.session();
       const info = s ? h('p', 'm-sub', ({ practice: 'Free practice', timetrial: 'Time trial', race: s.laps ? `Race, ${s.laps} laps` : 'Race', online: s.laps ? `Online race, ${s.laps} laps` : 'Online' })[s.mode]) : null;
-      const list = h('div', 'm-list');
-      const online = ctx.api.inRoom && ctx.api.inRoom();
+      const resume = btn('Resume', 'btn primary', () => ctx.api.resume());
+      resume.dataset.first = '1';
+      const list = h('div', 'rows');
       const items = [
-        ['Resume', 'primary', () => ctx.api.resume()],
         ['Restart session', '', () => ctx.api.restart()],
         ['Settings', '', () => ctx.menu.push('settings')],
         ['Global times', '', () => ctx.menu.push('times')],
@@ -96,18 +215,17 @@ function pauseScreen() {
         ['Report a problem', '', () => ctx.api.report()],
         ['Back to main menu', 'danger', () => confirmLeave()],
       ];
-      if (online) items[1] = ['Restart session', '', () => ctx.api.restart()];
-      for (const [label, cls, fn] of items) { const b = btn(label, 'm-btn ' + cls, fn); list.append(b); if (label === 'Resume') b.dataset.first = '1'; }
-      const sure = h('div', 'm-confirm'); sure.hidden = true;
+      for (const [label, cls, fn] of items) list.append(btn(label, 'btn-row ' + cls, fn));
+      const sure = h('div', 'confirm'); sure.hidden = true;
       function confirmLeave() {
-        list.hidden = true; sure.hidden = false;
+        list.hidden = true; resume.hidden = true; sure.hidden = false;
         sure.replaceChildren(h('p', '', 'Leave this session and go back to the main menu? Your laps in this session are not kept except the ones already saved in Times.'),
-          h('div', 'm-actions', btn('Stay', 'm-btn', () => { sure.hidden = true; list.hidden = false; ctx.menu.focusFirst(); }), btn('Leave', 'm-btn danger', () => ctx.api.toMainMenu())));
+          h('div', 'actions', btn('Stay', 'btn', () => { sure.hidden = true; list.hidden = false; resume.hidden = false; ctx.menu.focusFirst(); }), btn('Leave', 'btn danger', () => ctx.api.toMainMenu())));
         sure.querySelector('button').dataset.first = '1';
         ctx.menu.focusFirst();
       }
       if (info) c.append(info);
-      c.append(list, sure);
+      c.append(resume, list, sure);
       return null;
     },
     onBack: ctx => { ctx.api.resume(); return true; },
@@ -115,42 +233,66 @@ function pauseScreen() {
 }
 
 // --- setup (race and practice) ----------------------------------------------------------------------------------------
+// Three groups on the left, a summary card on the right with the track map, what was chosen, and the Start button.
 
 function setupScreen() {
   return {
+    rail: true,
     title: p => (p && p.mode === 'practice' ? 'Free practice' : 'Race setup'),
     mount(c, ctx) {
       const { settings, save, api } = ctx, mode = (ctx.params && ctx.params.mode) || 'race';
+      const grid = h('div', 'setup'), groups = h('div', 'setup-groups'), summary = h('div', 'summary');
+      const big = h('div', 'big'), facts = h('div', 'facts'), map = h('div', 'track-map');
+      map.append(trackSvg(api.track));
+      grid.append(groups, summary);
+      c.append(h('p', 'm-sub', mode === 'practice' ? 'Drive as long as you like. Reset puts you back on the track anywhere.' : 'Standing start from the grid with the five lights.'), grid);
+      const fact = (k, v) => [h('span', '', k), h('b', '', v)];
+      const conditions = () => { const e = api.environment ? api.environment() : { weather: settings.weather, time: settings.timeOfDay }; return `${TIME_NAMES[e.time] || ''} · ${WEATHER_NAMES[e.weather] || ''}`; };
+
       if (mode === 'practice') {
-        c.append(h('p', 'm-sub', 'Drive as long as you like. Reset puts you back on the track anywhere.'));
-        c.append(segRow('Start from', [['pit', 'Pit lane'], ['standing', 'Starting grid']], () => settings.practiceStart || 'pit', v => { settings.practiceStart = v; save(settings); }));
-        c.append(segRow('Direction', [[false, 'Normal'], [true, 'Reverse']], () => settings.practiceReverse === true, v => { settings.practiceReverse = v; save(settings); }));
-        const go = btn('Start practice', 'm-btn primary', () => api.startPractice({ start: settings.practiceStart === 'standing' ? 'standing' : 'pit', reverse: settings.practiceReverse === true }));
+        const refresh = () => {
+          big.replaceChildren('Free practice', h('small', '', 'no results'));
+          facts.replaceChildren(...fact('Start', settings.practiceStart === 'standing' ? 'Starting grid' : 'Pit lane'), ...fact('Direction', settings.practiceReverse === true ? 'Reverse' : 'Normal'), ...fact('Conditions', conditions()));
+        };
+        groups.append(primary(group('Start',
+          segRow('Start from', [['pit', 'Pit lane'], ['standing', 'Starting grid']], () => settings.practiceStart || 'pit', v => { settings.practiceStart = v; save(settings); refresh(); }),
+          segRow('Direction', [[false, 'Normal'], [true, 'Reverse']], () => settings.practiceReverse === true, v => { settings.practiceReverse = v; save(settings); refresh(); }))));
+        groups.append(...weatherRows(ctx, segRow, h, 'Conditions'));
+        const go = btn('Start practice', 'btn primary', () => api.startPractice({ start: settings.practiceStart === 'standing' ? 'standing' : 'pit', reverse: settings.practiceReverse === true }));
         go.dataset.first = '1';
-        c.append(h('div', 'm-actions', go));
+        summary.append(big, facts, map, go);
+        refresh();
         return null;
       }
+
       const cur = raceSetup(settings);
-      const store = () => { settings.raceSetup = { ...cur }; save(settings); };
-      c.append(h('p', 'm-sub', 'Standing start from the grid with the five lights.'));
-      const lapsOpts = [...LAP_CHOICES.map(n => [n, String(n)]), ['custom', 'Custom']];
-      const customRow = h('div', 'm-row m-custom');
-      const num = h('output', 'm-num', String(cur.laps));
-      const minus = btn('−', 'm-step', () => { cur.laps = Math.max(1, cur.laps - 1); upd(); }), plus = btn('+', 'm-step', () => { cur.laps = Math.min(99, cur.laps + 1); upd(); });
+      const hasLine = !!(api.hasRacingLine && api.hasRacingLine());
+      const store = () => { settings.raceSetup = { ...cur }; save(settings); refresh(); };
+      const num = h('output', 'stepper-num', String(cur.laps));
+      const minus = btn('−', 'step', () => { cur.laps = Math.max(1, cur.laps - 1); upd(); }), plus = btn('+', 'step', () => { cur.laps = Math.min(99, cur.laps + 1); upd(); });
       minus.setAttribute('aria-label', 'One lap fewer'); plus.setAttribute('aria-label', 'One lap more');
-      customRow.append(h('div', 'm-label', 'Number of laps'), h('div', 'm-stepper', minus, num, plus));
+      const customRow = fieldRow('Number of laps', h('div', 'stepper', minus, num, plus));
+      const lapsOpts = [...LAP_CHOICES.map(n => [n, String(n)]), ['custom', 'Custom']];
       const laps = segRow('Laps', lapsOpts, () => (cur.custom ? 'custom' : cur.laps), v => { if (v === 'custom') cur.custom = true; else { cur.custom = false; cur.laps = v; } upd(); });
       function upd() { num.textContent = String(cur.laps); customRow.hidden = !cur.custom; laps.sync(); store(); }
-      c.append(laps, customRow);
-      const start = segRow('Start', [['standing', 'Standing start']], () => 'standing', () => {});
-      c.append(start);
-      c.append(segRow('Assists', [['any', 'Any'], ['off', 'All off']], () => cur.assists, v => { cur.assists = v; store(); }, { note: 'All off switches traction control, ABS and stability control off for the race.' }));
-      if (api.hasRacingLine && api.hasRacingLine()) c.append(segRow('Racing line', [[true, 'Allowed'], [false, 'Not allowed']], () => cur.racingLine, v => { cur.racingLine = v; store(); }));
-      c.append(...weatherRows(ctx, segRow, h));
-      c.append(segRow('Track limits', [['warn', 'Warnings']], () => 'warn', () => {}, { note: 'Cutting a corner shows a warning and makes the lap invalid.' }));
-      const go = btn('Start race', 'm-btn primary', () => api.startRace({ laps: cur.laps, assists: cur.assists, racingLine: api.hasRacingLine && api.hasRacingLine() ? cur.racingLine : true }));
+      const limits = segRow('Track limits', [['warn', 'Warn only'], ['penalty', 'Penalty']], () => cur.trackLimits, v => { cur.trackLimits = v; store(); },
+        { note: 'Cutting a corner always warns and voids the lap. In a race, a cut that gains time adds a penalty.' });
+      const assists = segRow('Assists', [['any', 'Any'], ['off', 'All off']], () => cur.assists, v => { cur.assists = v; store(); },
+        { note: 'All off switches traction control, ABS and stability control off for the race.' });
+      const line = segRow('Racing line', [[true, 'Allowed'], [false, 'Not allowed']], () => cur.racingLine, v => { cur.racingLine = v; store(); });
+
+      groups.append(primary(group('Format', laps, customRow, limits)));
+      groups.append(group('Rules', assists, ...(hasLine ? [line] : [])));
+      groups.append(...weatherRows(ctx, segRow, h, 'Conditions'));
+
+      function refresh() {
+        const perLap = bestTime(false) || DEFAULT_LAP_S;
+        big.replaceChildren(`${cur.laps} ${cur.laps === 1 ? 'lap' : 'laps'}`, h('small', '', `about ${Math.max(1, Math.round(cur.laps * perLap / 60))} min`));
+        facts.replaceChildren(...fact('Start', 'Standing'), ...fact('Conditions', conditions()), ...fact('Assists', cur.assists === 'off' ? 'All off' : 'Any'), ...fact('Track limits', cur.trackLimits === 'warn' ? 'Warn only' : 'Penalty'));
+      }
+      const go = btn('Start race', 'btn primary', () => api.startRace({ laps: cur.laps, assists: cur.assists, racingLine: hasLine ? cur.racingLine : true, trackLimits: cur.trackLimits }));
       go.dataset.first = '1';
-      c.append(h('div', 'm-actions', go));
+      summary.append(big, facts, map, go);
       upd();
       return null;
     },
@@ -160,89 +302,99 @@ function setupScreen() {
 // --- settings ---------------------------------------------------------------------------------------------------------
 
 function settingsScreen() {
-  const TABS = ['Driving', 'Display', 'Weather', 'Interface', 'Sound', 'Controls', 'Online'];
+  const TABS = ['Driving', 'Controls', 'Display', 'Interface', 'Weather', 'Sound', 'Online'];
   return {
+    rail: true,
     title: 'Settings',
     mount(c, ctx) {
       const { settings, save, api } = ctx;
-      const tabs = h('div', 'm-tabs'); tabs.setAttribute('role', 'tablist');
-      const panel = h('div', 'm-panel'); panel.setAttribute('role', 'tabpanel');
-      c.append(tabs, panel);
+      c.append(h('p', 'm-sub', 'Changes save as you make them.'));
+      const shell = h('div', 'set');
+      const tabs = h('nav', 'sub'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Settings categories');
+      const panel = h('div', 'set-panel'); panel.setAttribute('role', 'tabpanel');
+      shell.append(tabs, panel);
+      c.append(shell);
       let current = Math.max(0, TABS.indexOf(ctx.menu.lastSettingsTab || 'Driving')), disposeTab = null;
       const persist = () => save(settings);
       const forced = api.session && api.session() && api.session().assists === 'off';
 
+      // every row of the open category, so a change that moves several switches (a HUD preset) can re-sync them all
+      let rows = [];
+      const track = row => { rows.push(row); return row; };
+      const sync = () => rows.forEach(r => r.sync());
+      const onOff = (label, get, set, note) => track(boolRow(label, get, v => { set(v); persist(); sync(); }, { note }));
+
       const builders = {
         Driving(p) {
-          p.append(segRow('Speed', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }));
           if (forced) p.append(h('p', 'm-note warn', 'This race has all assists off. Your own assist settings come back afterwards.'));
-          const assists = h('div', 'm-group', h('div', 'm-gtitle', 'Assists'));
-          for (const [key, label] of [['assistTc', 'Traction control'], ['assistAbs', 'ABS'], ['assistEsc', 'Stability control']]) {
-            assists.append(segRow(label, [[true, 'On'], [false, 'Off']], () => settings[key], v => { settings[key] = v; persist(); api.applyAssists(); }));
-          }
-          p.append(assists);
-          const sens = sliderRow('Cursor sensitivity', { min: 50, max: 200, step: 5, get: () => Math.round(settings.steerSens * 100), set: v => { settings.steerSens = Math.max(0.5, Math.min(2, v / 100)); persist(); }, fmt: v => `${Math.round(v)}%` });
-          const steer = segRow('Steering', [['keyboard', 'Keyboard'], ['cursor', 'Cursor']], () => settings.steering, v => { settings.steering = v; persist(); sens.input.disabled = v !== 'cursor'; });
-          sens.input.disabled = settings.steering !== 'cursor';
-          p.append(steer, sens);
+          p.append(group('Units and steering',
+            segRow('Speed', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }),
+            ...(() => {
+              const sens = sliderRow('Cursor sensitivity', { min: 50, max: 200, step: 5, get: () => Math.round(settings.steerSens * 100), set: v => { settings.steerSens = Math.max(0.5, Math.min(2, v / 100)); persist(); }, fmt: v => `${Math.round(v)}%` });
+              const steer = segRow('Steering', [['keyboard', 'Keyboard'], ['cursor', 'Cursor']], () => settings.steering, v => { settings.steering = v; persist(); sens.input.disabled = v !== 'cursor'; },
+                { note: 'Cursor steering follows your mouse across the screen' });
+              sens.input.disabled = settings.steering !== 'cursor';
+              return [steer, sens];
+            })()));
+          const assists = [
+            onOff('Traction control', () => settings.assistTc, v => { settings.assistTc = v; api.applyAssists(); }, 'Limits wheelspin under power'),
+            onOff('ABS', () => settings.assistAbs, v => { settings.assistAbs = v; api.applyAssists(); }, 'Stops the wheels locking under braking'),
+            onOff('Stability control', () => settings.assistEsc, v => { settings.assistEsc = v; api.applyAssists(); }, 'Catches slides before they become spins'),
+          ];
           if (api.hasRacingLine && api.hasRacingLine()) {
             const allowed = api.racingLineAllowed ? api.racingLineAllowed() : true;
-            p.append(segRow('Racing line', [[false, 'Off'], [true, 'On']], () => settings.racingLine, v => { settings.racingLine = v; persist(); }, { note: allowed ? 'Colours show where to brake, lift and push. The L key switches it too.' : 'This race does not allow the racing line.' }));
+            assists.push(onOff('Racing line', () => settings.racingLine, v => { settings.racingLine = v; }, allowed ? 'Colours show where to brake, lift and push. The L key switches it too.' : 'This race does not allow the racing line.'));
           }
+          p.append(group('Driver assists', ...assists));
         },
         Display(p) {
-          p.append(segRow('View', [[false, 'Driving'], [true, 'Top-down debug']], () => api.getTopDown(), v => api.setTopDown(v)));
-          p.append(segRow('Free look', [[true, 'On'], [false, 'Off']], () => settings.freeLook !== false, v => { settings.freeLook = v; persist(); },
-            { note: 'Drag with the mouse (right button with cursor steering) or push the right stick to look round the car. Let go and the camera settles back.' }));
-          p.append(segRow('Detail', [[false, 'Full'], [true, 'Blockout']], () => !!settings.blockout, v => { settings.blockout = v; persist(); api.applyLook(); }));
-          p.append(segRow('Graphics quality', QUALITY_SETTINGS.map(k => [k, QUALITY_LABELS[k]]), () => settings.quality, v => { settings.quality = v; persist(); api.qualityChanged(); },
-            { note: 'Auto keeps the frame rate up by lowering the render scale when the screen is too demanding. High is the full look; Medium and Low use a smaller shadow map and a lower pixel density.' }));
-          p.append(segRow('FPS readout', [[false, 'Hide'], [true, 'Show']], () => !!settings.hud.fps, v => { settings.hud.fps = v; persist(); }, { note: 'Frame rate and frame time in the top corner. The F key switches it too.' }));
-          p.append(segRow('Handling readout', [[false, 'Hide'], [true, 'Show']], () => !!settings.debug, v => { settings.debug = v; persist(); }));
+          p.append(group('View',
+            segRow('View', [[false, 'Driving'], [true, 'Top-down debug']], () => api.getTopDown(), v => api.setTopDown(v)),
+            onOff('Free look', () => settings.freeLook !== false, v => { settings.freeLook = v; }, 'Drag with the mouse (right button with cursor steering) or push the right stick to look round the car. Let go and the camera settles back.'),
+            track(segRow('Detail', [[false, 'Full'], [true, 'Blockout']], () => !!settings.blockout, v => { settings.blockout = v; persist(); api.applyLook(); })),
+            track(segRow('Graphics quality', QUALITY_SETTINGS.map(k => [k, QUALITY_LABELS[k]]), () => settings.quality, v => { settings.quality = v; persist(); api.qualityChanged(); },
+              { note: 'Auto keeps the frame rate up by lowering the render scale when the screen is too demanding. High is the full look; Medium and Low use a smaller shadow map and a lower pixel density.' }))));
           // the autopilot drives the forward line only: in a reverse session it is switched off (main.js) and cannot be turned on
           const reverseNow = !!(api.session && api.session() && api.session().reverse);
-          const ap = segRow('Autopilot demo lap', [[false, 'Off'], [true, 'On']], () => api.getAutopilot(), v => api.setAutopilot(v),
-            reverseNow ? { note: 'Not in a reverse session: the autopilot drives the forward line only.' } : {});
+          const ap = track(boolRow('Autopilot demo lap', () => api.getAutopilot(), v => api.setAutopilot(v),
+            { note: reverseNow ? 'Not in a reverse session: the autopilot drives the forward line only.' : undefined }));
           if (reverseNow) for (const b of ap.buttons) b.disabled = true;
-          p.append(ap);
+          p.append(group('Readouts',
+            onOff('FPS readout', () => !!settings.hud.fps, v => { settings.hud.fps = v; }, 'Frame rate and frame time in the top corner. The F key switches it too.'),
+            onOff('Handling readout', () => !!settings.debug, v => { settings.debug = v; }),
+            ap));
         },
         Interface(p) {
           // every switch writes into settings.hud / settings.trackMap; the HUD reads them each frame. `rows` are re-synced after any
           // change because a preset changes many switches at once.
-          const rows = [], sync = () => rows.forEach(r => r.sync()), add = (parent, row) => { rows.push(row); parent.append(row); return row; };
-          const onOff = (label, get, set, note) => segRow(label, [[true, 'On'], [false, 'Off']], get, v => { set(v); persist(); sync(); }, { note });
-          add(p, segRow('HUD preset', PRESET_ORDER.map(k => [k, PRESET_NAMES[k]]), () => detectPreset(settings), v => { applyPreset(settings, v); persist(); sync(); }, { note: 'The H key steps through Full, Minimal and Off. Switching a single part below makes it Custom.' }));
-          add(p, sliderRow('HUD scale', { min: SCALE_MIN, max: SCALE_MAX, step: 5, get: () => settings.hudScale, set: v => { settings.hudScale = v; persist(); }, fmt: v => `${Math.round(v)}%` }));
-          add(p, segRow('Speed', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }));
-          const groups = [['Readouts', ['speed', 'lapTimer', 'sectors', 'minisectors', 'delta']], ['Warnings and messages', ['limits', 'assists', 'flags']], ['Inputs', ['steerBar', 'pedals', 'inputOverlay']], ['Other', ['fps']]];
+          p.append(group('HUD',
+            track(segRow('HUD preset', PRESET_ORDER.map(k => [k, PRESET_NAMES[k]]), () => detectPreset(settings), v => { applyPreset(settings, v); persist(); sync(); },
+              { note: 'The H key steps through Full, Minimal and Off. Switching a single part below makes it Custom.' })),
+            track(sliderRow('HUD scale', { min: SCALE_MIN, max: SCALE_MAX, step: 5, get: () => settings.hudScale, set: v => { settings.hudScale = v; persist(); }, fmt: v => `${Math.round(v)}%` })),
+            track(segRow('Speed', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }))));
           const info = Object.fromEntries(HUD_ELEMENTS.map(e => [e[0], e]));
-          for (const [title, keys] of groups) {
-            const grp = h('div', 'm-group', h('div', 'm-gtitle', title));
-            for (const k of keys) add(grp, onOff(info[k][1], () => settings.hud[k], v => { settings.hud[k] = v; }, info[k][2]));
-            p.append(grp);
-          }
-          const online = h('div', 'm-group', h('div', 'm-gtitle', 'Online'));
-          add(online, onOff('Ping readout', () => settings.showPing !== false, v => { settings.showPing = v; }, 'The round trip to the relay in ms, in the top corner while online. Green under 60 ms, amber under 120, red above.'));
-          p.append(online);
-          const tm = settings.trackMap, mg = h('div', 'm-group', h('div', 'm-gtitle', 'Track map'));
-          const mrow = row => add(mg, row);
+          const groups = [['Readouts', ['speed', 'lapTimer', 'sectors', 'minisectors', 'delta']], ['Warnings and messages', ['limits', 'assists', 'flags']], ['Inputs', ['steerBar', 'pedals', 'inputOverlay']], ['Other', ['fps']]];
+          for (const [title, keys] of groups) p.append(group(title, ...keys.map(k => onOff(info[k][1], () => settings.hud[k], v => { settings.hud[k] = v; }, info[k][2]))));
+          p.append(group('Online', onOff('Ping readout', () => settings.showPing !== false, v => { settings.showPing = v; }, 'The round trip to the relay in ms, in the top corner while online. Green under 60 ms, amber under 120, red above.')));
+          const tm = settings.trackMap;
           const set = (k, v) => { tm[k] = v; persist(); sync(); };
-          add(mg, onOff('Show the track map', () => tm.on, v => { tm.on = v; }, 'The M key switches it too.'));
-          mrow(segRow('Size', Object.keys(MAP_SIZES).map(k => [k, k[0].toUpperCase() + k.slice(1)]), () => tm.size, v => set('size', v)));
-          mrow(segRow('Position', Object.entries(MAP_POSITIONS), () => tm.position, v => set('position', v)));
-          mrow(sliderRow('Opacity', { min: Math.round(MAP_OPACITY_MIN * 100), max: 100, step: 5, get: () => Math.round(tm.opacity * 100), set: v => { tm.opacity = v / 100; persist(); }, fmt: v => `${Math.round(v)}%` }));
-          mrow(segRow('Orientation', [[false, 'North up'], [true, 'Rotate with car']], () => tm.rotate, v => set('rotate', v)));
-          mrow(segRow('Zoom', [['circuit', 'Whole circuit'], ['local', 'Local area']], () => tm.zoom, v => set('zoom', v)));
-          mrow(segRow('Corner numbers', [['off', 'Off'], ['numbers', 'On']], () => tm.labels, v => set('labels', v)));
-          p.append(mg);
+          p.append(group('Track map',
+            onOff('Show the track map', () => tm.on, v => { tm.on = v; }, 'The M key switches it too.'),
+            track(segRow('Size', Object.keys(MAP_SIZES).map(k => [k, k[0].toUpperCase() + k.slice(1)]), () => tm.size, v => set('size', v))),
+            track(segRow('Position', Object.entries(MAP_POSITIONS), () => tm.position, v => set('position', v))),
+            track(sliderRow('Opacity', { min: Math.round(MAP_OPACITY_MIN * 100), max: 100, step: 5, get: () => Math.round(tm.opacity * 100), set: v => { tm.opacity = v / 100; persist(); }, fmt: v => `${Math.round(v)}%` })),
+            track(segRow('Orientation', [[false, 'North up'], [true, 'Rotate with car']], () => tm.rotate, v => set('rotate', v))),
+            track(segRow('Zoom', [['circuit', 'Whole circuit'], ['local', 'Local area']], () => tm.zoom, v => set('zoom', v))),
+            track(segRow('Corner numbers', [['off', 'Off'], ['numbers', 'On']], () => tm.labels, v => set('labels', v)))));
         },
-        Weather(p) { p.append(...weatherRows(ctx, segRow, h), ...lightningRows(ctx, segRow, h)); },
+        Weather(p) { p.append(...weatherRows(ctx, segRow, h), ...lightningRows(ctx, boolRow, h)); },
         Sound(p) {
-          p.append(segRow('Sound', [[true, 'On'], [false, 'Off']], () => settings.sound !== false, v => { settings.sound = v; persist(); }));
-          p.append(sliderRow('Volume', { min: 0, max: 100, step: 1, get: () => Math.round(settings.volume * 100), set: v => { settings.volume = Math.max(0, Math.min(1, v / 100)); persist(); }, fmt: v => `${Math.round(v)}%` }));
+          p.append(group('Sound',
+            boolRow('Sound', () => settings.sound !== false, v => { settings.sound = v; persist(); }),
+            sliderRow('Volume', { min: 0, max: 100, step: 1, get: () => Math.round(settings.volume * 100), set: v => { settings.volume = Math.max(0, Math.min(1, v / 100)); persist(); }, fmt: v => `${Math.round(v)}%` })));
         },
         Controls(p) {
-          const box = h('div', 'm-controls', h('p', 'm-note', 'Loading controls...'));
+          const box = h('div', 'ctl-box', h('p', 'm-note', 'Loading controls...'));
           p.append(box);
           let dead = false, inst = null;
           import('./gamepad.js').then(m => {
@@ -253,29 +405,28 @@ function settingsScreen() {
           return () => { dead = true; if (inst && inst.dispose) inst.dispose(); };
         },
         Online(p) {
-          const nameInput = h('input', 'm-text'); nameInput.type = 'text'; nameInput.maxLength = 16; nameInput.placeholder = 'Your name'; nameInput.setAttribute('aria-label', 'Your name');
+          const nameInput = h('input', 'field'); nameInput.type = 'text'; nameInput.maxLength = 16; nameInput.placeholder = 'Your name'; nameInput.setAttribute('aria-label', 'Your name');
           nameInput.autocomplete = 'off'; nameInput.spellcheck = false;
           const lobbyName = document.getElementById('mp-name');
           nameInput.value = lobbyName ? lobbyName.value : '';
           nameInput.addEventListener('change', () => { if (lobbyName) { lobbyName.value = nameInput.value; lobbyName.dispatchEvent(new Event('change', { bubbles: true })); } });
-          p.append(h('div', 'm-row', h('label', 'm-label', 'Name in online rooms'), nameInput));
           const info = h('p', 'm-note');
-          const via = document.getElementById('mp-via'), status = document.getElementById('mp-status');
+          const via = document.getElementById('mp-via');
           const t = () => { info.textContent = (via && via.textContent) || 'Not in a room. Rooms use a relay server when the site has one set, and peer to peer otherwise. Both work the same in the game.'; };
           t();
-          p.append(info, h('p', 'm-note', 'Host a room or join one from Online in the main menu.'));
-          void status;
+          p.append(group('Online', fieldRow('Name in online rooms', nameInput)), info, h('p', 'm-note', 'Host a room or join one from Online in the main menu.'));
         },
       };
 
       const tabButtons = TABS.map((name, i) => {
-        const b = btn(name, 'm-tab', () => show(i)); b.setAttribute('role', 'tab'); b.dataset.tab = name; tabs.append(b); return b;
+        const b = btn(name, 'sub-item', () => show(i)); b.setAttribute('role', 'tab'); b.dataset.tab = name; tabs.append(b); return b;
       });
       function show(i) {
         if (disposeTab) { disposeTab(); disposeTab = null; }
         current = (i + TABS.length) % TABS.length;
         ctx.menu.lastSettingsTab = TABS[current];
-        tabButtons.forEach((b, k) => { b.classList.toggle('sel', k === current); b.setAttribute('aria-selected', String(k === current)); });
+        rows = [];
+        tabButtons.forEach((b, k) => { b.setAttribute('aria-selected', String(k === current)); });
         panel.replaceChildren();
         const f = builders[TABS[current]](panel);
         if (typeof f === 'function') disposeTab = f;
@@ -290,42 +441,46 @@ function settingsScreen() {
 }
 
 // --- online -----------------------------------------------------------------------------------------------------------
+// The lobby block (src/lobby.js finds its elements by id) sits in the summary card on the right; the host's race setup and
+// the Start button are with it. Guests see the line about waiting for the host.
 
 function onlineScreen() {
-  let timer = 0, holder = null, home = null;
+  let timer = 0, holder = null;
   return {
+    rail: true,
     title: 'Online',
     mount(c, ctx) {
       const { settings, save, api } = ctx;
       const mp = document.querySelector('#online-src .mp, .mp');
-      home = mp ? mp.parentElement : null;
       holder = mp;
       const lobby = api.lobby;
       c.append(h('p', 'm-sub', 'Race up to eight people. One person hosts a room and shares the five letter code.'));
-      if (mp) c.append(mp);
-      // the host's race setup and Start button, or a line for guests
-      const box = h('div', 'm-online-race');
+      const grid = h('div', 'setup online');
+      const box = h('div', 'setup-groups');   // the host's race setup; hidden until in a room
       const cur = raceSetup(settings);
       const store = () => { settings.raceSetup = { ...cur }; save(settings); };
-      const setup = h('div', 'm-hostsetup');
-      setup.append(h('div', 'm-gtitle', 'Race setup'));
-      setup.append(segRow('Laps', LAP_CHOICES.map(n => [n, String(n)]), () => cur.laps, v => { cur.laps = v; cur.custom = false; store(); }));
-      setup.append(segRow('Assists', [['any', 'Any'], ['off', 'All off']], () => cur.assists, v => { cur.assists = v; store(); }));
-      if (api.hasRacingLine && api.hasRacingLine()) setup.append(segRow('Racing line', [[true, 'Allowed'], [false, 'Not allowed']], () => cur.racingLine, v => { cur.racingLine = v; store(); }));
-      setup.append(...weatherRows(ctx, segRow, h));
-      const startBtn = btn('Start race', 'm-btn primary', () => api.hostStartRace({ laps: cur.laps, assists: cur.assists, racingLine: api.hasRacingLine && api.hasRacingLine() ? cur.racingLine : true }));
-      setup.append(h('div', 'm-actions', startBtn));
+      const hostSetup = [
+        segRow('Laps', LAP_CHOICES.map(n => [n, String(n)]), () => cur.laps, v => { cur.laps = v; cur.custom = false; store(); }),
+        segRow('Assists', [['any', 'Any'], ['off', 'All off']], () => cur.assists, v => { cur.assists = v; store(); }),
+      ];
+      if (api.hasRacingLine && api.hasRacingLine()) hostSetup.push(segRow('Racing line', [[true, 'Allowed'], [false, 'Not allowed']], () => cur.racingLine, v => { cur.racingLine = v; store(); }));
       const wait = h('p', 'm-note', 'Waiting for the host to start the race.');
-      box.append(setup, wait);
-      c.append(box);
-      const drive = btn('Drive around while you wait', 'm-btn', () => api.startPractice({ start: 'pit' }));
+      box.append(group('Race setup', ...hostSetup), ...weatherRows(ctx, segRow, h, 'Conditions'), wait);
+      const startBtn = btn('Start race', 'btn primary', () => api.hostStartRace({ laps: cur.laps, assists: cur.assists, racingLine: api.hasRacingLine && api.hasRacingLine() ? cur.racingLine : true }));
+      const card = h('div', 'summary online-card');
+      if (mp) card.append(mp);
+      card.append(startBtn);
+      grid.append(box, card);
+      c.append(grid);
+      const drive = btn('Drive around while you wait', 'btn', () => api.startPractice({ start: 'pit' }));
       c.append(h('div', 'm-actions', drive));
       const upd = () => {
         const m = lobby && lobby.mp;
         const inRoom = !!(m && (m.phase === 'hosting' || m.phase === 'joined'));
         box.hidden = !inRoom;
-        setup.hidden = !(inRoom && m.isHost);
+        grid.dataset.room = inRoom ? '1' : '0';
         wait.hidden = !(inRoom && !m.isHost);
+        for (const g of box.querySelectorAll('.group')) g.hidden = !(inRoom && m.isHost);   // the host's setup only
         startBtn.disabled = !(inRoom && m.isHost);
       };
       upd();
@@ -349,6 +504,7 @@ function onlineScreen() {
 function timesScreen() {
   let seq = 0;
   return {
+    rail: true,
     title: 'Global times',
     mount(c, ctx) {
       const gt = ctx.api.globalTimes, client = gt && gt.client();
@@ -366,7 +522,7 @@ function timesScreen() {
       }
       const board = { ...gt.currentBoard() };
       c.append(h('p', 'm-sub', 'Every valid lap is posted on its own: no track limit warnings, no reset, no autopilot. One row per driver, their best.'));
-      const nameIn = h('input', 'm-text'); nameIn.type = 'text'; nameIn.maxLength = 16; nameIn.autocomplete = 'off'; nameIn.spellcheck = false;
+      const nameIn = h('input', 'field'); nameIn.type = 'text'; nameIn.maxLength = 16; nameIn.autocomplete = 'off'; nameIn.spellcheck = false;
       nameIn.value = gt.name(); nameIn.setAttribute('aria-label', 'Your name on the boards');
       const nameNote = h('p', 'm-note'); nameNote.hidden = true;
       nameIn.addEventListener('change', () => {
@@ -377,15 +533,15 @@ function timesScreen() {
         nameNote.textContent = 'The name painted on your car is used while it is set (Garage).';
         load();
       });
-      c.append(h('div', 'm-row', h('label', 'm-label', 'Your name'), nameIn), nameNote);
+      c.append(group('Your name', fieldRow('Name on the boards', nameIn)), nameNote);
       const rows = [
         segRow('Weather', [['dry', 'Dry'], ['wet', 'Wet']], () => board.weather, v => { board.weather = v; load(); }),
         segRow('Session', [['solo', 'Solo'], ['online', 'Online']], () => board.mode, v => { board.mode = v; load(); }),
         segRow('Direction', [['fwd', 'Normal'], ['rev', 'Reverse']], () => board.dir, v => { board.dir = v; load(); }),
         segRow('Assists', [['on', 'On'], ['off', 'All off']], () => board.assists, v => { board.assists = v; load(); }),
       ];
-      c.append(...rows);
-      const ghostLine = h('div', 'm-row t-ghost');
+      c.append(group('Board', ...rows));
+      const ghostLine = h('div', 'row t-ghost');
       const status = h('p', 'm-note t-status');
       const list = h('div', 't-list');
       c.append(ghostLine, list, status);
@@ -394,13 +550,13 @@ function timesScreen() {
         const g = gt.ghostInfo();
         ghostLine.replaceChildren();
         ghostLine.hidden = !g;
-        if (g) ghostLine.append(h('div', 'm-label', `Racing the ghost of ${g.name}, ${fmtTime(g.time)}`), btn('Remove ghost', 'm-btn', () => { gt.clearGhost(); showGhost(); }));
+        if (g) ghostLine.append(h('div', 'row-l', h('b', '', `Racing the ghost of ${g.name}, ${fmtTime(g.time)}`)), btn('Remove ghost', 'btn', () => { gt.clearGhost(); showGhost(); }));
       };
       const row = (e, you) => {
         const r = h('div', 't-row' + (you ? ' you' : ''), h('span', 't-rank', String(e.rank)), h('span', 't-name', e.name), h('span', 't-time', fmtTime(e.time)),
           h('span', 't-sec', (e.sectors || []).map(x => x.toFixed(1)).join('  ')));
         const cell = h('span', 't-act');
-        if (e.ghost) cell.append(btn('Race', 'm-opt', async () => {
+        if (e.ghost) cell.append(btn('Race', 'btn quiet', async () => {
           status.textContent = `Loading the ghost of ${e.name}...`;
           const got = await client.ghost(board, e.name);
           if (!got || !gt.loadGhost({ ...got, board: { ...board } })) { status.textContent = 'That ghost could not be loaded.'; return; }
@@ -440,6 +596,7 @@ function timesScreen() {
 
 function comingScreen() {
   return {
+    rail: true,
     title: p => (p && p.name ? p.name[0].toUpperCase() + p.name.slice(1) : 'Coming soon'),
     mount(c) { c.append(h('p', 'm-sub', 'Coming soon.'), h('p', 'm-note', 'This part of the game is not ready yet.')); return null; },
   };
@@ -448,9 +605,10 @@ function comingScreen() {
 // Garage: garage.js exports mountGarage(container, { settings, save, onChange }) -> { dispose() }. Missing file: a "Coming soon" panel.
 function garageScreen() {
   return {
+    rail: true,
     title: 'Garage',
     mount(c, ctx) {
-      const box = h('div', 'm-garage', h('p', 'm-note', 'Loading the garage...'));
+      const box = h('div', 'garage-box', h('p', 'm-note', 'Loading the garage...'));
       c.append(box);
       let dead = false, inst = null;
       import('./garage.js').then(m => {
@@ -470,6 +628,7 @@ const FLAG_NAMES = [['yellow', 'Yellow'], ['red', 'Red'], ['green', 'Track clear
 
 function screenPanel() {
   return {
+    rail: true,
     title: 'Screen control',
     mount(c, ctx) {
       const sc = ctx.api.screen;
@@ -478,36 +637,39 @@ function screenPanel() {
         return null;
       }
       const send = cmd => sc.command(cmd);
-      const group = (title, ...kids) => { const g = h('div', 'm-group'); g.append(h('div', 'm-gtitle', title), ...kids); return g; };
-      const row = (...kids) => { const r = h('div', 'm-seg'); r.append(...kids); return r; };
+      const seg = (...kids) => h('div', 'seg', ...kids);
+      const line = (label, ...kids) => h('div', 'row', h('div', 'row-l', h('b', '', label)), h('div', 'row-c', seg(...kids)));
 
-      const lights = row(btn('Start lights', 'm-opt', () => send({ c: 'start' })));
-      lights.firstChild.dataset.first = '1';
-      c.append(group('Start lights', lights, h('p', 'm-note', 'Runs the start: five lamps, a short random hold, then GO. The cars are not held: this is the screen only. A flag or Clear stops it.')));
+      const lights = btn('Start lights', '', () => send({ c: 'start' }));
+      lights.dataset.first = '1';
+      c.append(group('Start lights', line('Lights', lights)),
+        h('p', 'm-note', 'Runs the start: five lamps, a short random hold, then GO. The cars are not held: this is the screen only. A flag or Clear stops it.'));
 
-      c.append(group('Flags', row(...FLAG_NAMES.map(([name, label]) => btn(label, 'm-opt', () => send({ c: 'flag', name })))), row(btn('Clear', 'm-opt', () => send({ c: 'clear' })))));
+      c.append(group('Flags', line('Flag', ...FLAG_NAMES.map(([name, label]) => btn(label, '', () => send({ c: 'flag', name })))), line('Stop', btn('Clear', '', () => send({ c: 'clear' })))));
 
-      const input = h('input', 'm-text');
+      const input = h('input', 'field');
       input.type = 'text'; input.maxLength = 40; input.placeholder = 'Up to 40 characters'; input.setAttribute('aria-label', 'Message');
       input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') send({ c: 'msg', text: input.value }); });
-      c.append(group('Message', input, row(btn('Show', 'm-opt', () => send({ c: 'msg', text: input.value })), btn('Clear', 'm-opt', () => send({ c: 'clear' })))));
+      const msg = h('div', 'row', h('div', 'row-c', input), h('div', 'row-c', seg(btn('Show', '', () => send({ c: 'msg', text: input.value })), btn('Clear', '', () => send({ c: 'clear' })))));
+      c.append(group('Message', msg));
 
       const held = sc.state.scene;
-      const ads = h('div', 'm-list');
+      const ads = [];
       for (const name of sc.scenes) {
         const on = sc.adOn(name);
-        ads.append(row(h('span', 'm-label', AD_NAMES[name] || name), btn(held === name ? 'Showing' : 'Show now', 'm-opt' + (held === name ? ' sel' : ''), () => send({ c: 'scene', name })),
-          btn(on ? 'In the loop' : 'Off', 'm-opt' + (on ? ' sel' : ''), () => send({ c: 'ad', name, on: !on }))));
+        ads.push(h('div', 'row', h('div', 'row-l', h('b', '', AD_NAMES[name] || name)), h('div', 'row-c', seg(
+          btn(held === name ? 'Showing' : 'Show now', held === name ? 'on' : '', () => send({ c: 'scene', name })),
+          btn(on ? 'In the loop' : 'Off', on ? 'on' : '', () => send({ c: 'ad', name, on: !on }))))));
       }
-      c.append(group('Adverts', row(btn('Resume the loop', 'm-opt', () => send({ c: 'loop' })), btn('Next', 'm-opt', () => send({ c: 'next' }))), ads,
-        h('p', 'm-note', 'Show now holds one advert until you resume the loop. At least one advert always stays in the loop.')));
+      c.append(group('Adverts', line('Loop', btn('Resume the loop', '', () => send({ c: 'loop' })), btn('Next', '', () => send({ c: 'next' }))), ...ads),
+        h('p', 'm-note', 'Show now holds one advert until you resume the loop. At least one advert always stays in the loop.'));
 
       if (ctx.api.inRoom && ctx.api.inRoom() && sc.isHost()) {
         const people = sc.players();
-        const list = h('div', 'm-list');
-        if (!people.length) list.append(h('p', 'm-note', 'Nobody else is in the room yet.'));
-        for (const p of people) list.append(row(h('span', 'm-label', p.name), btn(p.access ? 'Has access' : 'No access', 'm-opt' + (p.access ? ' sel' : ''), () => { sc.setAccess(p.id, !p.access); ctx.menu.refresh(); })));
-        c.append(group('Who can use it', list, h('p', 'm-note', 'You always can. Players you give access see this panel in their pause menu. Everyone in the room sees the same screen.')));
+        const rows = people.map(p => h('div', 'row', h('div', 'row-l', h('b', '', p.name)), h('div', 'row-c', seg(
+          btn(p.access ? 'Has access' : 'No access', p.access ? 'on' : '', () => { sc.setAccess(p.id, !p.access); ctx.menu.refresh(); })))));
+        if (!people.length) rows.push(h('div', 'row', h('div', 'row-l', h('b', '', 'Nobody else is in the room yet.'))));
+        c.append(group('Who can use it', ...rows), h('p', 'm-note', 'You always can. Players you give access see this panel in their pause menu. Everyone in the room sees the same screen.'));
       }
       return null;
     },
@@ -515,6 +677,7 @@ function screenPanel() {
 }
 
 export function registerScreens(menu) {
+  menu.buildRail = (ctx, top) => railNodes(ctx, top);
   menu.addScreen('screen', screenPanel());
   menu.addScreen('main', homeScreen());
   menu.addScreen('pause', pauseScreen());

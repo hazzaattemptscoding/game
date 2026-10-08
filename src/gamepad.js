@@ -303,49 +303,41 @@ export function buttonLabel(i, id = '') {
 // ---- Controls screen -----------------------------------------------------------------------------------------------
 
 const CSS = `
-.ctl { color: var(--paper, #f2efe6); font-size: 15px; line-height: 1.35; }
-.ctl h3 { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; margin: 18px 0 8px; opacity: .8; }
-.ctl h3:first-child { margin-top: 0; }
-.ctl .ctl-name { font-weight: 700; font-size: 17px; margin: 0 0 8px; }
-.ctl .ctl-name.none { opacity: .7; font-weight: 400; }
-.ctl .live { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: center; background: rgba(20,24,29,.75); padding: 10px; }
-.ctl .stick { position: relative; width: 96px; height: 96px; border-radius: 50%; border: 2px solid #4a5058; background: #1b2025; }
-.ctl .stick i { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--yel, #ffd21f); left: 50%; top: 50%; }
-.ctl .stick::before, .ctl .stick::after { content: ''; position: absolute; background: #3a3f46; }
-.ctl .stick::before { left: 50%; top: 4px; bottom: 4px; width: 1px; }
-.ctl .stick::after { top: 50%; left: 4px; right: 4px; height: 1px; }
-.ctl .bars { display: grid; gap: 6px; }
-.ctl .bar { display: grid; grid-template-columns: 44px 1fr 38px; gap: 8px; align-items: center; font-size: 13px; }
-.ctl .bar span:last-child { text-align: right; font-variant-numeric: tabular-nums; opacity: .8; }
-.ctl .bar div { height: 10px; background: #2a3037; position: relative; overflow: hidden; }
-.ctl .bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--green, #3ddc84); }
-.ctl .bar.brake i { background: var(--red, #ff4d4d); }
-.ctl .bar.steer i { background: var(--yel, #ffd21f); }
+/* the Controls tab sits in the settings panel: its groups, rows and segmented controls are the menu's own (style.css); this adds the live readout */
+.ctl { display: flex; flex-direction: column; gap: var(--s-7); color: var(--text); font-size: 15px; line-height: 1.45; min-width: 0; }
+.ctl .ctl-name { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.ctl .ctl-name.none { color: var(--text-dim); font-weight: 500; }
+.ctl .row.live { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--s-4); align-items: center; }
+.ctl .stick { position: relative; width: 96px; height: 96px; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--pit-0); }
+.ctl .stick i { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--lake); left: 50%; top: 50%; }
+.ctl .stick::before, .ctl .stick::after { content: ''; position: absolute; background: var(--pit-3); }
+.ctl .stick::before { left: 50%; top: 6px; bottom: 6px; width: 1px; }
+.ctl .stick::after { top: 50%; left: 6px; right: 6px; height: 1px; }
+.ctl .bars { display: grid; gap: var(--s-2); min-width: 0; }
+.ctl .bar { display: grid; grid-template-columns: 64px minmax(0, 1fr) 44px; gap: var(--s-2); align-items: center; font-size: 13px; color: var(--text-dim); }
+.ctl .bar span:last-child { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.ctl .bar div { height: 8px; border-radius: 4px; background: var(--pit-3); position: relative; overflow: hidden; }
+.ctl .bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--lake); }
+.ctl .bar.steer i { background: var(--purple-soft); }
+.ctl .bar.brake i { background: var(--text-dim); }
 .ctl .btns { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
-.ctl .btns b { font-size: 12px; padding: 2px 6px; background: #2a3037; color: #8a9199; min-width: 28px; text-align: center; }
-.ctl .btns b.on { background: var(--yel, #ffd21f); color: var(--ink, #14181d); }
-.ctl .opt { display: grid; grid-template-columns: 1fr 70px; gap: 4px 10px; align-items: center; margin: 10px 0 0; }
-.ctl .opt label { margin: 0 !important; font-size: 15px !important; opacity: 1 !important; }
-.ctl .opt output { text-align: right; font-variant-numeric: tabular-nums; opacity: .85; }
-.ctl .opt input[type=range] { grid-column: 1 / -1; width: 100%; height: 32px; margin: 0; accent-color: var(--yel, #ffd21f); }
-.ctl .seg { display: flex; gap: 8px; margin: 10px 0 0; }
-.ctl .seg > span { flex: 1 0 100%; font-size: 15px; }
-.ctl .map { display: grid; gap: 6px; }
-.ctl .map button, .ctl .seg button, .ctl .reset { font: inherit; font-size: 16px; font-weight: 700; padding: 10px 12px; min-height: 44px; border: 0; cursor: pointer; background: #3a3f46; color: var(--paper, #f2efe6); text-align: left; }
-.ctl .seg button { flex: 1; text-align: center; }
-.ctl .seg button.sel { background: var(--paper, #f2efe6); color: var(--ink, #14181d); }
-.ctl .map button { display: flex; justify-content: space-between; gap: 10px; }
-.ctl .map button em { font-style: normal; color: var(--yel, #ffd21f); }
-.ctl .map button.listen { background: var(--yel, #ffd21f); color: var(--ink, #14181d); }
-.ctl .map button.listen em { color: var(--ink, #14181d); }
-.ctl .reset { margin-top: 14px; width: 100%; text-align: center; }
-.ctl button:focus-visible, .ctl button.pad-focus { outline: 3px solid var(--yel, #ffd21f); outline-offset: 2px; }
-.ctl .keys { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; font-size: 14px; opacity: .9; }
-.ctl .keys b { color: var(--yel, #ffd21f); }
-.ctl .note { font-size: 13px; opacity: .7; margin: 6px 0 0; }
-.ctl-overlay { position: fixed; inset: 0; z-index: 50; overflow-y: auto; background: rgba(20,24,29,.92); padding: 16px; display: flex; justify-content: center; align-items: flex-start; }
+.ctl .btns b { min-width: 30px; padding: 2px 6px; border-radius: 4px; background: var(--pit-3); color: var(--text-faint); font-size: 12px; font-weight: 600; text-align: center; }
+.ctl .btns b.on { background: var(--lake); color: var(--lake-deep); }
+.ctl .map { display: flex; flex-direction: column; }
+.ctl .map button { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); width: 100%; min-height: var(--row-h); padding: 0 var(--s-5); border: 0; border-radius: 0; background: none; color: var(--text); font-size: 15px; font-weight: 500; text-align: left; cursor: pointer; }
+.ctl .map button + button { border-top: 1px solid var(--line); }
+.ctl .map button:hover { background: var(--pit-2); }
+.ctl .map button:active { transform: scale(.98); }
+.ctl .map button em { font-style: normal; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.ctl .map button.listen { background: var(--purple); color: var(--text); }
+.ctl .map button.listen em { color: var(--text); font-weight: 600; }
+.ctl .keys { margin: 0; padding: 0; list-style: none; }
+.ctl .keys b { font-weight: 500; color: var(--text); }
+.ctl .keys span { color: var(--text-dim); }
+.ctl button:focus-visible, .ctl button.pad-focus { outline: 2px solid var(--gantry); outline-offset: 2px; }
+.ctl-overlay { position: fixed; inset: 0; z-index: 50; overflow-y: auto; background: color-mix(in srgb, var(--pit-0) 92%, transparent); padding: var(--s-4); display: flex; justify-content: center; align-items: flex-start; }
 .ctl-overlay .ctl { width: min(440px, 100%); }
-.ctl-overlay h2 { font-size: 40px; font-style: italic; margin: 0 0 8px; }
+.ctl-overlay h2 { font-family: var(--f-display); font-size: 40px; font-style: italic; margin: 0 0 var(--s-2); }
 `;
 
 const KEYS = [['Arrows or W A S D', 'steer, throttle, brake'], ['Space or Shift', 'DRS'], ['R', 'back on track'], ['C', 'camera'], ['Tab (hold)', 'times board'], ['Esc or P', 'pause and settings'], ['I or F3', 'handling readout'], ['F2', 'report a problem']];
@@ -369,28 +361,36 @@ export function mountControls(container, { settings, save } = {}) {
     ['rumbleStrength', 'Rumble strength', 0, 1, 0.05, v => Math.round(v * 100) + '%'],
   ];
   root.innerHTML = `
-    <h3>Controller</h3>
-    <p class="ctl-name none" id="ctl-name">No controller found. Press a button on it.</p>
-    <div class="live">
-      <div class="stick"><i id="ctl-dot"></i></div>
-      <div class="bars">
-        <div class="bar steer"><span>Steer</span><div><i id="ctl-steer"></i></div><span id="ctl-steer-v">0</span></div>
-        <div class="bar"><span>Throttle</span><div><i id="ctl-thr"></i></div><span id="ctl-thr-v">0</span></div>
-        <div class="bar brake"><span>Brake</span><div><i id="ctl-brk"></i></div><span id="ctl-brk-v">0</span></div>
+    <section class="group"><div class="gtitle">Controller</div>
+      <div class="rows">
+        <div class="row"><div class="row-l"><p class="ctl-name none" id="ctl-name">No controller found. Press a button on it.</p></div></div>
+        <div class="row live">
+          <div class="stick"><i id="ctl-dot"></i></div>
+          <div class="bars">
+            <div class="bar steer"><span>Steer</span><div><i id="ctl-steer"></i></div><span id="ctl-steer-v">0</span></div>
+            <div class="bar"><span>Throttle</span><div><i id="ctl-thr"></i></div><span id="ctl-thr-v">0</span></div>
+            <div class="bar brake"><span>Brake</span><div><i id="ctl-brk"></i></div><span id="ctl-brk-v">0</span></div>
+          </div>
+          <div class="btns" id="ctl-btns"></div>
+        </div>
       </div>
-      <div class="btns" id="ctl-btns"></div>
-    </div>
-    <h3>Steering and feel</h3>
-    <div id="ctl-sliders"></div>
-    <div class="seg" id="ctl-smooth"><span>Steering smoothing</span><button data-v="true">On</button><button data-v="false">Off</button></div>
-    <div class="seg" id="ctl-drs"><span>DRS button</span><button data-v="toggle">Toggle</button><button data-v="hold">Hold</button></div>
-    <div class="seg" id="ctl-rumble"><span>Rumble</span><button data-v="true">On</button><button data-v="false">Off</button></div>
-    <h3>Buttons</h3>
-    <div class="map" id="ctl-map"></div>
-    <p class="note" id="ctl-hint">Select an action, then press the button you want. Esc cancels. A button already in use swaps.</p>
-    <button class="reset" id="ctl-reset" type="button">Reset controller to defaults</button>
-    <h3>Keyboard</h3>
-    <ul class="keys">${KEYS.map(([k, d]) => `<li><b>${k}</b></li><li>${d}</li>`).join('')}</ul>`;
+    </section>
+    <section class="group"><div class="gtitle">Steering and feel</div>
+      <div class="rows" id="ctl-sliders"></div>
+      <div class="rows">
+        <div class="row"><div class="row-l"><b>Steering smoothing</b></div><div class="row-c"><div class="seg" id="ctl-smooth" role="radiogroup" aria-label="Steering smoothing"><button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button></div></div></div>
+        <div class="row"><div class="row-l"><b>DRS button</b></div><div class="row-c"><div class="seg" id="ctl-drs" role="radiogroup" aria-label="DRS button"><button type="button" data-v="toggle">Toggle</button><button type="button" data-v="hold">Hold</button></div></div></div>
+        <div class="row"><div class="row-l"><b>Rumble</b></div><div class="row-c"><div class="seg" id="ctl-rumble" role="radiogroup" aria-label="Rumble"><button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button></div></div></div>
+      </div>
+    </section>
+    <section class="group"><div class="gtitle">Buttons</div>
+      <div class="rows map" id="ctl-map"></div>
+      <p class="m-note" id="ctl-hint">Select an action, then press the button you want. Esc cancels. A button already in use swaps.</p>
+      <div class="row-c"><button class="btn quiet" id="ctl-reset" type="button">Reset controller to defaults</button></div>
+    </section>
+    <section class="group"><div class="gtitle">Keyboard</div>
+      <div class="rows"><ul class="keys" style="margin:0">${KEYS.map(([k, d]) => `<li class="row"><div class="row-l"><b>${k}</b></div><div class="row-c"><span>${d}</span></div></li>`).join('')}</ul></div>
+    </section>`;
   container.appendChild(root);
   const $ = id => root.querySelector('#' + id);
 
@@ -398,15 +398,16 @@ export function mountControls(container, { settings, save } = {}) {
   const sl = $('ctl-sliders');
   const outs = {};
   for (const [key, label, lo, hi, step, fmt] of SLIDERS) {
-    const row = doc.createElement('div'); row.className = 'opt';
-    row.innerHTML = `<label for="ctl-${key}">${label}</label><output id="ctl-${key}-o"></output><input type="range" id="ctl-${key}" min="${lo}" max="${hi}" step="${step}">`;
+    const row = doc.createElement('div'); row.className = 'row';
+    row.innerHTML = `<div class="row-l"><b>${label}</b></div><div class="row-c slider"><input type="range" id="ctl-${key}" aria-label="${label}" min="${lo}" max="${hi}" step="${step}"><output class="val" id="ctl-${key}-o"></output></div>`;
     sl.appendChild(row);
     const input = row.querySelector('input'), out = row.querySelector('output');
-    outs[key] = () => { input.value = cfg()[key]; out.textContent = fmt(cfg()[key]); };
-    input.addEventListener('input', () => { settings.controller = normaliseControllerSettings({ ...cfg(), [key]: +input.value }); out.textContent = fmt(cfg()[key]); persist(); });
+    const paint = () => input.style.setProperty('--fill', `${((+input.value - lo) / ((hi - lo) || 1)) * 100}%`);
+    outs[key] = () => { input.value = cfg()[key]; paint(); out.textContent = fmt(cfg()[key]); };
+    input.addEventListener('input', () => { settings.controller = normaliseControllerSettings({ ...cfg(), [key]: +input.value }); paint(); out.textContent = fmt(cfg()[key]); persist(); });
   }
   const segs = [['ctl-smooth', 'smoothing', v => v === 'true'], ['ctl-drs', 'drsMode', v => v], ['ctl-rumble', 'rumble', v => v === 'true']];
-  const syncSegs = () => { for (const [id, key] of segs) for (const b of $(id).querySelectorAll('button')) b.classList.toggle('sel', String(cfg()[key]) === b.dataset.v); };
+  const syncSegs = () => { for (const [id, key] of segs) for (const b of $(id).querySelectorAll('button')) { const on = String(cfg()[key]) === b.dataset.v; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); } };
   for (const [id, key, conv] of segs) {
     $(id).addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;

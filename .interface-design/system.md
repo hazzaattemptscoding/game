@@ -29,7 +29,7 @@ Names come from the venue. Define all of these once, in `src/style.css`, and use
 
 --text:       #f4f0ff;
 --text-dim:   #b7accf;
---text-faint: #7d7196;
+--text-faint: #8f84a8;
 
 --purple:        #6d28d9;  /* PowerMedia: selection, active, brand fills */
 --purple-deep:   #4c1d95;  /* behind selection, bars */

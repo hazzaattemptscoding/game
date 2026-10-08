@@ -1,12 +1,16 @@
 // The menu: a full screen overlay with a stack of screens. The main menu sits over a slowly orbiting view of the circuit; the
-// pause menu, race setup, settings, online lobby and results are screens on the same overlay.
+// pause menu, race setup, settings, online lobby, garage and results are screens on the same overlay.
 //
-// Plugging in a screen:   menu.addScreen('garage', { title: 'Garage', mount(container, ctx) { ... }, unmount() { ... } })
+// Layout: a rail (wordmark, nav, driver chip) on the left and the screen's pane on the right, for the screens that set
+// `rail: true`. The rail is inside the card, so arrow keys and the gamepad reach its items like any other control.
+//
+// Plugging in a screen:   menu.addScreen('garage', { title: 'Garage', rail: true, mount(container, ctx) { ... }, unmount() { ... } })
 // and opening it:         menu.push('garage')            (the Back button, Esc and the pad's B button pop it again)
+// menu.jump(id) replaces everything above the main menu with one screen (the rail uses it), so Back returns to the main menu.
 // ctx = { menu, settings, save, api, params, close() }. `api` is what the game gives the menu (see director.js).
 //
-// Navigation (arrows, Enter, Esc, a gamepad) comes from createMenuNav in menuNav.js, loaded with a dynamic import. If that
-// file is missing, a small keyboard-only version in this file takes over, so the menu works whichever lands first.
+// Navigation (arrows, Enter, Esc, a gamepad, number keys) comes from createMenuNav in menuNav.js, loaded with a dynamic import.
+// If that file is missing, a small keyboard-only version in this file takes over, so the menu works whichever lands first.
 
 const FOCUSABLE = 'button, input, select, [tabindex]';
 
@@ -35,11 +39,14 @@ export function createMenu({ root, settings, save, api = {}, params = {}, build 
     <div class="m-shade"></div>
     <div class="m-wrap">
       <section class="m-card" role="dialog" aria-modal="true" aria-labelledby="m-title">
-        <header class="m-head"><button type="button" class="m-back" data-back aria-label="Back">Back</button><h2 id="m-title"></h2></header>
-        <div class="m-body"></div>
+        <aside class="rail" hidden></aside>
+        <div class="m-pane">
+          <header class="m-head"><button type="button" class="m-back" data-back aria-label="Back">Back</button><h2 id="m-title"></h2></header>
+          <div class="m-body"></div>
+        </div>
       </section>
     </div>`;
-  const card = root.querySelector('.m-card'), body = root.querySelector('.m-body'), title = root.querySelector('#m-title'), backBtn = root.querySelector('.m-back');
+  const card = root.querySelector('.m-card'), rail = root.querySelector('.rail'), body = root.querySelector('.m-body'), title = root.querySelector('#m-title'), backBtn = root.querySelector('.m-back');
   const screens = new Map();
   const stack = [];            // { id, def, mounted }
   const menu = {
@@ -49,6 +56,7 @@ export function createMenu({ root, settings, save, api = {}, params = {}, build 
     kind: 'main',              // 'main' (over the orbiting circuit) or 'pause' (over the stopped game)
     build,
     onClose: null,
+    buildRail: null,           // set by registerScreens: (ctx, top) => the rail's nodes
   };
   const ctx = { menu, settings, save, api, params, close: () => menu.close(), build };
 
@@ -61,16 +69,21 @@ export function createMenu({ root, settings, save, api = {}, params = {}, build 
     const top = menu.current();
     for (const c of [...body.children]) c.remove();
     body.scrollTop = 0;
+    rail.replaceChildren();
     if (!top) return;
     const def = top.def;
     root.dataset.screen = top.id;
     root.dataset.home = def.home ? '1' : '0';
+    const railOn = !!def.rail && typeof menu.buildRail === 'function';
+    root.dataset.rail = railOn ? '1' : '0';
+    rail.hidden = !railOn;
+    if (railOn) rail.append(...menu.buildRail(ctx, top));
     title.textContent = typeof def.title === 'function' ? def.title(top.params) : def.title || '';
     card.setAttribute('aria-label', title.textContent);
     backBtn.hidden = !!def.home || (stack.length < 2 && !def.backable);
     backBtn.textContent = def.backLabel || 'Back';
     const holder = document.createElement('div');
-    holder.className = 'm-screen';
+    holder.className = 'm-screen' + (opts.keepFocus ? '' : ' m-screen-in');   // the enter motion plays on a new screen, not on a refresh
     body.append(holder);
     top.holder = holder;
     try { top.mounted = def.mount(holder, { ...ctx, params: top.params || {}, screenId: top.id }) || null; } catch (e) { console.error(e); holder.textContent = 'This screen could not be opened.'; }
@@ -88,9 +101,9 @@ export function createMenu({ root, settings, save, api = {}, params = {}, build 
     return true;
   }
 
-  // focus the main control of the screen: [data-first], else the first control
+  // focus the main control of the screen: [data-first] (the rail's resume button counts), else the first control
   function focusFirst() {
-    const first = body.querySelector('[data-first]:not([disabled])') || [...body.querySelectorAll(FOCUSABLE)].find(visible);
+    const first = card.querySelector('[data-first]:not([disabled])') || [...body.querySelectorAll(FOCUSABLE)].find(visible);
     if (!first) return;
     for (const o of card.querySelectorAll('.pad-focus')) o.classList.remove('pad-focus');
     first.classList.add('pad-focus');
@@ -117,6 +130,16 @@ export function createMenu({ root, settings, save, api = {}, params = {}, build 
     const def = screens.get(id) || screens.get('coming');
     unmountTop();
     stack.push({ id, def, params: params || (screens.has(id) ? undefined : { name: id }) });
+    mountTop();
+    return menu;
+  };
+  // from the main menu: show `id` directly above the main menu (the stack is never deeper than two), so Back goes home
+  menu.jump = (id, params) => {
+    if (!menu.isOpen || menu.kind !== 'main') return menu.push(id, params);
+    unmountTop();
+    stack.length = id === 'main' ? 0 : Math.min(stack.length, 1);
+    if (!stack.length) stack.push({ id: 'main', def: screens.get('main') });
+    if (id !== 'main') stack.push({ id, def: screens.get(id) || screens.get('coming'), params: params || (screens.has(id) ? undefined : { name: id }) });
     mountTop();
     return menu;
   };
@@ -149,6 +172,7 @@ export function createMenu({ root, settings, save, api = {}, params = {}, build 
   const handle = dir => {
     if (!menu.isOpen) return;
     const top = menu.current();
+    if (typeof dir === 'string' && dir.startsWith('digit:')) { if (top && top.def.onDigit) top.def.onDigit(+dir.slice(6), top.mounted, ctx); return; }
     if (top && top.def.onNav && top.def.onNav(dir, top.mounted, ctx) === true) return;
     if (dir === 'up' || dir === 'down' || dir === 'left' || dir === 'right') {
       if (navMod) navMod.focusMove(card, dir); else simpleFocusMove(card, dir);
