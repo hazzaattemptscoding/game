@@ -25,7 +25,7 @@ export default {
       // the browser preflight for a JSON POST: it needs POST and the Content-Type header allowed
       if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' } });
       if (request.method === 'POST' && !(origin && allowed)) return fail(403, 'origin not allowed');   // a lap must come from an allowed website, so no Origin is refused too
-      if (request.method === 'POST' && +request.headers.get('Content-Length') > MAX_BODY) return fail(400, 'body too large');
+      if (request.method === 'POST' && +request.headers.get('Content-Length') > MAX_BODY) return fail(413, 'body too large');   // a chunked body has no length here: times-do.js reads it with a cap
       if (!env.TIMES) return fail(503, 'times are not set up');
       const forward = new Request(request);
       forward.headers.set('x-lakeside-ip', request.headers.get('CF-Connecting-IP') || 'unknown');

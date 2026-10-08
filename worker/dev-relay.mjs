@@ -44,11 +44,12 @@ export function startRelay({ port = 0, allowed = process.env.ALLOWED_ORIGINS ?? 
       const send = (status, json) => { res.writeHead(status, head); res.end(JSON.stringify(json)); };
       if (req.method === 'OPTIONS') { res.writeHead(204, { ...head, 'Access-Control-Allow-Methods': 'GET, POST', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400' }); res.end(); return; }
       if (req.method === 'POST' && !ok) return send(403, { error: 'origin not allowed' });
-      const run = bodyText => { const r = handleTimes(times.model, times.limiter, { method: req.method, route: timesRoute, params: timesUrl.searchParams, bodyText, ip: req.socket.remoteAddress, now: Date.now() }); send(r.status, r.json); };
+      const run = async bodyText => { const r = await handleTimes(times.model, times.limiter, { method: req.method, route: timesRoute, params: timesUrl.searchParams, bodyText, ip: req.socket.remoteAddress, now: Date.now() }); send(r.status, r.json); };
       if (req.method !== 'POST') return run(undefined);
+      // the body is counted as it arrives; over MAX_BODY it is not kept, and times.js answers 413 (as the Worker does, times-do.js)
       const chunks = []; let size = 0, over = false;
       req.on('data', c => { size += c.length; if (size > MAX_BODY) over = true; else chunks.push(c); });
-      req.on('end', () => (over ? send(400, { error: 'body too large' }) : run(Buffer.concat(chunks).toString('utf8'))));
+      req.on('end', () => run(over ? null : Buffer.concat(chunks).toString('utf8')));
       return;
     }
     const route = parseRoute(new URL(req.url, 'http://x').pathname);

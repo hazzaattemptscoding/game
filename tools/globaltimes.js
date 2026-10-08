@@ -1,8 +1,51 @@
 // Global times, the game's side (src/globalTimes.js, src/lapTrace.js): the ghost line format, which board a lap goes on, which
-// laps are posted at all, the posting queue against a fake server (offline, refused, busy) and the lap watcher over whole
-// simulated laps. The relay's side has its own tests (tools/times.js); the end to end run against worker/dev-relay.mjs is at the end.
+// laps are posted at all, the ownership token, the posting queue against a fake server (offline, refused, busy), the lap watcher
+// over whole simulated laps, and a REAL lap (the autopilot drives it) posted to worker/dev-relay.mjs. The relay's rules have their
+// own tests (tools/times.js).
+//   node tools/globaltimes.js --write-track   regenerates worker/src/track-data.js from src/track.js (after a change to src/layout.js)
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { LapRecorder, encodeTrace, decodeTrace, sampleTrace, TRACE_HZ } from '../src/lapTrace.js';
-import { boardFor, boardKey, boardLabel, validBoard, lapQualifies, timesBase, cleanName, createGlobalTimes, LapWatch, QUEUE_KEY, QUEUE_MAX, RETRY_MS } from '../src/globalTimes.js';
+import { boardFor, boardKey, boardLabel, validBoard, lapQualifies, timesBase, cleanName, createGlobalTimes, timesToken, LapWatch, QUEUE_KEY, QUEUE_MAX, RETRY_MS, TOKEN_KEY } from '../src/globalTimes.js';
+import { buildTrack } from '../src/track.js';
+import { Car, STEP } from '../src/physics.js';
+import { GT } from '../src/cars.js';
+import { LapTimer } from '../src/timing.js';
+import { Autopilot, computeRacingLine } from '../src/autopilot.js';
+import { TRACK } from '../worker/src/track-data.js';
+import { distToLine, validateLap } from '../worker/src/times.js';
+
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+// worker/src/track-data.js: the centreline in 200 points, the start line and the sector boundaries, from the game's track
+function trackSource(T) {
+  const K = 200, at = i => [+T.x[i % T.N].toFixed(2), +T.z[i % T.N].toFixed(2)], idx = s => Math.round(s / T.ds) % T.N;
+  const flat = [];
+  for (let k = 0; k < K; k++) flat.push(...at(Math.round(k * T.N / K)));
+  const rows = [];
+  for (let r = 0; r < K / 10; r++) rows.push('    ' + flat.slice(r * 20, r * 20 + 20).join(', ') + ',');
+  const [s2, s3] = [T.sectors[1], T.sectors[2]].map(s => at(idx(s)));
+  return `// The lap the global times are checked against (worker/src/times.js), generated from src/track.js and src/layout.js by
+// \`node tools/globaltimes.js --write-track\`. tools/globaltimes.js checks it against the game's track; do not edit it by hand.
+// line: the centreline as 200 points, flat [x0, z0, x1, z1, ...] in metres, in lap order, about 19 m apart.
+// sectors: where sector 2 and sector 3 begin (the start/finish line is \`start\`), metres, the centreline's own points.
+export const TRACK = {
+  length: ${+T.length.toFixed(2)},
+  start: [${at(0).join(', ')}],
+  sectors: [[${s2.join(', ')}], [${s3.join(', ')}]],
+  line: [
+${rows.join('\n')}
+  ],
+};
+`;
+}
+if (process.argv.includes('--write-track')) {
+  const file = path.join(ROOT, 'worker', 'src', 'track-data.js');
+  fs.writeFileSync(file, trackSource(buildTrack()));
+  console.log('wrote ' + path.relative(ROOT, file));
+  process.exit(0);
+}
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log('  FAIL ' + msg); } };
@@ -45,6 +88,31 @@ const near = (a, b, tol, msg) => check(Math.abs(a - b) <= tol, `${msg}: got ${a}
   eq(cleanName('Abcdefghijklmnopqrstu'), 'Abcdefghijklmnop', 'at most 16 characters');
 }
 
+// ---- the track constant the relay checks ghosts against is in step with the game's track ----
+{
+  const T = buildTrack();
+  near(TRACK.length, T.length, 0.5, 'the relay\'s track length is the game\'s');
+  near(TRACK.start[0], T.x[0], 0.5, 'start/finish x');
+  near(TRACK.start[1], T.z[0], 0.5, 'start/finish z');
+  TRACK.sectors.forEach(([x, z], k) => {
+    const i = Math.round(T.sectors[k + 1] / T.ds) % T.N;
+    near(x, T.x[i], 0.5, `sector ${k + 2} boundary x`);
+    near(z, T.z[i], 0.5, `sector ${k + 2} boundary z`);
+  });
+  eq(TRACK.line.length, 400, 'the line is 200 points');
+  let worstPoint = 0;
+  for (let k = 0; k < TRACK.line.length / 2; k++) {
+    let best = Infinity;
+    for (let i = 0; i < T.N; i++) best = Math.min(best, Math.hypot(T.x[i] - TRACK.line[k * 2], T.z[i] - TRACK.line[k * 2 + 1]));
+    worstPoint = Math.max(worstPoint, best);
+  }
+  check(worstPoint <= 0.5, `every line point is on the game's centreline (worst ${worstPoint.toFixed(3)} m)`);
+  let worst = 0;
+  for (let i = 0; i < T.N; i += 5) worst = Math.max(worst, distToLine(T.x[i], T.z[i], TRACK.line));
+  check(worst < 12, `the line passes within 12 m of every 5th centreline point (worst ${worst.toFixed(2)} m)`);
+  eq(fs.readFileSync(path.join(ROOT, 'worker', 'src', 'track-data.js'), 'utf8'), trackSource(T), 'worker/src/track-data.js is what --write-track writes now');
+}
+
 // ---- which laps are posted ----
 {
   const lap = { time: 90.1, sectors: [35, 32.1, 23], valid: true, clean: true };
@@ -53,6 +121,9 @@ const near = (a, b, tol, msg) => check(Math.abs(a - b) <= tol, `${msg}: got ${a}
   check(!lapQualifies({ ...lap, clean: false }), 'a lap with a reset does not');
   check(!lapQualifies(lap, { autopilot: true }), 'an autopilot lap does not');
   check(!lapQualifies({ ...lap, time: 40 }), 'an impossible time does not');
+  check(!lapQualifies({ ...lap, time: 901, sectors: [300, 300, 301] }), 'a time over 900 s does not');
+  check(!lapQualifies({ ...lap, sectors: [4.9, 50, 35.2] }), 'a sector under 5 s is not posted (the relay would refuse it)');
+  check(lapQualifies({ ...lap, sectors: [5, 50, 35.1] }), 'a sector of exactly 5 s is posted');
 }
 
 // ---- the posting queue against a fake server ----
@@ -106,6 +177,21 @@ async function queueTests() {
   check(q.some(p => p.time === 88.5), 'the fastest waiting lap is kept when the queue is full');
   check(!gt2.available(), 'no relay address: not available');
   eq(await gt2.flush(), false, 'and nothing is sent');
+
+  // the ownership token: made once, kept in the browser, sent with every post, never kept in the queue
+  const tokStore = new Map(), tokStorage = { getItem: k => tokStore.get(k) ?? null, setItem: (k, v) => tokStore.set(k, v) };
+  const tok = timesToken(tokStorage);
+  check(/^[0-9a-f]{32}$/.test(tok), 'a token is 32 lowercase hex characters');
+  eq(timesToken(tokStorage), tok, 'the same token every time');
+  eq(tokStore.get(TOKEN_KEY), tok, 'the token is kept under its key');
+  check(/^[0-9a-f]{32}$/.test(timesToken({ getItem: () => 'not a token', setItem() {} })), 'a bad stored token is replaced');
+  check(/^[0-9a-f]{32}$/.test(timesToken({ getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } })), 'blocked storage still gives a token');
+  down = false; answer = { status: 200, body: { ok: true, improved: true, rank: 1, best: 90, entries: 1 } };
+  calls = [];
+  const gtTok = createGlobalTimes({ fetchFn, storage: tokStorage, now: () => clock, getBase: () => base });
+  await gtTok.submit(post(90));
+  eq(JSON.parse(calls[0].init.body).token, tok, 'every post carries the token');
+  check(!(tokStore.get(QUEUE_KEY) || '').includes(tok), 'the token is not kept in the queue');
 
   // reading a board and a ghost
   answer = (url) => ({ status: 200, body: url.includes('/ghost') ? { name: 'Harry', time: 90.1, ghost: 'AAAAAAAAAAAAAAAAAAAAAA==' } : { board: 'dry-solo-fwd-on', entries: [], you: null } });
@@ -170,42 +256,68 @@ function watchTests() {
   timer.lapStart = null; timer.history = [];
   drive(0, 50);
   eq(posts.length, 3, 'a restart posts nothing');
+
+  // a lap with no line to send (the car stepped once a second, so about 90 samples, not 900) is not posted at all
+  const tm = { lapStart: null, history: [], reverse: false };
+  const w2 = new LapWatch({ timer: tm, build: 'test', getName: () => 'Slow', isAutopilot: () => false, getConditions: () => cond });
+  let slow = null;
+  for (let t = 0; t <= 105; t += 1) {
+    if (t >= 10 && tm.lapStart === null) tm.lapStart = 10;
+    else if (tm.lapStart !== null && t - tm.lapStart >= 90) { tm.history.push({ lap: tm.history.length + 1, time: 90, sectors: [35, 32, 23], valid: true, clean: true }); tm.lapStart += 90; }
+    const p = w2.step(t, { x: t, z: 0, heading: 0 });
+    if (p) slow = p;
+  }
+  eq(slow, null, 'a lap with too few samples is not posted');
+}
+
+// ---- a real lap: the autopilot drives it (skill 0.9, assists on, as a quick driver would); the lap watcher records it ----
+// The watcher is told a player drove, so the lap qualifies: the autopilot stands in for the driver. Returns the post, or null.
+function autopilotPost({ skill = 0.9, assists = { tc: true, abs: true, esc: true }, name = 'Ghosty' } = {}) {
+  const track = buildTrack(), line = computeRacingLine(track);
+  const car = new Car(GT, track);
+  car.setAssists(assists);
+  car.placeAt(-20, 0);
+  const ap = new Autopilot(track, GT, { skill, line }), timer = new LapTimer(track);
+  const cond = { weather: 'clear', online: false, reverse: false, assists: car.assists };
+  const w = new LapWatch({ timer, build: 'autopilot', getName: () => name, isAutopilot: () => false, getConditions: () => cond });
+  let t = 0, post = null;
+  while (timer.lap < 2 && t < 400) {
+    car.step(ap.drive(car));
+    t += STEP;
+    timer.update(car.loc.s, t);
+    post = w.step(t, car) || post;
+  }
+  return post;
+}
+{
+  const real = autopilotPost();
+  check(!!real && real.board.assists === 'on', 'a real autopilot lap is recorded and qualifies');
+  const TOK = '0123456789abcdef0123456789abcdef';
+  const verdict = validateLap({ ...real, token: TOK });
+  check(!verdict.error, 'the relay accepts the real lap' + (verdict.error ? `: ${verdict.error}` : ''));
+  eq(real.board, { weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'on' }, 'real lap on dry solo normal assists');
 }
 
 await queueTests();
 watchTests();
 
-// ---- end to end against the local relay (worker/dev-relay.mjs), when its /times routes exist ----
+// ---- end to end against the local relay (worker/dev-relay.mjs): the real lap goes up and comes back ----
 try {
   const { startRelay } = await import('../worker/dev-relay.mjs');
   const relay = await startRelay({ port: 0 });
-  const port = relay.port ?? relay.address?.().port;
-  const base = `http://localhost:${port}`;
-  const probe = await fetch(base + '/times?board=dry-solo-fwd-on').catch(() => null);
-  if (probe && probe.status === 200) {
-    const gt = createGlobalTimes({ getBase: () => base, fetchFn: (u, i = {}) => fetch(u, { ...i, headers: { ...(i.headers || {}), Origin: 'http://localhost' } }) });
-    const timer = { lapStart: null, history: [], reverse: false };
-    const w = new LapWatch({ timer, build: 'e2e', getName: () => 'Ghosty', isAutopilot: () => false, getConditions: () => ({ weather: 'clear', online: false, reverse: false, assists: {} }) });
-    // a believable lap: 3835 m round a circle in 92 s
-    const R = 3835 / (2 * Math.PI), car = { x: R, z: 0, heading: Math.PI / 2 };
-    let post = null;
-    for (let t = 0; t < 102.5 && !post; t += 1 / 120) {
-      if (t >= 10 && timer.lapStart === null) timer.lapStart = 10;
-      if (timer.lapStart !== null && t - timer.lapStart >= 92) { timer.history.push({ lap: 1, time: 92, sectors: [35, 33, 24], valid: true, clean: true }); timer.lapStart += 92; }
-      const a = timer.lapStart === null ? 0 : ((t - timer.lapStart) / 92) * 2 * Math.PI;
-      car.x = R * Math.cos(a); car.z = R * Math.sin(a); car.heading = a + Math.PI / 2;
-      post = w.step(t, car);
-    }
-    check(!!post, 'e2e: the simulated lap qualifies');
-    check(await gt.submit(post), 'e2e: posted to the local relay');
-    const top = await gt.top({ weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'off' }, 'Ghosty');
-    check(top && top.entries.some(e => e.name === 'Ghosty' && Math.abs(e.time - 92) < 1e-6 && e.ghost), 'e2e: on the board, with a ghost');
-    const g = await gt.ghost({ weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'off' }, 'Ghosty');
-    check(g && decodeTrace(g.ghost) && decodeTrace(g.ghost).length / 4 >= 900, 'e2e: the ghost comes back whole');
-    console.log('  end to end against dev-relay.mjs: done');
-  } else console.log('  end to end skipped: dev-relay.mjs has no /times yet');
-  await (relay.close ? relay.close() : relay.stop?.());
-} catch (e) { console.log('  end to end skipped: ' + e.message); }
+  const base = `http://localhost:${relay.port}`;
+  const gt = createGlobalTimes({ getBase: () => base, fetchFn: (u, i = {}) => fetch(u, { ...i, headers: { ...(i.headers || {}), Origin: 'http://localhost' } }) });
+  const real = autopilotPost();
+  check(!!real, 'e2e: the autopilot lap qualifies');
+  check(await gt.submit(real), 'e2e: posted to the local relay');
+  const board = { weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'on' };
+  const top = await gt.top(board, 'Ghosty');
+  check(top && top.entries.some(e => e.name === 'Ghosty' && Math.abs(e.time - real.time) < 1e-6 && e.ghost), 'e2e: on the board at its time, with a ghost');
+  const g = await gt.ghost(board, 'Ghosty');
+  check(g && decodeTrace(g.ghost) && decodeTrace(g.ghost).length / 4 >= 900 && g.ghost === real.ghost, 'e2e: the ghost comes back whole and unchanged');
+  console.log('  end to end against dev-relay.mjs: done');
+  relay.close();
+} catch (e) { fails++; console.log('  FAIL end to end: ' + (e && e.stack || e)); }
 
 console.log(`global times (game side): ${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

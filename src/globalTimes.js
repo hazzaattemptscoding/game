@@ -14,6 +14,7 @@ export const WEATHERS = ['dry', 'wet'], MODES = ['solo', 'online'], DIRS = ['fwd
 export const LABELS = { dry: 'Dry', wet: 'Wet', solo: 'Solo', online: 'Online', fwd: 'Normal', rev: 'Reverse', on: 'Assists on', off: 'Assists off' };
 export const WET_WEATHERS = ['lightrain', 'heavyrain'];
 export const QUEUE_KEY = 'lakeside.timesQueue';
+export const TOKEN_KEY = 'lakeside.timesToken';   // the driver's ownership token: made once, sent with every post (see timesToken)
 export const QUEUE_MAX = 20;          // laps waiting to be posted; the oldest go first when it is full
 export const RETRY_MS = 30000;        // after a failed post (offline, relay busy) the queue is tried again this long after
 export const TOP_N = 20;
@@ -28,8 +29,21 @@ export function boardFor({ weather, online, reverse, assists }) {
   return { weather: WET_WEATHERS.includes(weather) ? 'wet' : 'dry', mode: online ? 'online' : 'solo', dir: reverse ? 'rev' : 'fwd', assists: anyAssist ? 'on' : 'off' };
 }
 
-// lap: a timer.history entry; flags: { autopilot } true if the autopilot drove any part of the lap
-export const lapQualifies = (lap, flags = {}) => !!(lap && lap.valid && lap.clean && !flags.autopilot && lap.time >= 60 && Array.isArray(lap.sectors) && lap.sectors.length === 3);
+// The ownership token: 32 hex characters, made once and kept in the browser. The relay keeps only its hash, and a name can be
+// posted again only with the token that first posted it (worker/src/times.js). Lost with the browser's storage, a new one is made.
+// Returns the token; storage is optional (a private window may have none), then the token lasts this page only.
+export function timesToken(storage) {
+  try { const t = storage?.getItem(TOKEN_KEY); if (typeof t === 'string' && /^[0-9a-f]{32}$/.test(t)) return t; } catch { /* blocked: make one below */ }
+  const b = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(b);
+  const t = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+  try { storage?.setItem(TOKEN_KEY, t); } catch { /* storage full or blocked: the token lives in memory */ }
+  return t;
+}
+
+// lap: a timer.history entry; flags: { autopilot } true if the autopilot drove any part of the lap. The relay's rules
+// (worker/src/times.js): a time of 60 to 900 s, and three sectors of at least 5 s each (a shorter one is refused, so it is not posted).
+export const lapQualifies = (lap, flags = {}) => !!(lap && lap.valid && lap.clean && !flags.autopilot && lap.time >= 60 && lap.time <= 900 && Array.isArray(lap.sectors) && lap.sectors.length === 3 && lap.sectors.every(s => Number.isFinite(s) && s >= 5));
 
 // the relay's web address from its socket address: wss://host/ -> https://host, ws://host:8787/ -> http://host:8787
 export function timesBase(relayUrl) {
@@ -49,6 +63,7 @@ export function cleanName(s) {
 // o: { fetchFn, storage (getItem/setItem), getBase () => 'https://host' or '', now () => ms, onResult (post, answer) }
 export function createGlobalTimes(o = {}) {
   const fetchFn = o.fetchFn || ((...a) => fetch(...a)), storage = o.storage || null, now = o.now || (() => Date.now());
+  const token = o.token || timesToken(storage);   // sent with every post, never kept in the queue
   const getBase = o.getBase || (() => '');
   let queue = [], busy = false, retryAt = 0;
   try { const q = JSON.parse(storage?.getItem(QUEUE_KEY) || '[]'); if (Array.isArray(q)) queue = q.filter(p => p && typeof p === 'object').slice(-QUEUE_MAX); } catch { queue = []; }
@@ -80,7 +95,7 @@ export function createGlobalTimes(o = {}) {
         while (queue.length) {
           const post = queue[0];
           let r;
-          try { r = await fetchFn(base + '/times', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(post) }); }
+          try { r = await fetchFn(base + '/times', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...post, token }) }); }
           catch (e) { status.error = 'The times server cannot be reached'; retryAt = now() + RETRY_MS; return false; }
           let body = null; try { body = await r.json(); } catch { body = null; }
           if (r.status === 200) { queue.shift(); save(); status.last = { post, answer: body }; status.error = null; o.onResult && o.onResult(post, body); continue; }
@@ -150,8 +165,9 @@ export class LapWatch {
     const f = this.flags;
     if (!lapQualifies(lap, { autopilot: f.autopilot })) return null;
     const board = { weather: f.wet ? 'wet' : 'dry', mode: f.online ? 'online' : 'solo', dir: f.reverse ? 'rev' : 'fwd', assists: f.assists ? 'on' : 'off' };
-    const post = { name: cleanName(this.o.getName()), time: +lap.time.toFixed(3), sectors: lap.sectors.map(s => +s.toFixed(3)), board, build: this.o.build || '' };
-    if (this.recorder.samples >= lap.time * 8) post.ghost = this.recorder.encode();
+    // the relay needs the line of the lap (about 10 samples a second, worker/src/times.js): a lap without one is not posted
+    if (this.recorder.samples < lap.time * 8) return null;
+    const post = { name: cleanName(this.o.getName()), time: +lap.time.toFixed(3), sectors: lap.sectors.map(s => +s.toFixed(3)), board, build: this.o.build || '', ghost: this.recorder.encode() };
     return post.name ? post : null;
   }
 }
