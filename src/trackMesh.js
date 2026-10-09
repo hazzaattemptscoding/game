@@ -26,7 +26,7 @@ const SPONSOR_CHUNK = 9;      // length of one sponsor panel, metres (three 3 m 
 // colours for the top-down debug view
 export const DEBUG_COLOURS = {
   road: 0x3a3a3a, line: 0xffffff, kerb: 0xe03030, sausage: 0xffcc00, runoff: 0xb8b0a0, rumble: 0xe85d4a,
-  gravel: 0xf0b040, grass: 0x4f8f3a, pit: 0x8a5cd6, island: 0xc0a8ff, tyres: 0xff2020, armco: 0x1e5bff,
+  gravel: 0xf0b040, grass: 0x4f8f3a, pit: 0x8a5cd6, island: 0xc0a8ff, islandPlain: 0xc0a8ff, tyres: 0xff2020, armco: 0x1e5bff,
   armcoSingle: 0x66ccff, street: 0xffffff, parapet: 0xbbbbbb, pitwall: 0xff55ff, fence: 0xffa000,
   board: 0xffff00, sign: 0x00ffff, building: 0x777777,
 };
@@ -65,6 +65,7 @@ export function buildTrackScene(T, ground) {
     gravelEdge: new THREE.MeshStandardMaterial({ color: 0x6e5a3c, roughness: 1, ...off(-3) }),
     pit: new THREE.MeshStandardMaterial({ map: tex.pitAsphaltTexture(), vertexColors: true, roughness: 0.85, ...off(-2) }),
     island: new THREE.MeshStandardMaterial({ map: tex.chevronTexture(), roughness: 0.8, ...off(-2) }),
+    islandPlain: new THREE.MeshStandardMaterial({ color: 0x5b5e63, roughness: 0.8, ...off(-2) }),     // the island's grey, past the chevrons
     armco: new THREE.MeshStandardMaterial({ map: tex.armcoTexture(), roughness: 0.4, metalness: 0.6, side: THREE.DoubleSide }),
     post: new THREE.MeshStandardMaterial({ color: 0x6b7075, roughness: 0.5, metalness: 0.5 }),
     fencePost: new THREE.MeshStandardMaterial({ color: 0x3a3f44, roughness: 0.5, metalness: 0.5 }),
@@ -78,10 +79,10 @@ export function buildTrackScene(T, ground) {
     attenuator: new THREE.MeshStandardMaterial({ map: tex.chevronTexture('#f2c200', '#111111'), roughness: 0.6 }),
     lampOff: new THREE.MeshStandardMaterial({ color: 0x2a0606, emissive: 0xff1a1a, emissiveIntensity: 0 }),
   };
-  for (const k of ['road', 'line', 'kerb', 'sausage', 'apron', 'concrete', 'rumble', 'pit', 'island', 'attenuator']) mat[k].userData.wet = 'road';   // the weather (src/environment.js) makes these glossy and dark in the rain
+  for (const k of ['road', 'line', 'kerb', 'sausage', 'apron', 'concrete', 'rumble', 'pit', 'island', 'islandPlain', 'attenuator']) mat[k].userData.wet = 'road';   // the weather (src/environment.js) makes these glossy and dark in the rain
   const DEBUG_OF = {
     road: 'road', line: 'line', kerb: 'kerb', sausage: 'sausage', apron: 'runoff', concrete: 'runoff', rumble: 'rumble', grass: 'grass',
-    gravel: 'gravel', gravelEdge: 'gravel', pit: 'pit', island: 'island', armco: 'armco', armcoSingle: 'armcoSingle',
+    gravel: 'gravel', gravelEdge: 'gravel', pit: 'pit', island: 'island', islandPlain: 'island', armco: 'armco', armcoSingle: 'armcoSingle',
     wallConcrete: 'pitwall', meadow: 'grass', street: 'street', parapet: 'parapet', sponsor: 'tyres', tyre: 'tyres', white: 'tyres',
     fence: 'fence', attenuator: 'pitwall', pitOuter: 'pitwall',
   };
