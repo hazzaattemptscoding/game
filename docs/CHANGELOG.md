@@ -1,5 +1,27 @@
 # Changelog
 
+## Two new car classes: GT1 and the Peugeot 108 Cup
+
+The garage has a Car choice. The GT is still the default. Every mode uses the chosen car, and other players see it.
+
+- **GT1** (`src/cars.js`): modelled on the Aston Martin DBR9 (466 kW, 1200 kg with driver, 4.69 m long, 1.98 m wide, 2.74 m
+  wheelbase). Grip 1.75 g, big downforce, six gears, DRS. On the autopilot it laps in about 1:25 to 1:28.
+- **Peugeot 108 Cup** (`CITY`): the 108 1.0 VTi 72 (53 kW, 93 Nm, 3.48 m long, 1.62 m wide, 2.34 m wheelbase), with front-wheel drive,
+  five gears, no downforce and no DRS. The gearbox, the final drive and the tyres are estimates; the sources are in the comments. On
+  the autopilot it laps in about 2:16 to 2:19.
+- **Front-wheel drive** (`src/physics.js`): the engine drives the front tyres, which share their grip between pulling and steering,
+  so the car runs wide on power. Traction control and wheelspin work on the front axle. The rear-drive path is unchanged: the GT
+  times are the same to the millisecond.
+- **Other players** see your car: the class goes in bits 1 and 2 of the state's flags (the DRS bit is unchanged), so the packet is the
+  same length. An old client reads every car as a GT. Remote cars have their own model and contact size.
+- **Records per car.** Personal bests and the global times are kept for each class. The GT keeps its old list and boards. Each class
+  has its own 16 boards on the relay, and a lap is posted with the car it was driven in. The relay's speed cap is per class: 53 m/s
+  for the GT and GT1, 40 m/s for the 108 (its laps are about 30 m/s).
+
+Tests: `tools/cars.js` (the classes have every field the GT has; front drive launches, spins with traction control off on a wet
+road and holds with it on; the 108 never opens DRS; the lap times of each class; the car id round-trips the packet and defaults to
+the GT; the per-class lists and boards and the relay's limits).
+
 ## Track fixes from the reports: kerb, run-off, pit entry sign and fence, exit tyres
 
 Five reports from the in-game Report tool.
