@@ -1,104 +1,104 @@
-# Lakeside UI system
+# Lakeside UI system (v2: quiet)
 
-The single source of truth for every UI stage (menus, results, HUD). Read this before touching any UI file. If something here conflicts with an older style in `src/style.css`, this wins.
+The single source of truth for every UI screen (menus, results, HUD). Read this before touching any UI file. This version REPLACES the first loud one (slanted yellow buttons, italic titles, saturated purple fills, glows), which the owner rejected: "feels like Fortnite". Where `src/style.css` still has those, they are bugs.
 
 ## Who and feel
 
-A driver at a desk with mouse and keyboard, wanting to be on track in two clicks. After a race they want the result and the next race. The UI is a pit-wall monitor under floodlights: calm and exact, with the circuit and car always visible, and colour doing real work. It is **colourful on a purple base**, not grey and not a rainbow.
+A driver at a desk with mouse and keyboard, wanting to be on track in two clicks. After a race they want the result and the next race. The reference is **iRacing**: flat dark panels, thin borders, small rectangular controls, regular-weight type, dense but tidy, nothing shouting. The circuit and car stay visible. Purple (the PowerMedia brand) is the quiet base. Colour lives in small details that mean something: timing colours, livery chips, status dots, one selection bar.
 
-Brand source: the PowerMedia and Lakeside colours already in `src/gantryScreen.js` (`C` palette, `SLANT`).
+## What is banned (the owner named these)
 
-## Signature: the 19% lean
-
-Every edge on the gantry screens leans at 19% (`SLANT = 0.19`, matched to the PowerMedia logo). The UI uses the same lean as its one signature:
-- Primary buttons, the selected nav marker, section chips, progress and sector bars, the focus tab on the rail all use a **skewed background** (`transform: skewX(-10.7deg)` on a pseudo-element, text stays upright). 10.7 degrees is atan(0.19).
-- Panels, inputs, rows and cards stay rectangular. Only "action and selection" shapes lean, so the lean means something.
-- Check: you must be able to point to five places the lean appears (primary button, selected rail item, group label chip, results position badge, HUD sector bar).
+1. Slanted shapes of any kind: no `skewX`, no leaning plates, bars, chips or badges. Everything is rectangular.
+2. Bold italic condensed titles. No italic text anywhere. Titles are upright, regular to semibold.
+3. Glows: no coloured `box-shadow` halos, no `text-shadow` glow. Shadows only for real elevation (menus over scene) and subtle.
+4. Yellow action buttons. Yellow is not a button colour any more.
+5. Saturated purple fills for selection, plates and badges. Selection is a tint plus a thin bar.
+6. Also still banned: centred modal-in-a-box, two huge slab buttons for a binary choice, gradient text, emoji, accent colours outside the token list.
 
 ## Colour tokens (CSS custom properties on `:root`)
 
-Names come from the venue. Define all of these once, in `src/style.css`, and use only tokens in component rules (no raw hex in components).
+Keep the existing token NAMES where they exist (components already use them) and change their VALUES and roles. Add the new ones.
 
 ```
---pit-0:   #0a0612;  /* deepest: scene shade, input wells */
---pit-1:   #120b20;  /* rail, panels */
---pit-2:   #1b1230;  /* rows, cards */
---pit-3:   #271a44;  /* hover, raised */
---line:    rgba(190,160,255,.12);   /* hairline */
---line-strong: rgba(190,160,255,.24);
+--pit-0: #0d0b14;   /* deepest: input wells, scene shade */
+--pit-1: #141120;   /* rail, panels */
+--pit-2: #1b1729;   /* rows, cards */
+--pit-3: #241f36;   /* hover, raised */
+--line:  #2c2740;   /* hairline borders */
+--line-strong: #3a3454;
 
---text:       #f4f0ff;
---text-dim:   #b7accf;
---text-faint: #8f84a8;
+--text:       #ebe9f3;
+--text-dim:   #aaa6bd;
+--text-faint: #8a86a0;   /* at least 4.5:1 on --pit-1; check with a script */
 
---purple:        #6d28d9;  /* PowerMedia: selection, active, brand fills */
---purple-deep:   #4c1d95;  /* behind selection, bars */
---purple-bright: #8418f6;  /* Delta violet: hover glow, highlights */
---purple-soft:   #a78bfa;  /* purple used as TEXT or thin lines on dark */
+--accent:       #7c5cf0;              /* quiet purple: selection bar, links, outlines */
+--accent-fill:  #6d28d9;              /* PowerMedia purple: the ONE primary button and switch-on */
+--accent-tint:  rgba(124, 92, 240, .16); /* selected row/option background */
+--accent-soft:  #b9a4ff;              /* focus ring (2px outline, 2px offset) and purple text */
 
---lake:       #19c8b9;  /* Lakeside teal: secondary accent, info, links, "online" and live state */
---lake-deep:  #06282c;
+--lake: #19c8b9;      /* status: online, live, DRS available, info */
+--warn: #f0b429;      /* warnings (this replaces the old yellow gantry token) */
+--bad:  #ff5d52;      /* penalties, invalid, destructive */
 
---gantry:     #ffd400;  /* the ONE primary-action colour (Start, Drive, Join). Dark text on it. */
-
---timing-best:  #e879f9; /* fastest overall: the fastest of the session (HUD, board) or of the race in that sector (results) */
---timing-pb:    #2fd673; /* personal best, or within 0.3 s of the fastest (results) */
---timing-slow:  #f5c542; /* slower */
---flag-red:     #ff4b3e; /* penalties, warnings, destructive */
+--timing-best: #e879f9;  /* fastest of everyone */
+--timing-pb:   #3ddc84;  /* personal best, or within 0.3 s of the fastest */
+--timing-slow: #e8c04a;  /* slower */
 ```
+
+The old `--purple`, `--purple-deep`, `--purple-bright`, `--purple-soft`, `--gantry`, `--lake-deep`, `--flag-red` and `--on-gantry` tokens must be removed or mapped onto the new ones (grep every use; do not leave two names for the same role). Timing colours are semantic only, never decoration. Brand purple is never used for timing state.
 
 Rules:
-- ~60/30/10: deep purple-black surfaces, purple and lake as the colour, yellow only for the single primary action on a screen.
-- Timing colours are semantic. Never use them decoratively. Brand purple is never used for timing state.
-- Selection and "on" = `--purple` fill with `--text`. A focus ring is 2px `--gantry` with 2px offset on every focusable control.
-- Depth strategy: **surface shifts plus hairlines**, no heavy shadows. Raised = one step lighter surface. Inputs sit darker (`--pit-0`).
-- Scene: keep the 3D scene visible. Dim it with a gradient from the left (`rgba(10,6,18,.92)` to transparent), not a flat veil, tinted purple not black.
+- Purple appears as: the dark surfaces (they carry a purple tint), the selection tint and left bar, the primary button, a switch that is on, links, the focus ring. Nothing else.
+- Depth is surface shifts plus hairlines, not shadows. Inputs sit darker (`--pit-0`).
+- Scene: keep the 3D scene visible. Dim it with a left-to-right gradient from `rgba(10,8,18,.94)` to transparent. No coloured veils.
 
 ## Type
 
-- **Display, labels, numbers:** Barlow Condensed (already bundled: 600 normal and 800 italic). Italic 800 for screen titles, wordmark and big numerals. 600 for labels. Always `font-variant-numeric: tabular-nums` for times, gaps, speeds.
-- **Body and settings text:** Barlow (non-condensed) 400/500/600 via `@fontsource/barlow` (latin only, self-hosted, no CDN). Add the dependency, import only the weights used.
-- Scale (ratio 1.25 from 15px body, round to whole px): caption 11 · small 12 · body 15 · h4 19 · h3 23 · h2 29 · display 46+. Weight and colour carry hierarchy as much as size: value 600/`--text`, label 500/`--text-dim`, meta 400/`--text-faint`.
-- Section labels: 11px, uppercase, 0.14em tracking, `--text-faint`, inside a leaning chip only on the primary group of a screen.
-- Large titles get slightly negative tracking (-0.01em). Body line-height 1.45. `text-wrap: balance` on headings, `pretty` on paragraphs.
+- Body, labels, titles: **Barlow** (regular 400, medium 500, semibold 600). Self-hosted already.
+- Numbers (times, speeds, gaps, positions, HUD readouts) and the wordmark: **Barlow Condensed** 500/600/700, upright, `font-variant-numeric: tabular-nums`.
+- Wordmark: Barlow Condensed 700, uppercase, letter-spacing 0.14em, about 20px. Not italic, not large.
+- Scale (px): 11 caption · 12 small · 14 body · 16 row label · 20 screen title (weight 600, upright, letter-spacing -0.005em) · 28 section hero · 44 big numerals (HUD lap time, result position).
+- Group labels: 11px uppercase, letter-spacing 0.1em, `--text-faint`, weight 600. No chip behind them.
+- Hierarchy comes from weight and colour as much as size: value 500/`--text`, label 400/`--text-dim`, meta 400/`--text-faint`.
 
-## Space, shape, density
+## Space, shape
 
-- Base unit 4px, use multiples only. Row height 52px. Panel padding 20 to 24px. Group gap 28px. Rail width 280px at a 1280 window (clamp 240 to 320).
-- Radius scale: controls 6px, rows and cards 10px, modals 14px. Leaning shapes have 0 radius.
-- Nested radius rule: inner = outer minus padding.
-- Hit areas at least 40px high. Never hover-only controls (keyboard and touch must work).
-- Layout must fit a 1280x640 window with no page scroll: only the content pane scrolls, and the action footer (Start, Back) stays pinned.
+- Base unit 4px. Row min-height 48px. Panel padding 16 to 20px. Group gap 24px. Rail 240px wide at a 1280 window (clamp 220 to 280).
+- Radius: controls 4px, rows and cards 6px, menus and dialogs 8px. Circles only for swatches, dots, switch knobs.
+- Hit areas at least 40px high. Nothing hover-only. Keyboard and touch must work.
+- Must fit 1280x640 with no page scroll: only the content pane scrolls, and the action footer stays pinned.
 
-## Components (reuse, do not restyle per screen)
+## Components (one version of each, reused everywhere)
 
-- **Rail**: persistent left column, wordmark (Barlow Condensed italic 800), nav list, driver chip at the bottom. Items show number keys 1 to 7 (`kbd`). The selected item has a leaning `--purple` marker behind it.
-- **Resume button** (main menu only): the one yellow leaning button at the top of the rail, resumes the last mode.
-- **Row**: label and optional hint left, control right, hairline between rows, inside a `--pit-1` group card. One component for every setting.
-- **Switch** for on/off. **Segmented control** for 2 to 5 choices (selected = `--purple`). **Stepper** for laps. **Slider** with a visible value. Never a pair of full-width slabs.
-- **Summary card** (race setup, online lobby): a short readout beside the form, with the primary button inside it.
-- **Table** (results, times, standings): right-aligned tabular numerals, hairline rows, your row marked with a leaning purple edge, position badge leaning.
-- **Banner** (HUD messages): a leaning bar, text upright, colour by meaning (warn `--gantry`, penalty `--flag-red`, info `--lake`).
+- **Rail**: flat `--pit-1`, 1px right border `--line`. Wordmark, optional primary button, nav list, driver chip at the bottom. Nav item: padding 8px 10px, `--text-dim`; selected = `--accent-tint` background, `--text`, 3px left bar `--accent`. Number keys shown as a small outlined `kbd`.
+- **Primary button** (one per screen at most): solid `--accent-fill`, white text 600, radius 4px, no border glow, no shadow. Hover: lighten 6%. Active: darken, `scale(.98)`. **Secondary**: `--pit-2` background, 1px `--line-strong`, `--text`. **Quiet/destructive**: text only, `--bad` for destructive.
+- **Row** (every setting): label 16/500 and optional hint 12/`--text-faint` on the left, control on the right, hairline between rows, inside a `--pit-1` group card with 1px `--line` border and 6px radius.
+- **Switch**: 36x20 pill, off = `--pit-3` with `--line-strong` border, on = `--accent-fill`, knob white. **Segmented**: inset `--pit-0` well, 1px `--line-strong`, options `--text-dim`; selected = `--accent-tint` fill, white text, inset 1px `--accent`. **Stepper** = segmented. **Slider**: 3px track, filled part `--accent`, 12px knob `--text`, value in Barlow Condensed on the right.
+- **Chip** (race number, tags): Barlow Condensed 700, white on the livery colour, 3px radius. Host/you tags: outlined, `--text-dim`.
+- **Banner** (HUD messages): a rectangle with `--pit-1` at 88% opacity, 1px `--line-strong`, 6px radius and a 4px coloured LEFT EDGE carrying the meaning (info `--lake`, warn `--warn`, penalty/invalid `--bad`, best lap `--timing-best`, personal best `--timing-pb`). Text 16/600 upright.
+- **HUD panel**: `--pit-1` at 82% opacity, 1px `--line-strong`, 6px radius, light backdrop blur. Sector bars are 4px-high flat rectangles in the timing colours with the time below.
+- **Table** (results, times, Tab board): right-aligned tabular numerals, hairline rows, header 11px uppercase faint. Your row: `--accent-tint` plus a 3px left bar `--accent`. Position is plain Barlow Condensed in `--text-dim`, no badge.
+- **Card / summary**: `--pit-1`, 1px `--line`, 6px radius, 16 to 20px padding.
 
 ## Motion
 
-Felt, not watched. Under 300ms. Custom ease-out `cubic-bezier(0.23, 1, 0.32, 1)`, never ease-in. Animate only `transform` and `opacity`, never `transition: all`. Press: `scale(.98)` on `:active`. Screens enter with 8px `translateY` plus fade (180ms), rail items stagger 30ms. Keyboard-repeated actions (arrow nav) get no animation. Honour `prefers-reduced-motion` (drop movement, keep opacity).
+Quiet. 120 to 160ms. Ease-out `cubic-bezier(0.23, 1, 0.32, 1)`, never ease-in. Animate only `opacity` and `transform` (4px translate at most). No stagger, no bounce, no scale-in. Press: `scale(.98)`. Arrow-key navigation: no animation. Honour `prefers-reduced-motion` (opacity only).
 
 ## Copy
 
-Plain, short, from the driver's side. No "Welcome", no exclamation marks, no em dashes. Controls say what they do ("Start race", "Host a room"). Errors say what happened and what to do.
+Plain, short, from the driver's side. No em dashes, no exclamation marks, no "Welcome". Controls say what they do ("Start race", "Host a room").
 
-## Anti-slop checks (run before presenting any screen)
+## Checks before presenting any screen
 
-1. **Swap test**: swap in a default font and a stock dashboard layout. If nothing is lost, you defaulted.
-2. **Squint test**: blur it; focal element still obvious, nothing harsh.
-3. **Signature test**: five specific places show the lean.
-4. **Token test**: read the CSS variables aloud; they should belong to a racing circuit, not a generic app.
-5. Not allowed: centred modal-in-a-box, two huge slab buttons for a binary choice, orange section headings, grey-on-grey, gradient hero text, emoji, same card repeated everywhere, accent colours not in the token list.
+1. **Fortnite test**: grep the CSS for `skew`, `italic`, `text-shadow`, glow-style `box-shadow` (coloured, blur over 8px), `--gantry` fills, `font-weight: 800`. Any hit is a bug unless it is a livery or sponsor colour.
+2. **Squint test**: blurred, the layout still reads: rail, content, one primary action. Nothing shouts.
+3. **Token test**: every colour in component CSS comes from a token. No raw hex outside the token block and livery content.
+4. **Contrast**: body text and `--text-faint` at least 4.5:1 on the surface they sit on.
+5. Compare with the approved mockup: /tmp/claude-0/-home-user-game/58c1e60f-5d06-5158-8b00-69725614967c/scratchpad/ui-v2-template.html (its CSS is the visual reference; it is written in container units, translate to px).
 
-## Behaviour guardrails (do not break)
+## Behaviour guardrails
 
-- Keep every existing action, setting key, and id/class that tests or code query (`tools/screencontrol.js`, `tools/smoke.mjs`, `tools/hudsettings.js`, `tools/cursor.js`, `tools/board.js`, menu keyboard and gamepad navigation in `src/menuNav.js`). Change a selector only together with its test.
-- Menu navigation by keyboard and gamepad must still work exactly (arrows, Enter, Escape, number keys added on top).
-- Touch buttons keep working.
-- No new network or CDN dependency; fonts are bundled.
+- Keep every existing action, setting key, id and class that tests or code query. Change a selector only together with its test.
+- Keyboard and gamepad navigation (`src/menuNav.js`) unchanged. Number keys 1 to 7 on the main menu stay.
+- Touch controls keep working. The touch/keyboard switching fix in `src/input.js` stays.
+- No new network or CDN dependency.
