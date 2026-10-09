@@ -43,3 +43,17 @@ export function cursorSteer(x, width, sens = 1) {
   const m = Math.abs(n) < CURSOR_DEADZONE ? 0 : (Math.abs(n) - CURSOR_DEADZONE) / (1 - CURSOR_DEADZONE);
   return Math.max(-1, Math.min(1, Math.sign(n) * m ** CURSOR_CURVE * sens));
 }
+
+// Touch and keyboard or mouse together. Touch only counts while it is engaged (a finger on the steer zone or a
+// pedal). Then, per control, the bigger input wins: steering by size (keyboard wins a tie), throttle and brake by
+// max, DRS by OR. When touch is not engaged the keyboard values come back unchanged.
+export function mergeTouch(kb, touch) {
+  const base = { steer: kb.steer, throttle: kb.throttle, brake: kb.brake, drs: !!kb.drs };
+  if (!touch || !touch.engaged) return base;
+  return {
+    steer: Math.abs(touch.steer) > Math.abs(kb.steer) ? touch.steer : kb.steer,
+    throttle: Math.max(kb.throttle, touch.throttle),
+    brake: Math.max(kb.brake, touch.brake),
+    drs: base.drs || !!touch.drs,
+  };
+}

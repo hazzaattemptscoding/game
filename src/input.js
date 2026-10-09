@@ -4,13 +4,16 @@
 
 // Keyboard steering and pedals are eased in and out by inputModel.js, the
 // same model the test drivers in tools/drivers.js use.
-import { keyboardStep, toward, cursorSteer, CURSOR_RATE, KEY_THROTTLE_IN, KEY_BRAKE_IN, KEY_PEDAL_OUT } from './inputModel.js';
+import { keyboardStep, toward, cursorSteer, mergeTouch, CURSOR_RATE, KEY_THROTTLE_IN, KEY_BRAKE_IN, KEY_PEDAL_OUT } from './inputModel.js';
 // Gamepad reading, rumble and the Controls screen live in gamepad.js (pure and tested by tools/gamepad.js).
 import { readPad, newPadState, normaliseControllerSettings, pickPad, touchedPad, createRumbler, padCapture, openControlsOverlay, cleanName } from './gamepad.js';
 import { saveSettings } from './settings.js';
 
 const TOUCH_STEER_PX = 70;    // how far your thumb moves for full lock, in screen pixels
 const TOUCH_STEER_RATE = 8;   // smoothing on touch steering, per second
+const MOUSE_QUIET_MS = 500;   // mouse events this soon after a touch are the browser's own copies, not the mouse
+const MODIFIER_CODES = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'OSLeft', 'OSRight', 'CapsLock']);
+const clock = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
 
 // settings.steering is 'keyboard' or 'cursor' (read every frame, so the settings panel changes it live) and
 // settings.steerSens the cursor sensitivity. hooks.boardAllowed() says whether Tab may show the times board
@@ -27,12 +30,15 @@ export function createInput(settings = {}, hooks = {}) {
     const p = e.gamepad;
     if (p && p.index === padSel.index) { usingPad = false; padSel.index = -1; padState = newPadState(); padName = ''; padKey = ''; }
   });
-  let kbSteer = 0;             // the keyboard's own steering while the cursor is in charge, so the two can be added
+  const kbState = { steer: 0, throttle: 0, brake: 0 };   // the keyboard's own eased values (never the merged output, so the two do not feed back)
   let cursor = { x: 0, inside: false, value: 0 };
+  const touchEase = { steer: 0, throttle: 0, brake: 0 };   // the touch values after easing, kept between frames
 
   // typing in a note box, a select or any editable field never drives the car or fires a shortcut
   const typing = e => { const t = e.target; return !!t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)); };
   addEventListener('keydown', e => {
+    // a real key (not a modifier alone, not a virtual keyboard's blank code) means the keyboard is in use again
+    if (e.code && !MODIFIER_CODES.has(e.code)) touch.hide();
     if (typing(e)) { keys.clear(); return; }
     if (!e.repeat) {
       if (e.code === 'KeyR') actions.push('reset');
@@ -59,12 +65,15 @@ export function createInput(settings = {}, hooks = {}) {
     if (!typing(e)) keys.delete(e.code);
   });
 
-  // Cursor steering: the mouse position (not touch or pen). Leaving the window lets go of the steering.
-  addEventListener('pointermove', e => { if (e.pointerType === 'mouse') { cursor.x = e.clientX; cursor.inside = true; } });
-  addEventListener('mouseout', e => { if (!e.relatedTarget) cursor.inside = false; });   // the pointer left the window
-
   // Touch: drag anywhere on the left half to steer, pedals on the right.
   const touch = createTouch(actions);
+
+  // Cursor steering: the mouse position (not touch or pen). Leaving the window lets go of the steering.
+  // A real mouse move or click also hands the on-screen controls back to the keyboard (pen does not).
+  addEventListener('pointermove', e => { if (e.pointerType === 'mouse') { cursor.x = e.clientX; cursor.inside = true; touch.mouse(); } });
+  addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') touch.mouse(); });
+  addEventListener('mouseout', e => { if (!e.relatedTarget) cursor.inside = false; });   // the pointer left the window
+
   addEventListener('blur', () => { keys.clear(); cursor.inside = false; actions.push('board-off'); });
 
   function read(dt, speed = 0) {
@@ -74,14 +83,13 @@ export function createInput(settings = {}, hooks = {}) {
     const up = keys.has('ArrowUp') || keys.has('KeyW');
     const down = keys.has('ArrowDown') || keys.has('KeyS');
     const cursorMode = settings.steering === 'cursor';
-    const prev = { steer: cursorMode ? kbSteer : state.steer, throttle: state.throttle, brake: state.brake };
-    let { steer, throttle, brake } = keyboardStep({ ...prev }, { left, right, up, down }, dt, speed);
+    keyboardStep(kbState, { left, right, up, down }, dt, speed);
+    let steer = kbState.steer, throttle = kbState.throttle, brake = kbState.brake;
     if (cursorMode) {
       // the keys wind their own value as usual, the cursor adds to it, the sum is clamped
-      kbSteer = steer;
       cursor.value = toward(cursor.value, cursor.inside ? cursorSteer(cursor.x, innerWidth, settings.steerSens || 1) : 0, CURSOR_RATE, dt);
-      steer = Math.max(-1, Math.min(1, kbSteer + cursor.value));
-    } else { kbSteer = steer; cursor.value = 0; }
+      steer = Math.max(-1, Math.min(1, kbState.steer + cursor.value));
+    } else { cursor.value = 0; }
     let drs = keys.has('Space') || keys.has('ShiftLeft') || keys.has('ShiftRight');
 
     // gamepad: left stick steers, triggers are the pedals, buttons as bound in settings.controller (see gamepad.js)
@@ -94,7 +102,7 @@ export function createInput(settings = {}, hooks = {}) {
       const cfg = normaliseControllerSettings(settings.controller);
       padState.speed = speed;
       const r = readPad(pad, cfg, padState, dt);
-      if (r.active && !padCapture.active) usingPad = true;
+      if (r.active && !padCapture.active) { if (!usingPad) touch.hide(); usingPad = true; }
       state.look = [r.axes[2], r.axes[3]];        // the right stick, for free look
       if (usingPad) {
         steer = r.steer; throttle = r.throttle; brake = r.brake;
@@ -109,12 +117,14 @@ export function createInput(settings = {}, hooks = {}) {
       else rumbler.stop(pad);
     } else { padName = ''; padKey = ''; state.look = [0, 0]; }
 
-    if (touch.active) {
-      steer = toward(prev.steer, touch.steer, TOUCH_STEER_RATE, dt);
-      throttle = toward(prev.throttle, touch.throttle, touch.throttle ? KEY_THROTTLE_IN : KEY_PEDAL_OUT, dt);
-      brake = toward(prev.brake, touch.brake, touch.brake ? KEY_BRAKE_IN : KEY_PEDAL_OUT, dt);
-      drs = drs || touch.drs;
-    }
+    // touch: eased towards what the fingers ask for (zero when no finger is on it), and merged with the keys,
+    // mouse and pad only while engaged. Not engaged, touch has no effect at all.
+    const te = touchEase, engaged = touch.engaged;
+    te.steer = toward(te.steer, engaged ? touch.steer : 0, TOUCH_STEER_RATE, dt);
+    te.throttle = toward(te.throttle, engaged ? touch.throttle : 0, touch.throttle ? KEY_THROTTLE_IN : KEY_PEDAL_OUT, dt);
+    te.brake = toward(te.brake, engaged ? touch.brake : 0, touch.brake ? KEY_BRAKE_IN : KEY_PEDAL_OUT, dt);
+    ({ steer, throttle, brake, drs } = mergeTouch({ steer, throttle, brake, drs },
+      { engaged, steer: te.steer, throttle: te.throttle, brake: te.brake, drs: engaged && touch.drs }));
 
     state.steer = steer; state.throttle = throttle; state.brake = brake; state.drs = drs;
     return state;
@@ -134,23 +144,34 @@ export function createInput(settings = {}, hooks = {}) {
   };
 }
 
-// On-screen controls. Shown once the screen is touched.
+// On-screen controls. Shown once the screen is touched, and handed back to the keyboard or mouse when those are
+// used again (t.hide, t.mouse). `active` is which input was used last (it drives the controls and input.device).
+// `engaged` is true only while a finger is on the steer zone or a pedal: only then does touch steer or pedal.
 function createTouch(actions) {
-  const t = { active: false, steer: 0, throttle: 0, brake: 0, drs: false };
-  const root = document.getElementById('touch');
+  const t = { active: false, engaged: false, steer: 0, throttle: 0, brake: 0, drs: false, lastTouch: -Infinity };
+  const body = () => (typeof document !== 'undefined' && document.body) || null;
+  const setMode = on => { t.active = on; const b = body(); if (b) b.classList.toggle('touch', on); };
+  t.show = () => { if (!t.active) setMode(true); };
+  t.hide = () => { if (t.active) setMode(false); };
+  // a real mouse move or click, not the copies a browser makes right after a touch (within MOUSE_QUIET_MS)
+  t.mouse = () => { if (t.active && !(clock() - t.lastTouch < MOUSE_QUIET_MS)) t.hide(); };
+  const root = typeof document !== 'undefined' ? document.getElementById('touch') : null;
   if (!root) return t;
   let steerId = null, steerX = 0;
   const knob = root.querySelector('.t-knob'), zone = root.querySelector('.t-steer');
+  const pedalsHeld = new Set();
+  const refresh = () => { t.engaged = steerId !== null || pedalsHeld.size > 0; };
 
-  addEventListener('touchstart', () => {
-    if (!t.active) { t.active = true; document.body.classList.add('touch'); }
-  }, { passive: true });
+  addEventListener('touchstart', () => { t.lastTouch = clock(); t.show(); }, { passive: true });
+  addEventListener('touchend', () => { t.lastTouch = clock(); }, { passive: true });
+  addEventListener('touchcancel', () => { t.lastTouch = clock(); }, { passive: true });
 
   zone.addEventListener('pointerdown', e => {
     steerId = e.pointerId; steerX = e.clientX;
     zone.setPointerCapture(e.pointerId);
     knob.style.left = e.clientX + 'px'; knob.style.top = e.clientY + 'px';
     knob.classList.add('on');
+    refresh();
   });
   zone.addEventListener('pointermove', e => {
     if (e.pointerId !== steerId) return;
@@ -161,13 +182,20 @@ function createTouch(actions) {
     if (e.pointerId !== steerId) return;
     steerId = null; t.steer = 0;
     knob.classList.remove('on'); knob.style.transform = '';
+    refresh();
   };
   zone.addEventListener('pointerup', endSteer);
   zone.addEventListener('pointercancel', endSteer);
+  zone.addEventListener('pointerleave', endSteer);
+  zone.addEventListener('lostpointercapture', endSteer);
 
   for (const btn of root.querySelectorAll('[data-pedal]')) {
     const key = btn.dataset.pedal;
-    const set = v => e => { e.preventDefault(); t[key] = v; btn.classList.toggle('on', !!v); };
+    const set = v => e => {
+      e.preventDefault(); t[key] = v; btn.classList.toggle('on', !!v);
+      if (v) pedalsHeld.add(btn); else pedalsHeld.delete(btn);
+      refresh();
+    };
     btn.addEventListener('pointerdown', set(key === 'drs' ? true : 1));
     btn.addEventListener('pointerup', set(key === 'drs' ? false : 0));
     btn.addEventListener('pointercancel', set(key === 'drs' ? false : 0));
