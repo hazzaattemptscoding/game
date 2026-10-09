@@ -202,6 +202,7 @@ export function freezeWorld(root) {
 }
 
 // Small instanced props (a crowd, trees, bushes, bins) disappear beyond `limit` metres from the camera. Cheap enough to run every few frames.
+// A prop with userData.maxDist (a crowd, src/crowd.js) also goes beyond that distance on every tier: there a person is under two pixels.
 export function propCuller(root) {
   const props = [], c = new THREE.Vector3();
   root.updateMatrixWorld(true);
@@ -213,18 +214,19 @@ export function propCuller(root) {
     const s = o.boundingSphere;
     if (!s) return;
     c.copy(s.center).applyMatrix4(o.matrixWorld);
-    props.push({ o, x: c.x, z: c.z, r: s.radius });
+    props.push({ o, x: c.x, z: c.z, r: s.radius, cap: o.userData.maxDist ?? Infinity });
   });
   let last = -1;
+  const capped = props.some(p => p.cap < Infinity);
   return {
     count: props.length,
     // limit in metres (Infinity shows everything). A prop shows while any part of it can be inside the limit.
     update(cam, limit) {
-      if (limit === Infinity && last === Infinity) return;
+      if (limit === Infinity && last === Infinity && !capped) return;
       last = limit;
       const cx = cam.position.x, cz = cam.position.z;
       for (const p of props) {
-        const show = Math.hypot(p.x - cx, p.z - cz) - p.r <= limit;
+        const show = Math.hypot(p.x - cx, p.z - cz) - p.r <= Math.min(limit, p.cap);
         if (p.o.visible !== show) p.o.visible = show;
       }
     },

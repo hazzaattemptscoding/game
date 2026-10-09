@@ -3,7 +3,9 @@
 //   - every stand is behind the containment wall by at least GAP, 6 m from every barrier line, off the pit lane,
 //     clear of every building, the bridge and the other stands, on ground that is not too steep
 //   - the gantry legs stand outside the kerbs and clear of the pit wall, and everything on it is 6 m or more above the road
-//   - at most 12 stands, of four kinds (covered, open terrace, scaffold, hospitality); the fan zones, big screens, media tower and footbridge stairs obey the same rules as the stands
+//   - every stand in SITES placed (fifteen), of four kinds (covered, open terrace, scaffold, hospitality); the fan zones, big screens, towers,
+//     marquees, the ferris wheel, the medical centre, the TV towers, the crane, the scoreboard, the paddock and the footbridge stairs obey
+//     the same rules as the stands, and no two of them overlap
 //   - signs, bins, pit boards, banner flags, the perimeter fence and the floodlight masts are behind the wall, off the barrier lines and clear of buildings and stands
 //   - no bridge pier stands within 6 m of the containment wall of any part of the circuit
 // It checks the plan (numbers only), the same one the game draws.
@@ -14,7 +16,7 @@ import { planStands, trackBlockers, wallClearance, SITES, GAP } from '../src/gra
 import { GANTRY_CLEAR, GANTRY_LOWEST, GANTRY_S, TOWER_HALF, gantryLegs } from '../src/gantry.js';
 import { planPiers, pierBlocked } from '../src/bridge.js';
 import { trackPoint } from '../src/meshKit.js';
-import { planExtras, footBlockers, footprintPoints, SMALL_RULES, PIT_ARROWS } from '../src/venueExtras.js';
+import { planExtras, footBlockers, smallBlockers, footprintPoints, SMALL_RULES, PIT_ARROWS } from '../src/venueExtras.js';
 import { planFences } from '../src/grandstands.js';
 import { entryRoadAt } from '../src/track.js';
 import { planMasts, MAST_BEHIND, MAST_BARRIER } from '../src/floodlights.js';
@@ -30,10 +32,13 @@ const segDist = (x, z, sg) => {
 const blockers = [...trackBlockers(T), ...sceneryFootprints(T)];
 const { stands, why } = planStands(T, ground, blockers);
 for (const w of why) fail(`${w.name}: no valid place (${JSON.stringify(w.reason)})`);
-if (stands.length < 10 || stands.length > 12) fail(`${stands.length} stands placed, wanted 10 to 12`);
+if (stands.length !== SITES.length) fail(`${stands.length} stands placed, wanted all ${SITES.length}`);
+// the left of Scramble, Hurricane Sweep and the run to Windsock Hairpin carry the stands added for them
+for (const n of ['Hurricane Grandstand', 'Approach Terrace', 'Hairpin Stand']) { const st = stands.find(o => o.name === n); if (!st) fail(`${n} not placed`); else if (st.side !== 0) fail(`${n} is on the right, wanted the left`); }
 for (const k of ['main', 'terrace', 'scaffold', 'hospitality']) if (!stands.some(st => st.kind === k)) fail(`no ${k} stand placed`);
 const extras = planExtras(T, ground, blockers, stands);
 for (const w of extras.why) fail(`${w.name}: no valid place (${JSON.stringify(w.reason)})`);
+for (const k of ['marquee', 'wheel', 'medical', 'camtower', 'crane', 'scoreboard', 'paddock']) if (!extras.items.some(o => o.kind === k)) fail(`no ${k} placed`);
 const everything = [...stands, ...extras.items];
 for (const st of everything) {
   const pts = [];
@@ -90,6 +95,7 @@ for (const b of extras.bridges) {
 
 // ---- small things and the masts
 const allBlockers = [...blockers, ...footBlockers(extras.bridges)];
+const withSmall = [...allBlockers, ...smallBlockers(extras.small)];
 const inObstacle = (x, z) => everything.some(o => { const a = (x - o.x) * o.ex[0] + (z - o.z) * o.ex[1], bb = (x - o.x) * o.ez[0] + (z - o.z) * o.ez[1]; return Math.abs(a) < o.len / 2 && bb > 0 && bb < o.depth; });
 const small = extras.small;
 const checkPoint = (what, x, z, rule, onBuilding = true) => {
@@ -103,6 +109,9 @@ small.signs.forEach(p => checkPoint('sign', p.x, p.z, SMALL_RULES.sign));
 small.bins.forEach(p => checkPoint('bin', p.x, p.z, SMALL_RULES.bin));
 small.flags.forEach(p => checkPoint('banner flag', p.x, p.z, SMALL_RULES.flag));
 small.pit.forEach(p => { checkPoint('pit board', p.x, p.z, SMALL_RULES.pit); if (!(T.pitOut[trackPoint(T, p.s, 0).i] || true)) fail('pit board'); });
+small.cater.forEach(c => c.pts.forEach(([x, z]) => checkPoint(c.type === 'loos' ? 'toilet block' : 'food kiosk', x, z, SMALL_RULES.cater)));
+small.photo.forEach(p => checkPoint('photographer', p.x, p.z, SMALL_RULES.photo));
+if (small.cater.length < 8 || small.photo.length < 8) fail(`too few kiosks (${small.cater.length}) or photographers (${small.photo.length})`);
 small.fence.forEach(p => { checkPoint('fence post', p.ax, p.az, SMALL_RULES.fence); checkPoint('fence post', p.bx, p.bz, SMALL_RULES.fence); });
 if (small.pit.length !== 2) fail(`${small.pit.length} pit boards placed, wanted the entry and the exit`);
 // the pit entry board stands 20 to 60 m before the mouth, on the pit side, and its arrow points ahead and to the left (the pit side)
@@ -118,15 +127,16 @@ if (small.pit.length !== 2) fail(`${small.pit.length} pit boards placed, wanted 
   }
 }
 if (small.signs.length < 6 || small.bins.length < 10 || small.flags.length < 8 || small.fence.length < 200) fail(`too little small furniture: ${small.signs.length} signs, ${small.bins.length} bins, ${small.flags.length} flags, ${small.fence.length} fence panels`);
-const masts = planMasts(T, allBlockers, everything);
+const masts = planMasts(T, withSmall, everything);
 if (masts.length < 20) fail(`only ${masts.length} floodlight masts placed`);
 for (const m of masts) {
   const w = wallClearance(T, m.x, m.z);
   if (w < MAST_BEHIND - 0.5) fail(`mast at s ${m.s.toFixed(0)} is ${w.toFixed(1)} m behind the wall, need ${MAST_BEHIND}`);
   if (T.segs.some(sg => segDist(m.x, m.z, sg) < MAST_BARRIER - 0.3)) fail(`mast at s ${m.s.toFixed(0)} is within ${MAST_BARRIER} m of a barrier line`);
-  if (allBlockers.some(bl => Math.hypot(m.x - bl.x, m.z - bl.z) < bl.r)) fail(`mast at s ${m.s.toFixed(0)} is on a building`);
+  if (withSmall.some(bl => Math.hypot(m.x - bl.x, m.z - bl.z) < bl.r)) fail(`mast at s ${m.s.toFixed(0)} is on a building or a kiosk`);
   if (inObstacle(m.x, m.z)) fail(`mast at s ${m.s.toFixed(0)} is on a stand`);
 }
+console.log(`  ${small.cater.length} toilet blocks and kiosks, ${small.photo.length} photographers`);
 console.log(`  ${small.signs.length} signs, ${small.bins.length} bins, ${small.flags.length} banner flags, ${small.pit.length} pit boards, ${small.fence.length} fence panels, ${masts.length} floodlight masts`);
 
 // ---- gantry
