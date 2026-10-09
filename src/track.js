@@ -87,6 +87,7 @@ const LIMIT_LEAD = 25;      // the pit limiter starts this far before the first 
 const ENTRY_TANGENT = 0.5; // the entry road's curve: tangent length as a share of its chord (bigger = straighter in the middle)
 const ENTRY_FOCAL = 0.8;   // beside the entry road the run-off reaches at most this share of the way to where the normals cross
 const ENTRY_FOLD = 0.96;    // on the inside of a bend the entry road's far edge stays within this share of the radius (the offsets fold at 1)
+const MOUTH_EASE = 60;     // metres over which the containment line eases into and out of the pit entry road's edge
 const APRON_TAPER = 50;    // a paved apron that ends is eased out over this many metres before its end
 const EXIT_CLOSE = 60;      // metres after the merge over which the merged exit lane's outer edge eases in to the track edge
 
@@ -170,6 +171,7 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   }
   buildSides(track, corners);
   smoothKerbs(track);
+  settleEntryApron(track);
   buildVRunoff(track);
   buildRumble(track);
   buildReach(track);
@@ -607,7 +609,25 @@ function buildSides(T, corners) {
       for (let i = N - 2; i >= 0; i--) T.wall[sd][i] = Math.min(T.wall[sd][i], T.wall[sd][i + 1] + 0.25);
     }
     // beside the separate entry road the flat ground ends at the road's track-side edge, where the pit wall stands
-    if (sd === 0) for (let i = 0; i < N; i++) if (T.pitEntryZone[i]) T.wall[0][i] = T.pitEntryEdge[i];
+    if (sd === 0) {
+      const lap = Float64Array.from(T.wall[0]);
+      for (let i = 0; i < N; i++) if (T.pitEntryZone[i]) T.wall[0][i] = T.pitEntryEdge[i];
+      // the flat ground eases into the entry road's edge (and back out of it at its join) over MOUTH_EASE metres, so the containment
+      // line has no square step at either end: the step is spread over the approach, and it dies away to the lap's own wall
+      let zs = -1, ze = -1;
+      for (let i = 0; i < N; i++) if (T.pitEntryZone[i] && !T.pitEntryZone[wrap(i - 1, N)]) zs = i;
+      for (let i = 0; i < N; i++) if (T.pitEntryZone[i] && !T.pitEntryZone[wrap(i + 1, N)]) ze = i;
+      if (zs >= 0) {
+        // coming in: the flat ground falls no faster than the wall rule allows, back from the road's edge
+        for (let pass = 0; pass < 3; pass++) for (let i = zs - 1; i >= 0; i--) T.wall[0][i] = Math.min(T.wall[0][i], T.wall[0][i + 1] + 0.25);
+        // going out: the flat ground rises from the road's edge, the step eased away over MOUTH_EASE metres
+        const after = lap[wrap(ze + 1, N)] - T.pitEntryEdge[ze];
+        for (let k = 1; k <= MOUTH_EASE; k++) {
+          const f = 1 - k / MOUTH_EASE, e = f * f * (3 - 2 * f), i2 = wrap(ze + k, N);
+          T.wall[0][i2] = lap[i2] - after * e;
+        }
+      }
+    }
     // the paved bands never reach past the barrier line (matters where the line funnels in to a bridge)
     for (let i = 0; i < N; i++) {
       const room = Math.max(0, T.wall[sd][i] - HW[i] - T.kerb[sd][i] - T.sausage[sd][i]);
@@ -627,6 +647,14 @@ function buildSides(T, corners) {
 // Kerb and sausage widths change by at most KERB_SLOPE metres per metre of track, so a kerb
 // eases in and out instead of starting with a hard step.
 const KERB_SLOPE = 0.2;
+// Beside the separate entry road the run-off is the tarmac between the track's own bands and the road's edge. It is worked out
+// again here from the kerbs and sausage kerbs as they were smoothed, so the apron ramps with them and has no step where a kerb starts or stops.
+function settleEntryApron(T) {
+  for (let i = 0; i < T.N; i++) {
+    if (!T.pitEntryZone[i]) continue;
+    T.runoff[0][i] = Math.max(0, T.pitEntryEdge[i] - T.hw[i] - T.kerb[0][i] - T.sausage[0][i]);
+  }
+}
 function smoothKerbs(T) {
   const { N } = T, step = KERB_SLOPE * T.ds;
   for (let sd = 0; sd < 2; sd++) for (const arr of [T.kerb[sd], T.sausage[sd]]) {
@@ -878,7 +906,7 @@ function buildPit(T) {
     for (let q = 1; q <= 2000; q++) { acc += Math.hypot(fine[q][0] - fine[q - 1][0], fine[q][1] - fine[q - 1][1]); if (acc >= T.ds) { pts.push(fine[q]); acc = 0; } }
     if (Math.hypot(pts.at(-1)[0] - pB[0], pts.at(-1)[1] - pB[1]) > 0.3) pts.push(pB); else pts[pts.length - 1] = pB;
     const n = pts.length;
-    const R = { n, i: new Int32Array(n), e: new Float64Array(n), x: new Float64Array(n), z: new Float64Array(n), dx: new Float64Array(n), dz: new Float64Array(n),
+    const R = { n, i: new Int32Array(n), h: new Int32Array(n), e: new Float64Array(n), x: new Float64Array(n), z: new Float64Array(n), dx: new Float64Array(n), dz: new Float64Array(n),
       w: new Float64Array(n), y: new Float64Array(n), apron: new Float64Array(n), u: new Float64Array(n) };
     let near = idx[0];
     for (let k = 0; k < n; k++) {
@@ -887,6 +915,9 @@ function buildPit(T) {
       near = R.i[k];
       R.e[k] = -((R.x[k] - T.x[near]) * T.nx[near] + (R.z[k] - T.z[near]) * T.nz[near]);
     }
+    // R.h: the track sample each point's wall and barriers take their height from. R.i (the nearest sample) jumps where the road
+    // runs far off the track; R.h advances evenly from the mouth to the join instead, so the barrier lines run through every sample.
+    for (let k = 0; k < n; k++) R.h[k] = k < k0 ? R.i[k] : Math.round(iA + (iB - iA) * (k - k0) / Math.max(1, n - 1 - k0));
     for (let k = 0; k < n; k++) {
       const p = Math.max(0, k - 2), q = Math.min(n - 1, k + 2), L = Math.hypot(R.x[q] - R.x[p], R.z[q] - R.z[p]) || 1;
       R.dx[k] = (R.x[q] - R.x[p]) / L; R.dz[k] = (R.z[q] - R.z[p]) / L;
@@ -1158,9 +1189,9 @@ function buildBarriers(T, corners) {
     const wk = []; for (let k = 0; k < R.n; k++) if (R.wall[k]) wk.push(k);
     if (wk.length > 1) {
       const pts = [], face = [];
-      for (let q = 0; q < wk.length; q += q < wk.length - 3 ? 3 : 1) {
+      for (let q = 0; q < wk.length; q += q < wk.length - 3 ? 2 : 1) {
         const k = wk[q], lx = R.dz[k], lz = -R.dx[k], x = R.x[k] - lx * PIT_WALL, z = R.z[k] - lz * PIT_WALL;
-        pts.push([x, T.groundAt(x, z, R.i[k]), z, R.i[k]]); face.push([lx * PIT_WALL, lz * PIT_WALL]);
+        pts.push([x, T.groundAt(x, z, R.h[k]), z, R.h[k]]); face.push([lx * PIT_WALL, lz * PIT_WALL]);
         if (q === wk.length - 1) break;
       }
       add(BARRIER.PITWALL, 0, pts, { pitFace: face, why: 'pit wall between the track and the pit entry road' });
@@ -1168,9 +1199,9 @@ function buildBarriers(T, corners) {
   }
   if (T.pitEntry) {
     const R = T.pitEntry, pts = [];
-    for (let k = 0; k < R.n; k += k < R.n - 3 ? 3 : 1) {
+    for (let k = 0; k < R.n; k += k < R.n - 3 ? 2 : 1) {
       const x = R.x[k] + R.dz[k] * (R.w[k] + 0.5), z = R.z[k] - R.dx[k] * (R.w[k] + 0.5);
-      pts.push([x, T.groundAt(x, z, R.i[k]), z, R.i[k]]);
+      pts.push([x, T.groundAt(x, z, R.h[k]), z, R.h[k]]);
       if (k === R.n - 1) break;
     }
     add(BARRIER.PITOUTER, 0, pts, { why: 'low wall on the far side of the pit entry road' });
@@ -1180,16 +1211,20 @@ function buildBarriers(T, corners) {
   for (const [from, to, side, gap] of T.layout.tyreWall || []) {
     const sd = side === 'L' ? 0 : 1, a = T.sAtPointRaw(from), span = ((T.sAtPointRaw(to) - a) % T.length + T.length) % T.length;
     const inSpan = i => ((T.s[i] - a) % T.length + T.length) % T.length <= span;
-    for (const b of T.barriers.filter(b => b.type === BARRIER.PITWALL && b.side === sd)) {
-      const pts = [];
-      for (const p of b.pts) {
-        const i = p[3];
-        if (!inSpan(i)) continue;
-        const d = (p[0] - T.x[i]) * T.nx[i] + (p[2] - T.z[i]) * T.nz[i];
-        pts.push(P(i, d + gap * (sd ? -1 : 1)));
-      }
-      add(BARRIER.TYRES, sd, pts, { impact: true, why: 'tyre barriers in front of the pit wall where the exit run-off is (layout.tyreWall)' });
+    // one stack along the whole span, across the pit wall's pieces (the entry road's wall and the pit lane's own), so it has no
+    // end where one piece of the wall meets the next
+    const along = p => ((T.s[p[3]] - a) % T.length + T.length) % T.length;
+    const all = [];
+    for (const b of T.barriers) if (b.type === BARRIER.PITWALL && b.side === sd) for (const p of b.pts) if (inSpan(p[3])) all.push(p);
+    all.sort((p, q) => along(p) - along(q));
+    const pts = [];
+    for (const p of all) {
+      const i = p[3];
+      if (pts.length && pts[pts.length - 1][3] === i) continue;   // the two pieces meet on one sample
+      const d = (p[0] - T.x[i]) * T.nx[i] + (p[2] - T.z[i]) * T.nz[i];
+      pts.push(P(i, d + gap * (sd ? -1 : 1)));
     }
+    add(BARRIER.TYRES, sd, pts, { impact: true, why: 'tyre barriers in front of the pit wall where the exit run-off is (layout.tyreWall)' });
   }
   for (const run of runsOf(N, i => T.pitSepWall[i])) {
     follow(BARRIER.PITSEP, 0, run, i => -(T.pitIn[i] - EXIT_SEP_WALL), 2, { why: 'low wall between the pit exit road and the track' });
