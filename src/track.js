@@ -56,6 +56,7 @@ const STREET_GAP = 0.8;    // clear space between the kerb and a street-section 
 const BRIDGE_RUNOFF = 2.5;   // the deck is this much wider than the track on each side (a 2.5 m margin), and the parapet stands on its edge
 const BRIDGE_TAPER = 20;     // metres after the deck over which the run-off on the far side tapers from the deck margin to the plain width
 const DECK_TYRE_TAPER = 8;   // metres at each end of the deck over which the tyre row runs into the parapet
+const BOARD_BEYOND_APRON = 5;   // metres past the paved edge a board may stand when the barrier is further out than that
 const BOARD_BEHIND = 0.5;    // a distance board stands this far behind the barrier face (never more than 1 m in front of it)
 const FILL_GAP = 120;        // no stretch on one side may go longer than this without trackside furniture
 const CLUSTER_BEHIND = 1.5;  // fill objects stand this far behind the outer barrier line (out of the run-off, within reach of the barrier)
@@ -1526,7 +1527,8 @@ function wallLines(T) {
 // there is no barrier there (so the board is not placed at all)
 export function boardOffset(T, i, sd) {
   const a = T.wallIn[sd][i];
-  return Number.isFinite(a) ? (sd ? 1 : -1) * (a + BOARD_BEHIND) : null;
+  // where the barrier is far out (wide run-off corners) the board stands just past the paved apron instead, so a driver can still read it
+  return Number.isFinite(a) ? (sd ? 1 : -1) * Math.min(a + BOARD_BEHIND, HW_OF(T, i, sd) + BOARD_BEYOND_APRON) : null;
 }
 
 // the paved width on a side at sample i, from the centre line: track half width, kerbs and the run-off

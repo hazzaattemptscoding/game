@@ -28,7 +28,8 @@ const WALL_STEP = 1.0;      // metres of sideways wall movement in one sample
 const RUNOFF_STEP = 2.0;    // metres of paved run-off width lost in one sample (a taper of up to ~1 m per metre is normal)
 const RUNOFF_END = 1.0;     // a run-off wider than this that drops to nothing in one sample has no taper at all
 const GAP_LIMIT = 300;      // metres of a side with no furniture
-const FAR_LIMIT = 12;       // metres from the nearest barrier
+const FAR_LIMIT = 12;
+const BOARD_FAR_LIMIT = 20;   // distance boards stand just past the paved apron when the barrier is further out (boardOffset), so a driver can read them       // metres from the nearest barrier
 const CAT = { seam: 'seam', runoff: 'runoff', wall: 'wall', furniture: 'furniture', gap: 'gap', far: 'far' };
 
 const args = process.argv.slice(2);
@@ -128,7 +129,7 @@ if (want('far')) {
     const sd = f.d < 0 ? 0 : 1;
     let best = Infinity;
     for (const p of bpts[sd]) { const d = Math.hypot(p[0] - f.x, p[2] - f.z); if (d < best) best = d; }
-    if (best > FAR_LIMIT) hit(CAT.far, f.s, sd, `${f.type} is ${best.toFixed(0)} m from the nearest barrier on its side`);
+    if (best > (/board/i.test(f.type) ? BOARD_FAR_LIMIT : FAR_LIMIT)) hit(CAT.far, f.s, sd, `${f.type} is ${best.toFixed(0)} m from the nearest barrier on its side`);
   }
 }
 
