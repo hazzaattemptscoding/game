@@ -1,15 +1,16 @@
 // The garage: the screen where a player paints their car. Everything inside `container` is built here; the menu (or the
 // ?garage overlay in main.js) only supplies the box.
 //
-//   const g = mountGarage(container, { settings, save, onChange });   ... g.dispose();
+//   const g = mountGarage(container, { settings, save, onChange, onCar });   ... g.dispose();
 //
 // settings.livery holds the choice (a livery object, see src/livery.js; null means the default for this browser's player id).
 // save() is called after each change so the caller can persist the settings; onChange(livery) is called live with the new
 // normalised livery so the car on the track repaints. The room sees the same paint: it is sent with the hello and every 2 s.
+// The car class (settings.car, a CAR_IDS id from src/cars.js) is picked at the top; onCar(id) is called when it changes.
 
 import * as THREE from 'three';
 import { CarView } from './car.js';
-import { GT } from './cars.js';
+import { CAR_LIST, carById } from './cars.js';
 import { BODY_COLOURS, ACCENT_COLOURS, STRIPE_STYLES, LIVERY_SPONSORS, SPONSOR_NAMES, MAX_NAME, normaliseLivery, cleanLiveryName, ownLivery, localPlayerId, liveryEquals } from './livery.js';
 import { sponsorBoard } from './textures.js';
 
@@ -48,6 +49,7 @@ const CSS = `
 .gar button.opt:hover { background: var(--pit-3); color: var(--text); }
 .gar button.opt:active { transform: scale(.98); }
 .gar button.opt.sel { background: var(--accent-tint); border-color: var(--accent); color: var(--text); }
+.gar-spec { margin: 0; font-size: 13px; color: var(--text-dim); }
 .gar input[type=text] { font: inherit; font-size: 15px; height: 44px; padding: 0 var(--s-3); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); background: var(--pit-0); color: var(--text); user-select: text; -webkit-user-select: text; touch-action: auto; min-width: 0; }
 .gar input.num { width: 90px; flex: none; text-align: center; font-family: var(--f-display); font-weight: 600; font-size: 22px; }
 .gar input.nm { flex: 1 1 180px; }
@@ -69,7 +71,7 @@ const CSS = `
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
-export function mountGarage(container, { settings, save = () => {}, onChange = () => {} }) {
+export function mountGarage(container, { settings, save = () => {}, onChange = () => {}, onCar = () => {} }) {
   const style = el('style'); style.textContent = CSS;
   const root = el('div', 'gar');
   container.append(style, root);
@@ -101,7 +103,7 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
     const rim = new THREE.DirectionalLight(0x9fc4ff, 0.9); rim.position.set(5, 3, -6); scene.add(rim);
     const floor = new THREE.Mesh(new THREE.CircleGeometry(4.2, 48), new THREE.MeshStandardMaterial({ color: 0x1a1e23, roughness: 0.9 }));
     floor.rotation.x = -Math.PI / 2; scene.add(floor);
-    car = new CarView(GT, livery);
+    car = new CarView(carById(settings.car), livery);
     scene.add(car.root);
     camera = new THREE.PerspectiveCamera(32, 1.6, 0.1, 100);
     const size = () => {
@@ -168,6 +170,17 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
     card.append(row);
     swatches[field] = { buttons, list, input };
   }
+  // the car class: a choice list, and a line about the chosen one
+  const carCard = sec('Car');
+  const carRow = el('div', 'gar-row');
+  const carBtns = CAR_LIST.map(cfg => {
+    const b = el('button', 'opt', cfg.label); b.type = 'button';
+    b.addEventListener('click', () => chooseCar(cfg.id));
+    carRow.append(b);
+    return [cfg.id, b];
+  });
+  const carNote = el('p', 'gar-spec');
+  carCard.append(carRow, carNote);
   colourRow('Body colour', 'body', BODY_COLOURS);
   colourRow('Stripe colour', 'stripe', ACCENT_COLOURS);
   colourRow('Wing colour', 'wing', ACCENT_COLOURS.concat(['#1b1d20']));
@@ -222,6 +235,17 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
   foot.append(reset);
   root.append(foot);
 
+  // --- the car class: the preview is rebuilt, the choice is saved and the game is told (it applies when the car is stopped) ---
+  function chooseCar(id) {
+    if (id === settings.car) return;
+    settings.car = id;
+    save();
+    if (car) { scene.remove(car.root); car.dispose(); }
+    if (scene) { car = new CarView(carById(id), livery); scene.add(car.root); }
+    sync(false);
+    onCar(id);
+  }
+
   // --- state ---
   function set(patch, keepFields = false) {
     const next = normaliseLivery({ ...livery, ...patch });
@@ -243,6 +267,9 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
       input.value = livery[field];
     }
     styleBtns.forEach((b, i) => b.classList.toggle('sel', i === livery.style));
+    const cfg = carById(settings.car);
+    for (const [id, b] of carBtns) b.classList.toggle('sel', id === cfg.id);
+    carNote.textContent = `${cfg.name}: ${Math.round(cfg.mass)} kg, ${cfg.drive === 'front' ? 'front-wheel drive' : 'rear-wheel drive'}, ${cfg.hasDRS ? 'DRS' : 'no DRS'}, ${cfg.gears.length} gears`;
     for (const [id, b] of sponsBtns) b.classList.toggle('sel', id === livery.sponsor);
     if (fields) {
       numIn.value = livery.number >= 0 ? String(livery.number) : '';

@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import { CarView } from './car.js';
-import { GT } from './cars.js';
+import { GT, CAR_IDS, carById } from './cars.js';
 import { decodeLivery, defaultLivery, liveryEquals } from './livery.js';
 
 export const DELAY = 0.1;         // seconds behind real time that remote cars start from (peer to peer and relay alike)
@@ -28,6 +28,9 @@ export const MAX_PLAYERS = 8;
 // car looks the same on every screen. `col` is the car's flags (bit 0: DRS open); the field keeps its old place in the packet so
 // old clients, which ignore it, can still talk to new ones.
 
+// The car class is in col too, bits 1 and 2 (the index in CAR_IDS, src/cars.js). An old client reads only the DRS bit and
+// accepts the value (it is at most 7), so it keeps working and draws every car as a GT. A missing or unknown class reads as GT.
+//
 // Fields of one state, in wire order. t is the sender's clock in ms, h the heading, vx/vz the velocity,
 // yr the yaw rate, st the steering angle, w the wheel angle, thr/brk the pedals, pz/rx the slope pitch and roll
 // of the body, col the flags (FLAG_DRS, bit 0 = DRS open), lap and s the race progress (lap number and metres into the lap).
@@ -40,8 +43,10 @@ export function cleanName(s) {
 const round = (n, d) => { const k = 10 ** d; return Math.round(n * k) / k; };
 const TAU = Math.PI * 2;
 const wrapAngle = a => Math.atan2(Math.sin(a), Math.cos(a));
-// The bits of `col`. Only DRS is sent; the other bits are reserved and read as 0 by this version.
+// The bits of `col`: bit 0 is DRS open, bits 1 and 2 are the car class (the index in CAR_IDS, 0 = GT).
 export const FLAG_DRS = 1;
+export const CAR_SHIFT = 1;
+const carCode = id => { const i = CAR_IDS.indexOf(id); return i < 0 ? 0 : i; };
 
 const DIGITS = { t: 0, x: 2, y: 2, z: 2, h: 3, vx: 2, vz: 2, yr: 3, st: 3, w: 2, thr: 2, brk: 2, pz: 3, rx: 3, col: 0, lap: 0, s: 1 };
 
@@ -109,6 +114,7 @@ export function decodeState(a) {
   const flags = Math.round(o.col);
   o.col = flags >= 0 && flags <= 7 ? flags : 0;      // a flags value out of range reads as none
   o.drs = (o.col & FLAG_DRS) !== 0;
+  o.car = CAR_IDS[(o.col >> CAR_SHIFT) & 3] || 'GT';   // the car class; index 3 is not a class, so it reads as GT
   o.lap = Math.max(0, Math.min(9999, Math.round(o.lap)));
   o.s = Math.max(0, Math.min(1e5, o.s));
   o.name = cleanName(a[FIELDS.length + 1]);
@@ -123,7 +129,7 @@ export function stateFromCar(car, lap, name, t, best = null, last = null) {
   return {
     t, x: car.x, y: car.y, z: car.z, h: wrapAngle(car.heading), vx: car.vx, vz: car.vz, yr: car.yawRate, st: car.steer, w: car.wheelSpinAngle,
     thr: car.throttle, brk: car.brake, pz: car.groundPitch || 0, rx: car.groundRoll || 0,
-    col: car.drs ? FLAG_DRS : 0, lap, s: car.loc.s || 0, name, bl: best || 0, ll: last || 0,
+    col: (car.drs ? FLAG_DRS : 0) | (carCode(car.cfg && car.cfg.id) << CAR_SHIFT), lap, s: car.loc.s || 0, name, bl: best || 0, ll: last || 0,
   };
 }
 
@@ -328,10 +334,12 @@ export class Ghosts {
       // painted from the player's own livery if it has arrived, else from the default for that player id (the same on every client)
       const livery = this.pending.has(id) ? decodeLivery(this.pending.get(id)) : defaultLivery(id);
       this.pending.delete(id);
-      g = { id, buf: new StateBuffer(this._delay, { legacy: this.legacy, fixed: this.fixed }), livery, name: st.name, info: null, opacity: 1, shown: {}, ent: this.factory ? this.factory.create({ id, livery, name: st.name }) : null };
+      const carId = st.car || 'GT';
+      g = { id, buf: new StateBuffer(this._delay, { legacy: this.legacy, fixed: this.fixed }), livery, name: st.name, carId, info: null, opacity: 1, shown: {}, ent: this.factory ? this.factory.create({ id, livery, name: st.name, car: carById(carId) }) : null };
       this.map.set(id, g);
     }
     if (!g.buf.push(st, nowMs)) return false;
+    if (st.car && st.car !== g.carId) this.swapCar(g, st.car);   // the player changed class (src/cars.js): a new model
     if (st.name) g.name = st.name;
     g.info = st;
     return true;
@@ -347,6 +355,14 @@ export class Ghosts {
     if (liveryEquals(l, g.livery)) return;
     g.livery = l;
     if (g.ent && g.ent.setLivery) g.ent.setLivery(l);
+  }
+
+  // The remote car `g` is now another class: its model is made again (the same livery and name).
+  swapCar(g, carId) {
+    g.carId = carId;
+    if (!this.factory || !g.ent) return;
+    g.ent.dispose();
+    g.ent = this.factory.create({ id: g.id, livery: g.livery, name: g.name, car: carById(carId) });
   }
 
   setName(id, name) { const g = this.map.get(id); if (g) g.name = cleanName(name) || g.name; }
@@ -377,7 +393,7 @@ export class Ghosts {
       g.ent.setPose(pose);
       g.ent.setOpacity(g.opacity);
       const f = this.fx[nfx] || (this.fx[nfx] = {});
-      f.x = pose.x; f.y = pose.y; f.z = pose.z; f.h = pose.h; f.v = Math.hypot(pose.vx, pose.vz); f.brk = pose.brk; f.o = g.opacity; nfx++;
+      f.x = pose.x; f.y = pose.y; f.z = pose.z; f.h = pose.h; f.v = Math.hypot(pose.vx, pose.vz); f.brk = pose.brk; f.o = g.opacity; f.len = carById(g.carId).length; nfx++;
       g.ent.setLabel(project ? project(pose.x, pose.y + 2.1, pose.z) : null, this.nameOf(g), g.opacity, g.livery);
     }
     this.fx.length = nfx;
@@ -401,6 +417,7 @@ export class Ghosts {
       const o = out[n] || (out[n] = {});
       o.id = g.id; o.x = p.x; o.z = p.z; o.heading = p.h; o.vx = p.vx; o.vz = p.vz; o.yawRate = p.yr;
       o.age = (nowMs - g.buf.born) / 1000; o.silent = (nowMs - g.buf.lastRecv) / 1000;
+      const size = carById(g.carId); o.length = size.length; o.width = size.width;   // this car's size, for the contact shape
       n++;
     }
     out.length = n;
@@ -449,8 +466,8 @@ export class Ghosts {
 // Browser side: one CarView per remote car, plus a CSS name tag.
 export function threeFactory(scene, tagRoot) {
   return {
-    create({ livery, name }) {
-      const view = new CarView(GT, livery);
+    create({ livery, car }) {
+      const view = new CarView(car || GT, livery);
       scene.add(view.root);
       const tag = document.createElement('div');
       tag.className = 'mp-tag';

@@ -12,7 +12,7 @@ import { Car, STEP } from './physics.js';
 import { FixedStep, FrameStats, frameTime } from './loop.js';
 import { createQuality, isPhone, snapShadowCentre, QUALITY_LABELS } from './quality.js';
 import { optimiseWorld, freezeWorld, propCuller } from './cull.js';
-import { GT } from './cars.js';
+import { carById } from './cars.js';
 import { LapTimer } from './timing.js';
 import { Autopilot } from './autopilot.js';
 import { createGlobalTimes, LapWatch, timesBase, boardFor, boardLabel } from './globalTimes.js';
@@ -54,11 +54,11 @@ const settings = loadSettings();
 
 // --- world ---
 const track = buildTrack();
-const car = new Car(GT, track);
+const car = new Car(carById(settings.car), track);   // the car class (settings.car, picked in the garage): the same object for the whole session
 car.setAssists({ tc: settings.assistTc, abs: settings.assistAbs, esc: settings.assistEsc });
 car.placeAt(params.has('at') ? +params.get('at') : -20, 0);  // ?at=1500 starts the car 1500 m into the lap
 const timer = new LapTimer(track);
-let autopilot = params.has('autopilot') ? new Autopilot(track, GT, { skill: 0.9 }) : null;
+let autopilot = params.has('autopilot') ? new Autopilot(track, car.cfg, { skill: 0.9 }) : null;
 
 // --- rendering ---
 const canvas = document.getElementById('view');
@@ -134,7 +134,7 @@ rig.groundAt = (x, z) => track.groundAt(x, z);   // the chase camera keeps clear
 let topDown = params.has('topdown');
 applyLook();
 const playerId = localPlayerId(), myLivery = () => ownLivery(settings.livery, playerId);   // the paint the room sees (src/livery.js)
-const view = new CarView(GT, myLivery());
+let view = new CarView(car.cfg, myLivery());   // replaced when the class changes (applyCarClass)
 view.setFlat(settings.blockout);
 scene.add(view.root);
 env.attachCar(view);
@@ -169,7 +169,7 @@ const input = createInput(settings, { boardAllowed: () => !dir.menuOpen && !repo
 const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthesised sound, starts at the first key press or touch
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
-hud.personalOf = reverse => personalSectors(loadBest(undefined, bestKey(reverse)));   // the sector bests of the saved list (src/board.js)
+hud.personalOf = reverse => personalSectors(loadBest(undefined, bestKey(reverse, car.cfg.id)));   // each car class has its own list (src/board.js)
 const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search, getLivery: myLivery, poseTime: () => poseAt });   // multiplayer: idle until a room is opened
 hud.pingOf = () => lobby.rtt;     // the relay round trip for the HUD readout (null when not online)
 // global times (src/globalTimes.js): valid, clean laps go to the relay's boards; the relay's address comes from multiplayer.json
@@ -192,12 +192,12 @@ const timesReady = loadConfig({ fetchFn: (...a) => fetch(...a), search: location
 setInterval(() => globalTimes.flush(), 30000);
 const lapWatch = new LapWatch({
   timer, build: BUILD, getName: driverName, isAutopilot: () => !!autopilot,
-  getConditions: () => ({ weather: (urlEnv || dir.api.environment()).weather, online: !!lobby.active, reverse: timer.reverse, assists: { tc: car.assistTc, abs: car.assistAbs, esc: car.assistEsc } }),
+  getConditions: () => ({ weather: (urlEnv || dir.api.environment()).weather, online: !!lobby.active, reverse: timer.reverse, car: car.cfg.id, assists: { tc: car.assistTc, abs: car.assistAbs, esc: car.assistEsc } }),
 });
 const boardGhost = createBoardGhost({ scene, tagRoot: document.getElementById('mp-tags') || document.getElementById('hud'), track });
 let ghostProject = null, ghostSize = null;
 const miniMap = createMiniMap(document.getElementById('hud'), { track, car, lobby, settings, ownColour: () => myLivery().body, timer });
-const board = createBoard(document.getElementById('board'), { timer, lobby });
+const board = createBoard(document.getElementById('board'), { timer, lobby, car: () => car.cfg.id });
 const steerBar = document.getElementById('steer-bar'), steerMark = steerBar.firstElementChild;
 const IDLE = { steer: 0, throttle: 0, brake: 0.3, drs: false };
 const history = { inputs: [], telemetry: [] };
@@ -227,21 +227,49 @@ function openReport() {
   topDown = true; applyLook(); reportTool.open(shot, pose);
 }
 const save = () => saveSettings(settings);
+
+// --- the car class (settings.car, src/cars.js), picked in the garage. The physics car stays the same object (its config changes,
+// see Car.setConfig), so the lobby, the mini map and the report keep their reference. The view is made again. It changes when the
+// car is stopped (under 1 m/s), so a change never happens in the middle of a corner.
+let pendingCar = null;
+function setCarClass(id) {
+  settings.car = id; save();
+  pendingCar = id;
+  applyCarClass();
+}
+function applyCarClass() {
+  if (pendingCar === null) return;
+  if (pendingCar === car.cfg.id) { pendingCar = null; return; }
+  if (car.speed > 1) return;   // moving: wait until it stops
+  const cfg = carById(pendingCar);
+  pendingCar = null;
+  car.setConfig(cfg);
+  scene.remove(view.root); view.dispose();
+  view = new CarView(cfg, myLivery());
+  view.setFlat(settings.blockout);
+  scene.add(view.root);
+  env.attachCar(view);
+  if (autopilot) autopilot = new Autopilot(track, cfg, { skill: 0.9 });
+  if (window.lakeside) window.lakeside.view = view;
+}
+
 const dir = createDirector({
   gantryScreen,
-  car, timer, track, view, lobby, settings, params, rig, hud, history, save, openReport,
+  car, timer, track, lobby, settings, params, rig, hud, history, save, openReport,
+  get view() { return view; },   // read each time: the class can change the view (applyCarClass)
+  setCar: id => setCarClass(id),
   simTime: () => simTime,
   applyLook: () => { applyLook(); view.setFlat(settings.blockout); },
   getTopDown: () => topDown, setTopDown: v => { topDown = v; applyLook(); },
   qualityChanged: () => quality.refresh(),
-  getAutopilot: () => !!autopilot, setAutopilot: v => { autopilot = v ? new Autopilot(track, GT, { skill: 0.9 }) : null; },
+  getAutopilot: () => !!autopilot, setAutopilot: v => { autopilot = v ? new Autopilot(track, car.cfg, { skill: 0.9 }) : null; },
   liveryChanged: () => { view.setLivery(myLivery()); lobby.liveryChanged(); },
   globalTimes: {
     client: () => globalTimes,
     ready: () => timesReady,   // resolves once multiplayer.json has said where the relay is (or that there is none)
     name: driverName,
     setName: v => { try { localStorage.setItem(NAME_KEY, v); } catch { /* private mode */ } },
-    currentBoard: () => boardFor({ weather: (urlEnv || dir.api.environment()).weather, online: !!lobby.active, reverse: timer.reverse, assists: { tc: car.assistTc, abs: car.assistAbs, esc: car.assistEsc } }),
+    currentBoard: () => boardFor({ weather: (urlEnv || dir.api.environment()).weather, online: !!lobby.active, reverse: timer.reverse, car: car.cfg.id, assists: { tc: car.assistTc, abs: car.assistAbs, esc: car.assistEsc } }),
     loadGhost: entry => boardGhost.load(entry),
     clearGhost: () => boardGhost.clear(),
     ghostInfo: () => boardGhost.info,
@@ -287,6 +315,7 @@ function frame(now) {
   }
   if (dir.menuOpen) board.hide();
 
+  applyCarClass();   // a class chosen in the garage takes effect once the car is stopped
   const playerInput = input.read(dt, car.speed);
   dir.frame(now, dt, playerInput);
   const paused = dir.inMenu || (dir.menuOpen && !lobby.active) || reportTool.opened;     // in a room the car keeps rolling behind the menu
@@ -379,7 +408,7 @@ function frame(now) {
   const cursorOn = settings.steering === 'cursor';
   steerBar.hidden = !(cursorOn && hudOn(settings, 'steerBar'));
   if (cursorOn) steerMark.style.left = `${(50 + playerInput.steer * 44).toFixed(1)}%`;
-  selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake;
+  selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake; selfFx.len = car.cfg.length;
   carFx.update(dt, rig.camera, lobby.ghosts.fx, selfFx, env.resolved, topDown);
   renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);

@@ -333,9 +333,9 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
         head.position.set(1.8, 0.75, 0);
         headTarget = new THREE.Object3D(); headTarget.position.set(24, -0.6, 0);
         head.target = headTarget;
-        view.root.add(head, headTarget);
         head.visible = light.headlamps > 0.05;
       }
+      view.root.add(head, headTarget);   // also when the car changes class: the lamps move to the new car (main.js applyCarClass)
     },
     setTopDown(v) { topDown = !!v; setTopDownLight(topDown); apply(cur); },
     strike(delay = 1, strength = 0.8) { bolt.t = 0; if (onLightning) onLightning(delay, strength); },     // one flash now (heavy rain only shows it), for tests and the console
