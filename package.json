@@ -39,6 +39,7 @@
     "camera": "node tools/camera.js",
     "perf": "node tools/perf.js",
     "screencontrol": "node tools/screencontrol.js",
+    "gantrystate": "node tools/gantrystate.js",
     "check": "node tools/check.js",
     "racingline": "node tools/racingline.js",
     "racingline-test": "node tools/racingline-test.js",
