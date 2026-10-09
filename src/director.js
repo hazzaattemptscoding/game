@@ -9,10 +9,11 @@ import { createMenu } from './menu.js';
 import { registerScreens } from './menuScreens.js';
 import { resultsScreen, sampleResults } from './results.js';
 import { createSessionHud, limitBanner } from './sessionHud.js';
-import { Flow, PHASE, makeSession, timeTrialRows, raceDistance, raceRows, MODE_NAMES } from './session.js';
+import { Flow, PHASE, RACE, makeSession, timeTrialRows, raceDistance, raceRows, MODE_NAMES } from './session.js';
 import { FIN } from './finish.js';
 import { START, gridSlot, pitSlot, orbitPose, cinematicPose } from './start.js';
 import { createScreenControl } from './screenControl.js';
+import { GantryFeed } from './gantryState.js';
 import { createRaceControl } from './raceControl.js';
 import { cleanEnv, WEATHER_NAMES, TIME_NAMES } from './weather.js';
 
@@ -36,6 +37,7 @@ export function createDirector(g) {
   } });
   // the gantry screen's control panel (src/screenControl.js): the host's in a room, handed to others by the host
   const sc = createScreenControl({ screen: g.gantryScreen, mp, inRoom: () => !!lobby.active, onChange: () => { const top = menu.current && menu.current(); if (top && (top.id === 'screen' || top.id === 'pause')) menu.refresh(); } });
+  const gantry = new GantryFeed(g.gantryScreen);   // the race state on the gantry screen (src/gantryState.js)
   mp.onControl = (m, id) => { rc.handle(m, id); sc.handle(m, id); if (m && m.t === FIN) lobby.receiveFinish(m, id); };
   lobby.onChange(() => refreshResults());     // a finish arrived or a player came or went: the results screen, if it is open, follows
 
@@ -283,6 +285,7 @@ export function createDirector(g) {
         if (finishedAt !== null && now - finishedAt > FINISH_DELAY_MS && !menu.isOpen) showResults();
       }
       if (flow.phase === PHASE.RESULTS && menu.isOpen && now - resultsAt > 1000) { resultsAt = now; refreshResults(); }   // the cars still out move on
+      gantryFeed(now);
       sessHud.update(overlay(now, simTime));
       document.body.classList.toggle('in-session', flow.phase !== PHASE.MENU);
       tick = menu.tick;
@@ -313,6 +316,18 @@ export function createDirector(g) {
     },
     rc,
   };
+
+  // the gantry screen shows the session: the start lights, GO, LAST LAP, the chequered flag, the lap (or the lap and best lap)
+  function gantryFeed(now) {
+    const s = session, race = flow.race;
+    let leadLap = timer.currentLap();
+    if (s && online()) for (const o of otherCars()) leadLap = Math.max(leadLap, o.laps + 1);   // the leader's lap, from the room's packets
+    gantry.update({
+      session: s, phase: flow.phase, lap: timer.currentLap(), leadLap, best: timer.best,
+      lights: flow.phase === PHASE.START && flow.seq && flow.seq.kind === 'lights' ? flow.seq.state(now) : null,
+      flagOut: !!race && (race.state !== RACE.RACING || (online() && lobby.finishes.size > 0)),
+    });
+  }
 
   function overlay(now, simTime) {
     const s = session, ph = flow.phase;

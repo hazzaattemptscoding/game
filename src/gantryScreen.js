@@ -11,7 +11,10 @@
 //                               kind: 'fastest' (purple), 'pb' (green) or none;
 //                               delta in seconds to the best lap; `of` is the race length
 //   screen.flag('yellow' | 'red' | 'green' | 'final' | 'chequered', { text })
-//   screen.clear()              drop any flag or board and go back to the loop
+//   screen.status({ eyebrow, value, sub })
+//                               the session in progress (src/gantryState.js), shown instead of the loop until it is
+//                               cleared with status(null): the lap in a race, the lap and best lap in practice
+//   screen.clear()              drop any flag or board and go back to the loop (or the status, when there is one)
 //   screen.message(text)        a line of text on a plain board, held until clear() (the control panel's custom message)
 //   screen.setAd(name, on)      take one loop scene out of (or back into) the loop; at least one always stays in
 //   screen.next()               skip to the next scene in the loop
@@ -338,7 +341,7 @@ export function createGantryScreen({ canvas, logos = {}, trackPath = [], facts =
       x.globalAlpha = 1;
     },
 
-    chequered(t) {
+    chequered(t, d) {
       const cell = 64, rows = Math.ceil(H / cell) + 2;
       x.fillStyle = C.white; x.fillRect(0, 0, W, H);
       const scroll = t * 150;
@@ -350,12 +353,37 @@ export function createGantryScreen({ canvas, logos = {}, trackPath = [], facts =
         x.fillStyle = `rgba(0,0,0,${0.16 * (1 - Math.cos(cx * 0.011 - t * 3.6)) / 2})`;
         x.fillRect(cx, 0, 8, H);
       }
+      // the label on a band across the middle, leaning like the rest of the screen
+      const label = d.text || 'CHEQUERED FLAG', size = fit(label, 800, 130, 1000, 6);
+      slab(250, 1190, C.ink, H / 2 - 92, H / 2 + 92);
+      text(label, W / 2 + 30, H / 2 + size * 0.34, font(800, size), C.white, 'center', 6);
+    },
+
+    // the session in progress: a small eyebrow, the main value big on the left, an optional sub line on the right
+    status(t, d) {
+      x.fillStyle = C.ink; x.fillRect(0, 0, W, H);
+      bars(t, C.lake, 0.05);
+      const p = outCubic(t / 0.45), eye = String(d.eyebrow || '');
+      x.font = font(800, 40);
+      const tab = Math.min(900, x.measureText(eye).width + 4 * eye.length + 60);
+      slab(-100, -100 + (tab + 100) * p, C.lake, 0, 70);
+      x.globalAlpha = p;
+      text(eye, 40, 50, font(800, 40), C.ink, 'left', 4);
+      x.globalAlpha = outCubic((t - 0.2) / 0.5);
+      const value = String(d.value || ''), size = fit(value, 800, 250, 880, 4);
+      text(value, 56 + (1 - p) * 40, 282, font(800, size), C.white, 'left', 4);
+      if (d.sub) {
+        const sub = String(d.sub), sz = fit(sub, 800, 124, 480, 2);
+        text(sub, 1400, 226, font(800, sz), C.yellow, 'right', 2);
+      }
+      x.globalAlpha = 1;
     },
   };
 
   // ---- what is on screen ---------------------------------------------------
   // `cur` is the layer showing, `prev` the one it is wiping over.
   let now = 0, cur = null, prev = null, wipeAt = -9, wipeFor = 0.55, loopAt = -1, pinned = false;
+  let base = null;         // the session's status (screen.status), held under the loop and under every board that ends
   const off = new Set();   // loop scenes switched off from the control panel
 
   function show(kind, name, data, { hold = Infinity, wipe = 0.55 } = {}) {
@@ -364,6 +392,7 @@ export function createGantryScreen({ canvas, logos = {}, trackPath = [], facts =
     wipeAt = now; wipeFor = prev ? wipe : 0;
   }
   function nextLoop() {
+    if (base) return show('board', 'status', base, { wipe: 0.35 });
     for (let k = 0; k < LOOP.length; k++) { loopAt = (loopAt + 1) % LOOP.length; if (!off.has(LOOP[loopAt][0])) break; }
     show('scene', LOOP[loopAt][0], null, { hold: LOOP[loopAt][1] });
   }
@@ -399,6 +428,15 @@ export function createGantryScreen({ canvas, logos = {}, trackPath = [], facts =
     },
     go() { show('board', 'go', null, { hold: 1.8, wipe: 0 }); },
     lap(d) { if (!cur || !['lights', 'go', 'red', 'chequered', 'message'].includes(cur.name)) show('board', 'lap', d, { hold: 5, wipe: 0.35 }); },
+    // the session in progress: { eyebrow, value, sub }, or null when there is no session. It is the screen's resting board: the
+    // loop waits for it, and the boards that end (a lap, a final lap) fall back to it. A held flag or the panel's board is not
+    // taken over.
+    status(d) {
+      base = d && d.value ? { eyebrow: String(d.eyebrow || ''), value: String(d.value), sub: d.sub ? String(d.sub) : null } : null;
+      if (!base) { if (cur && cur.name === 'status') nextLoop(); return; }
+      if (cur && cur.name === 'status') cur.data = base;
+      else if (!pinned && (!cur || cur.kind === 'scene')) show('board', 'status', base, { wipe: 0.35 });
+    },
     flag(name, d = {}) {
       if (!name) return api.clear();
       if (!boards[name] || name === 'lights' || name === 'go' || name === 'lap' || name === 'message') return;
