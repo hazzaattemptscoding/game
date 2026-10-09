@@ -56,7 +56,7 @@ export const LAYOUT = {
     entry: 55.5,        // the entry road leaves before the Guardroom Chicane and skips it
     entryRoad: 235,     // metres of entry road, straightened, before it is the full-width lane
     entryJoin: 110,     // the first stretch of it, across the chicane, is a road of its own; after that it runs at an offset beside the track
-    entryWidth: 7,      // entry road width (like the exit road), widening to `width` over its last 60 m
+    entryWidth: 12,      // entry road width: the pit lane width, a plain lane with no apron beside it (it was 7, widening to `width`)
     exit: 4.6,
     exitRun: 155,       // the exit road carries on this far past `exit`: alongside, merged, then the lane closes over its last 60 m
     offset: 15.5,       // distance from the track centreline to the pit lane centreline, metres

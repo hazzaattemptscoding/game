@@ -159,7 +159,8 @@ console.log('LEGAL GROUND (kerbs, sausage kerbs, run-off, pit lane)');
       }
     }
     console.log(`  ${name.padEnd(18)} ${checked} places with four legal wheels: run-off ${seen[SURF.RUNOFF]}, kerb ${seen[SURF.KERB]}, sausage ${seen[SURF.SAUSAGE]}, pit ${seen[SURF.PIT]}; cuts ${cuts}`);
-    if (name === 'Guardroom Chicane' && seen[SURF.RUNOFF] === 0) fails.push('Guardroom Chicane: found no run-off to test');
+    // the chicane's paved apron beside the pit entry lane is grass now (the owner's narrow-entry request), so its legal places are kerb and pit lane
+    if (name === 'Guardroom Chicane' && checked === 0) fails.push('Guardroom Chicane: found no legal ground to test');
     if (name === 'Boundary Loop' && seen[SURF.KERB] === 0) fails.push('Boundary Loop: found no kerb to test');
   }
 }
