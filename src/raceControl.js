@@ -3,7 +3,7 @@
 //
 //   clk   guest -> host   { t:'clk', n, c }          a clock sample request, c = the guest's clock when it was sent
 //   clkr  host -> guest   { t:'clkr', n, c, h }      the reply: h = the host's clock when it arrived
-//   race  host -> all     { t:'race', laps, assists, racingLine, grid: [ids in slot order], startAt, hold }
+//   race  host -> all     { t:'race', laps, assists, racingLine, slipstream, grid: [ids in slot order], startAt, hold }
 //   env   host -> all     { t:'env', weather, time }   the room's weather and time of day (visual only); also inside `race`. Old clients ignore both.
 //                         startAt = lights out on the HOST's clock (ms); hold = the random hold before it, so everyone's lights look the same
 //   Only the host's id counts for clkr, env and race (a guest's copy is ignored, whichever way it got here).
@@ -33,6 +33,7 @@ export function cleanRaceMessage(m) {
     laps: Math.round(num(m.laps, 1, 99, 5)),
     assists: m.assists === 'off' ? 'off' : 'any',
     racingLine: m.racingLine !== false,
+    slipstream: m.slipstream !== false,   // an old host sends none: drafting stays on, as it is by default
     ...cleanEnv(m),
     grid,
     startAt: +m.startAt,
@@ -74,11 +75,11 @@ export function createRaceControl(o) {
     },
 
     // host: start a race now. grid = ids in slot order (the host first). Returns { msg, seq, slot } for the host's own game.
-    hostStart({ laps = 5, assists = 'any', racingLine = true, weather, time, grid }) {
+    hostStart({ laps = 5, assists = 'any', racingLine = true, slipstream = true, weather, time, grid }) {
       if (!mp.isHost) return null;
       const ids = grid || [mp.selfId, ...[...mp.peers.values()].filter(p => p.hello).map(p => p.id)];
       const sc = scheduleStart(now(), pickHold(random));
-      const msg = { t: 'race', laps, assists, racingLine, ...cleanEnv({ weather, time }), grid: ids.slice(0, 8), startAt: sc.startAt, hold: sc.hold };
+      const msg = { t: 'race', laps, assists, racingLine, slipstream: slipstream !== false, ...cleanEnv({ weather, time }), grid: ids.slice(0, 8), startAt: sc.startAt, hold: sc.hold };
       current = msg; lastStartAt = msg.startAt;
       known = new Set([...mp.peers.values()].filter(p => p.hello).map(p => p.id));
       mp.sendControl(msg);

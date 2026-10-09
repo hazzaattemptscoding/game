@@ -42,6 +42,7 @@ export const GT = {
   downforceArea: 2.5,  // lift coefficient x area. More = more grip at high speed.
   aeroBalance: 0.44,   // share of downforce on the front axle
   drsDragCut: 0.12,    // DRS removes this share of drag
+  draftDrag: 0.25,     // slipstream: share of drag removed at full strength, close behind another car (src/slipstream.js)
   drsDownforceCut: 0.1,
   rollingResistance: 0.013,
 
@@ -126,6 +127,7 @@ export const CITY = {
   downforceArea: 0,    // none
   aeroBalance: 0.5,
   drsDragCut: 0,
+  draftDrag: 0.2,      // slipstream: a small, low-drag car gains less
   drsDownforceCut: 0,
   rollingResistance: 0.012,
 
@@ -204,6 +206,7 @@ export const GT1 = {
   downforceArea: 3.6,  // ESTIMATE: big downforce, a little over the GT's 2.5
   aeroBalance: 0.42,
   drsDragCut: 0.12,
+  draftDrag: 0.28,     // slipstream: the big wing set leaves a bigger hole in the air
   drsDownforceCut: 0.1,
   rollingResistance: 0.013,
 

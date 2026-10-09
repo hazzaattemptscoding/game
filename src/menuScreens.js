@@ -78,7 +78,7 @@ export function group(title, ...kids) { return h('section', 'group', h('div', 'g
 // the first group of a screen is marked with the chip class on its title (no chip is drawn for it)
 const primary = g => { const t = g.querySelector('.gtitle'); if (t) t.classList.add('chip'); return g; };
 
-const setupDefaults = { laps: 5, custom: false, assists: 'any', racingLine: true, trackLimits: 'penalty' };
+const setupDefaults = { laps: 5, custom: false, assists: 'any', racingLine: true, trackLimits: 'penalty', slipstream: true };
 export const raceSetup = settings => ({ ...setupDefaults, ...(settings.raceSetup || {}) });
 
 // the best valid lap saved in this browser (board.js keeps the list, fastest first), or null
@@ -302,17 +302,19 @@ function setupScreen() {
       const assists = segRow('Assists', [['any', 'Any'], ['off', 'All off']], () => cur.assists, v => { cur.assists = v; store(); },
         { note: 'All off switches traction control, ABS and stability control off for the race.' });
       const line = segRow('Racing line', [[true, 'Allowed'], [false, 'Not allowed']], () => cur.racingLine, v => { cur.racingLine = v; store(); });
+      const slip = segRow('Slipstream', [[true, 'On'], [false, 'Off']], () => cur.slipstream !== false, v => { cur.slipstream = v; store(); },
+        { note: 'Less drag close behind another car, and a little less front grip in its dirty air.' });
 
       groups.append(primary(group('Format', laps, customRow, limits)));
-      groups.append(group('Rules', assists, ...(hasLine ? [line] : [])));
+      groups.append(group('Rules', assists, slip, ...(hasLine ? [line] : [])));
       groups.append(...weatherRows(ctx, segRow, h, 'Conditions'));
 
       function refresh() {
         const perLap = bestTime(false, settings.car) || DEFAULT_LAP_S;
         big.replaceChildren(`${cur.laps} ${cur.laps === 1 ? 'lap' : 'laps'}`, h('small', '', `about ${Math.max(1, Math.round(cur.laps * perLap / 60))} min`));
-        facts.replaceChildren(...fact('Start', 'Standing'), ...fact('Conditions', conditions()), ...fact('Assists', cur.assists === 'off' ? 'All off' : 'Any'), ...fact('Track limits', cur.trackLimits === 'warn' ? 'Warn only' : 'Penalty'));
+        facts.replaceChildren(...fact('Start', 'Standing'), ...fact('Conditions', conditions()), ...fact('Assists', cur.assists === 'off' ? 'All off' : 'Any'), ...fact('Track limits', cur.trackLimits === 'warn' ? 'Warn only' : 'Penalty'), ...fact('Slipstream', cur.slipstream === false ? 'Off' : 'On'));
       }
-      const go = btn('Start race', 'btn primary', () => api.startRace({ laps: cur.laps, assists: cur.assists, racingLine: hasLine ? cur.racingLine : true, trackLimits: cur.trackLimits }));
+      const go = btn('Start race', 'btn primary', () => api.startRace({ laps: cur.laps, assists: cur.assists, racingLine: hasLine ? cur.racingLine : true, trackLimits: cur.trackLimits, slipstream: cur.slipstream !== false }));
       go.dataset.first = '1';
       summary.append(big, facts, map, go);
       upd();
@@ -368,6 +370,7 @@ function settingsScreen() {
             assists.push(onOff('Racing line', () => settings.racingLine, v => { settings.racingLine = v; }, allowed ? 'Colours show where to brake, lift and push. The L key switches it too.' : 'This race does not allow the racing line.'));
           }
           p.append(group('Driver assists', ...assists));
+          p.append(group('Racing', onOff('Slipstream', () => settings.slipstream !== false, v => { settings.slipstream = v; }, 'Less drag close behind another car, and a little less front grip in its dirty air. Free practice only: a race uses its own setup, a time trial never has it.')));
         },
         Display(p) {
           p.append(group('View',
@@ -395,7 +398,7 @@ function settingsScreen() {
             track(sliderRow('HUD scale', { min: SCALE_MIN, max: SCALE_MAX, step: 5, get: () => settings.hudScale, set: v => { settings.hudScale = v; persist(); }, fmt: v => `${Math.round(v)}%` })),
             track(segRow('Speed', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }))));
           const info = Object.fromEntries(HUD_ELEMENTS.map(e => [e[0], e]));
-          const groups = [['Readouts', ['speed', 'lapTimer', 'sectors', 'minisectors', 'delta']], ['Warnings and messages', ['limits', 'assists', 'flags']], ['Inputs', ['steerBar', 'pedals', 'inputOverlay']], ['Other', ['fps']]];
+          const groups = [['Readouts', ['speed', 'lapTimer', 'sectors', 'minisectors', 'delta']], ['Warnings and messages', ['limits', 'assists', 'slipstream', 'flags']], ['Inputs', ['steerBar', 'pedals', 'inputOverlay']], ['Other', ['fps']]];
           for (const [title, keys] of groups) p.append(group(title, ...keys.map(k => onOff(info[k][1], () => settings.hud[k], v => { settings.hud[k] = v; }, info[k][2]))));
           p.append(group('Online', onOff('Ping readout', () => settings.showPing !== false, v => { settings.showPing = v; }, 'The round trip to the relay in ms, in the top corner while online. Green under 60 ms, amber under 120, red above.')));
           const tm = settings.trackMap;
@@ -488,6 +491,7 @@ function onlineScreen() {
       const hostSetup = [
         segRow('Laps', LAP_CHOICES.map(n => [n, String(n)]), () => cur.laps, v => { cur.laps = v; cur.custom = false; store(); }),
         segRow('Assists', [['any', 'Any'], ['off', 'All off']], () => cur.assists, v => { cur.assists = v; store(); }),
+        segRow('Slipstream', [[true, 'On'], [false, 'Off']], () => cur.slipstream !== false, v => { cur.slipstream = v; store(); }),
       ];
       if (api.hasRacingLine && api.hasRacingLine()) hostSetup.push(segRow('Racing line', [[true, 'Allowed'], [false, 'Not allowed']], () => cur.racingLine, v => { cur.racingLine = v; store(); }));
       const wait = h('p', 'm-note', 'Waiting for the host to start the race.');
@@ -499,7 +503,7 @@ function onlineScreen() {
         h('ol', 'how-steps', h('li', '', 'Host a room. You get a five letter code to share.'), h('li', '', 'Friends type the code and press Join. Up to eight players.'), h('li', '', 'The host picks the laps and conditions, then starts the race.')));
       const roomSlot = h('div', 'room-slot');
       if (room) roomSlot.append(room);
-      const startBtn = btn('Start race', 'btn primary', () => api.hostStartRace({ laps: cur.laps, assists: cur.assists, racingLine: api.hasRacingLine && api.hasRacingLine() ? cur.racingLine : true }));
+      const startBtn = btn('Start race', 'btn primary', () => api.hostStartRace({ laps: cur.laps, assists: cur.assists, racingLine: api.hasRacingLine && api.hasRacingLine() ? cur.racingLine : true, slipstream: cur.slipstream !== false }));
       const card = h('div', 'summary online-card');
       card.append(how, roomSlot, startBtn);
       grid.append(form, card);

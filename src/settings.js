@@ -9,7 +9,7 @@ import { cleanQuality, isPhone } from './quality.js';
 import { CAR_IDS } from './cars.js';
 
 const KEY = 'lakeside-settings';
-const DEFAULTS = { units: 'mph', assistTc: true, assistAbs: true, assistEsc: true, steering: 'keyboard', steerSens: 1, debug: false, blockout: false, racingLine: false, sound: true, volume: 0.7, livery: null, weather: 'clear', timeOfDay: 'midday', lightning: true, quality: 'auto', freeLook: true, lastMode: 'practice', car: 'GT' };   // hud, hudScale and trackMap are filled in by migrateSettings (src/hudSettings.js)
+const DEFAULTS = { units: 'mph', assistTc: true, assistAbs: true, assistEsc: true, steering: 'keyboard', steerSens: 1, debug: false, blockout: false, racingLine: false, slipstream: true, sound: true, volume: 0.7, livery: null, weather: 'clear', timeOfDay: 'midday', lightning: true, quality: 'auto', freeLook: true, lastMode: 'practice', car: 'GT' };   // hud, hudScale and trackMap are filled in by migrateSettings (src/hudSettings.js)
 
 // Older saves had one `assists` switch for all three. If that is all there is, it sets the three; then it goes.
 export function migrateSettings(saved) {
@@ -24,6 +24,7 @@ export function migrateSettings(saved) {
   if ('timeOfDay' in s) s.timeOfDay = cleanTime(s.timeOfDay);
   if ('lightning' in s) s.lightning = s.lightning !== false;   // cosmetic flashes and thunder in heavy rain; anything but false is on
   if ('quality' in s) s.quality = cleanQuality(s.quality);   // graphics: auto, high, medium or low (src/quality.js)
+  if ('slipstream' in s) s.slipstream = s.slipstream !== false;   // drafting behind other cars: on unless switched off (a race's own rule comes from its setup or the host)
   if (s.steering !== 'keyboard' && s.steering !== 'cursor') delete s.steering;
   if (!['practice', 'timetrial', 'race', 'online'].includes(s.lastMode)) s.lastMode = 'practice';   // the main menu's Resume button (menuScreens.js)
   if (!CAR_IDS.includes(s.car)) delete s.car;   // the car class (src/cars.js): GT when missing or unknown

@@ -7,6 +7,7 @@
 
 import { SURF, BARRIER } from './track.js';
 import { carContact } from './carContact.js';
+import { easeWake, draftDragCut, totalDragCut, dirtyAirLoss } from './slipstream.js';
 
 export const STEP = 1 / 120;
 const G = 9.81;
@@ -101,6 +102,7 @@ export class Car {
     this.steer = 0; this.gear = 1; this.rpm = this.cfg.idleRpm; this.shiftTimer = 0;
     this.ax = 0; this.ay = 0; this.speed = 0; this.fwdSpeed = 0;
     this.throttle = 0; this.brake = 0; this.drs = false;
+    this.wake = 0; this.wakeIn = 0; this.wakeGap = 0; this.draftCut = 0;   // slipstream: the eased strength the physics uses, the strength asked for this step, the gap to the leader, the share of drag removed
     this.slipF = 0; this.slipR = 0; this.spin = false; this.lock = false;
     this.tc = false; this.abs = false; this.esc = false; this.pitLimiter = false;
     this.reverseTimer = 0; this.wheelSpinAngle = 0; this.bump = 0;
@@ -114,6 +116,10 @@ export class Car {
 
   // Back onto the centreline facing the right way (the R key).
   resetToTrack() { this.placeAt(this.loc.s, 0, this.reversed); }
+
+  // Slipstream (src/slipstream.js wakeFor): how deep in a leader's wake the car is, 0..1, and the gap to that car in metres. Call it before
+  // each step; a step that is not told gets 0, so the effect dies away when the caller stops. The strength is eased in step().
+  setWake(strength, gap = 0) { this.wakeIn = strength > 0 ? strength : 0; this.wakeGap = gap; }
 
   savePrev() {
     const p = this.prev;
@@ -165,8 +171,14 @@ export class Car {
     if (!inZone || c.hasDRS === false || inp.brake > 0.05) this.drs = false;
 
     // --- aero ---
+    // a car in a leader's wake: less drag (stacking with DRS, 40 percent at most) and less front downforce, the understeer in traffic
+    this.wake = easeWake(this.wake, this.wakeIn, dt);
+    this.wakeIn = 0;
+    const draft = this.wake > 0 ? draftDragCut(this.wake, c) : 0;
+    this.draftCut = totalDragCut(draft, this.drs ? c.drsDragCut : 0);
+    const dirty = this.wake > 0 ? dirtyAirLoss(this.wake, this.wakeGap) : 0;
     const q = 0.5 * AIR * vx * vx;
-    const drag = q * c.dragArea * (this.drs ? 1 - c.drsDragCut : 1);
+    const drag = q * c.dragArea * (1 - this.draftCut);
     const down = q * c.downforceArea * (this.drs ? 1 - c.drsDownforceCut : 1);
 
     // --- hills: slope along the car, and crests/dips changing the load ---
@@ -176,7 +188,7 @@ export class Car {
 
     // --- axle loads with weight transfer (uses smoothed acceleration, like suspension) ---
     const L = c.wheelbase, transfer = m * this.ax * c.cgHeight / L;
-    const Fzf = Math.max(50, weight * this.b / L - transfer + down * c.aeroBalance);
+    const Fzf = Math.max(50, weight * this.b / L - transfer + down * c.aeroBalance * (1 - dirty));
     const Fzr = Math.max(50, weight * this.a / L + transfer + down * (1 - c.aeroBalance));
     // a tyre carrying more than its share loses a little grip per kilo, and an unloaded one gains a little
     const sens = (Fz, share) => clamp(1 - c.loadSensitivity * (Fz / (m * G * share) - 1), 0.75, 1.15);

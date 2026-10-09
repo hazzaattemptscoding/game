@@ -33,7 +33,7 @@ export function createDirector(g) {
   const mp = lobby.mp;
   const rc = createRaceControl({ mp, now: () => performance.now(), onRace: ({ msg, seq, slot, late }) => {
     if (late) { api.startPractice({ start: 'pit' }); return; }
-    launch(makeSession('online', { laps: msg.laps, assists: msg.assists, racingLine: msg.racingLine, weather: msg.weather, time: msg.time, slot }), { seq });
+    launch(makeSession('online', { laps: msg.laps, assists: msg.assists, racingLine: msg.racingLine, slipstream: msg.slipstream, weather: msg.weather, time: msg.time, slot }), { seq });
   } });
   // the gantry screen's control panel (src/screenControl.js): the host's in a room, handed to others by the host
   const sc = createScreenControl({ screen: g.gantryScreen, mp, inRoom: () => !!lobby.active, onChange: () => { const top = menu.current && menu.current(); if (top && (top.id === 'screen' || top.id === 'pause')) menu.refresh(); } });
@@ -54,6 +54,8 @@ export function createDirector(g) {
   const ownEnv = () => cleanEnv({ weather: settings.weather, time: settings.timeOfDay });
   const environment = () => (online() && !mp.isHost && rc.env ? rc.env : ownEnv());
   const racingLineAllowed = () => !session || session.racingLine !== false;
+  // drafting: the session's rule when one is running (time trial off, a race the setup's or the host's), else the player's own setting
+  const slipstreamOn = () => (!session || session.mode === 'practice' ? settings.slipstream !== false : session.slipstream !== false);
 
   function applyAssists() {
     const off = session && session.assists === 'off' && flow.phase !== PHASE.MENU;
@@ -165,6 +167,7 @@ export function createDirector(g) {
     track: { N: track.N, x: track.x, z: track.z },   // the circuit outline for the race setup's track map
     hasRacingLine: () => true,
     racingLineAllowed,
+    slipstreamOn,
     screen: sc,
     applyAssists,
     applyLook: () => g.applyLook(),
@@ -186,14 +189,14 @@ export function createDirector(g) {
     startTimeTrial: () => launch(makeSession('timetrial', ownEnv())),
     startRace: o => launch(makeSession('race', { ...ownEnv(), ...o })),
     hostStartRace(o) {
-      const r = rc.hostStart({ laps: o.laps, assists: o.assists, racingLine: o.racingLine, ...ownEnv() });
-      if (r) launch(makeSession('online', { laps: o.laps, assists: o.assists, racingLine: o.racingLine, ...ownEnv(), slot: r.slot }), { seq: r.seq });
+      const r = rc.hostStart({ laps: o.laps, assists: o.assists, racingLine: o.racingLine, slipstream: o.slipstream, ...ownEnv() });
+      if (r) launch(makeSession('online', { laps: o.laps, assists: o.assists, racingLine: o.racingLine, slipstream: o.slipstream, ...ownEnv(), slot: r.slot }), { seq: r.seq });
     },
     resume: () => menu.close(),
     restart() {
       const s = flow.session;
       if (!s) return;
-      if (s.mode === 'online') { if (mp.isHost) api.hostStartRace({ laps: s.laps, assists: s.assists, racingLine: s.racingLine }); return; }
+      if (s.mode === 'online') { if (mp.isHost) api.hostStartRace({ laps: s.laps, assists: s.assists, racingLine: s.racingLine, slipstream: s.slipstream }); return; }
       launch(s, { restart: true });
     },
     report() { menu.close(); g.openReport(); },

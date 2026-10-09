@@ -11,19 +11,21 @@ export const MODE_NAMES = { practice: 'Free practice', timetrial: 'Time trial', 
 export const LAP_CHOICES = [3, 5, 10, 20];
 
 // A session description. laps 0 = unlimited. start: 'standing' (grid, lights) or 'pit'. assists: 'any' (the player's own settings)
-// or 'off' (all three off for this session). racingLine: whether the racing line may be shown. ai: opponents (0 until they exist).
+// or 'off' (all three off for this session). racingLine: whether the racing line may be shown. slipstream: whether cars draft behind each other (always false in a time trial; a race takes the setup's choice, online the host's). ai: opponents (0 until they exist).
 // slot: grid slot (0 offline, join order online). reverse: the lap driven the other way round (free practice only for now;
 // no racing line, it was recorded the normal way). trackLimits: 'penalty' (a race gains time by a cut: time penalty, see
 // RaceTracker) or 'warn' (a cut is a warning and makes the lap invalid, nothing more). Races default to 'penalty'; practice,
 // time trial and hot laps are always 'warn'.
 export function makeSession(mode = 'practice', o = {}) {
   if (!MODES.includes(mode)) mode = 'practice';
-  const s = { mode, laps: 0, start: 'pit', assists: 'any', racingLine: true, trackLimits: 'warn', ai: 0, slot: 0, weather: 'clear', time: 'midday', reverse: false };
-  if (mode === 'timetrial') s.start = 'pit';
+  const s = { mode, laps: 0, start: 'pit', assists: 'any', racingLine: true, trackLimits: 'warn', ai: 0, slot: 0, weather: 'clear', time: 'midday', reverse: false, slipstream: true };
+  if (mode === 'timetrial') { s.start = 'pit'; s.slipstream = false; }   // a time trial is against the clock: no wake
   if (mode === 'race' || mode === 'online') { s.laps = 5; s.start = 'standing'; s.trackLimits = 'penalty'; }
   if (mode === 'practice' && o.start === 'standing') s.start = 'standing';
   if (mode === 'practice' && o.reverse === true) { s.reverse = true; s.racingLine = false; }
+  if (mode === 'practice' && typeof o.slipstream === 'boolean') s.slipstream = o.slipstream;
   if (mode !== 'practice' && mode !== 'timetrial') {
+    if (typeof o.slipstream === 'boolean') s.slipstream = o.slipstream;
     if (Number.isFinite(o.laps)) s.laps = Math.max(1, Math.min(99, Math.round(o.laps)));
     if (o.assists === 'off' || o.assists === 'any') s.assists = o.assists;
     if (typeof o.racingLine === 'boolean') s.racingLine = o.racingLine;
