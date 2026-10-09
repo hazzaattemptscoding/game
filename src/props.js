@@ -14,6 +14,17 @@ import { boardOffset } from './track.js';
 
 const wrapN = (i, n) => ((i % n) + n) % n;
 
+// The back of a hoarding board and its two ends, so the board is a closed slab (4 cm thick) and not a single sheet. The face (the
+// sponsor quad) looks out to the track; `flip` is the side it faces for the other way round (src/props.js calls).
+function boardBack(kit, A, B, B2, A2, flip) {
+  const dx = B[0] - A[0], dz = B[2] - A[2], L = Math.hypot(dx, dz) || 1, s = flip ? -1 : 1, T = 0.04;
+  const ox = s * dz / L * T, oz = -s * dx / L * T;             // from the face towards the back
+  const back = p => [p[0] + ox, p[1], p[2] + oz];
+  kit.quad('back', back(A), back(B), back(B2), back(A2));
+  kit.quad('back', A, back(A), back(A2), A2);
+  kit.quad('back', B, back(B), back(B2), B2);
+}
+
 function segDist(x, z, sg) {
   const t = Math.max(0, Math.min(1, ((x - sg.ax) * (sg.bx - sg.ax) + (z - sg.az) * (sg.bz - sg.az)) / (sg.len * sg.len)));
   return Math.hypot(x - sg.ax - t * (sg.bx - sg.ax), z - sg.az - t * (sg.bz - sg.az));
@@ -218,7 +229,7 @@ export function buildProps(T, ground, blockers, stands) {
           const A = [a.x, ya + 0.5, a.z], B = [b.x, yb + 0.5, b.z], A2 = [a.x, ya + 1.9, a.z], B2 = [b.x, yb + 1.9, b.z];
           if (flip) kit.quad('sponsor', B, A, A2, B2, [[0, vb], [1, vb], [1, vt], [0, vt]]);
           else kit.quad('sponsor', A, B, B2, A2, [[0, vb], [1, vb], [1, vt], [0, vt]]);
-          kit.quad('back', A, B, B2, A2);
+          boardBack(kit, A, B, B2, A2, flip);
           kit.box('post', 0.1, 1.9, 0.1, a.x, ya + 0.95, a.z);
           n++; count++;
         }
@@ -239,7 +250,7 @@ export function buildProps(T, ground, blockers, stands) {
         const ya = yAt(a.x, a.z), yb = yAt(b.x, b.z), [vb, vt] = sponsorRow(rows[Math.floor(hash01(i, side, 5) * rows.length)]);
         const A = [a.x, ya + 0.5, a.z], B = [b.x, yb + 0.5, b.z], A2 = [a.x, ya + 1.9, a.z], B2 = [b.x, yb + 1.9, b.z];
         if (side === 1) kit.quad('sponsor', B, A, A2, B2, [[0, vb], [1, vb], [1, vt], [0, vt]]); else kit.quad('sponsor', A, B, B2, A2, [[0, vb], [1, vb], [1, vt], [0, vt]]);
-        kit.quad('back', A, B, B2, A2);
+        boardBack(kit, A, B, B2, A2, side === 1);
         kit.box('post', 0.1, 1.9, 0.1, a.x, ya + 0.95, a.z);
         k++; count++;
       }

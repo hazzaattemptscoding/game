@@ -16,6 +16,9 @@ const SOFFIT = 1.3;       // underside of the slab below the deck surface
 const PIER_EVERY = 12;    // metres between piers along the deck
 const COL_A = 1.2, COL_L = 1.6;   // column size along the deck and across it
 const TYRE_R = 0.36, TYRE_H = 0.26;
+// one tyre as a lathe profile (radius, height): closed on its axis at the bottom and the top, so the stack has no open hole or end
+export const TYRE_PROFILE = [[0, 0], [0.16, 0], [TYRE_R * 0.97, 0.02], [TYRE_R, TYRE_H * 0.5], [TYRE_R * 0.97, TYRE_H - 0.02], [0.16, TYRE_H], [0, TYRE_H]]
+  .map(([r, y]) => new THREE.Vector2(r, y));
 
 // A pier needs 6 m of room beyond the containment wall of every part of the circuit and the pit lane.
 export const pierBlocked = T => (x, z) => {
@@ -239,9 +242,7 @@ export function buildBridge(T, ground, mat, { Strips }) {
 
   // tyre stacks, instanced: 3 high, black with the conveyor-belt tyre face, top tyre white
   if (tyres.length) {
-    const profile = [[0.16, 0], [TYRE_R * 0.97, 0.02], [TYRE_R, TYRE_H * 0.5], [TYRE_R * 0.97, TYRE_H - 0.02], [0.16, TYRE_H]]
-      .map(([r, y]) => new THREE.Vector2(r, y));
-    const geo = new THREE.LatheGeometry(profile, 12);
+    const geo = new THREE.LatheGeometry(TYRE_PROFILE, 12);
     const black = new THREE.InstancedMesh(geo, tyreMat, tyres.length * 2), white = new THREE.InstancedMesh(geo, tyreWhite, tyres.length);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s1 = new THREE.Vector3(1, 1, 1), e = new THREE.Euler();
     let nb = 0, nw = 0;

@@ -34,6 +34,7 @@
     "hudsettings": "node tools/hudsettings.js",
     "drsanim": "node tools/drsanim.js",
     "carmodels": "node tools/carmodels.js",
+    "tyreclosed": "node tools/tyreclosed.js",
     "minisectors": "node tools/minisectors.js",
     "reversedrs": "node tools/reversedrs.js",
     "camera": "node tools/camera.js",

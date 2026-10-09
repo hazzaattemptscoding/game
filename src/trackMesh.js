@@ -187,12 +187,18 @@ export function buildTrackScene(T, ground) {
     const idx = pts.map((_, k) => k), len = cumulative(pts);
     const wall = (name, back, y0, y1, uScale = 4) => strips(name).strip(idx, k => at(k, back, y0), k => at(k, back, y1), k => len[k] / uScale, 0, 1);
     const cap = (name, b0, b1, y) => strips(name).strip(idx, k => at(k, b0, y), k => at(k, b1, y), () => 0, 0, 1);
+    // a tyre block is closed at both ends: the cross-section at each end, from the face back through `stations` ([back, top] pairs,
+    // the bottom at y0), is filled, so the run has no open end to see through
+    const closeEnds = (name, y0, stations) => {
+      for (const k of [0, idx.length - 1]) strips(name).strip(stations.map((_, j) => j), j => at(k, stations[j][0], y0), j => at(k, stations[j][0], stations[j][1]), () => 0, 0, 1);
+    };
 
     if (b.type === BARRIER.TYRES) {
       // impact zone: conveyor-faced tyre wall, double armco 1.2 m behind, catch fence 2 m behind that
       // sponsored tyre wall: conveyor-belt face with bolt heads, a sponsor wrap, a rounded top edge. The armco that
       // used to stand behind it is gone from view (the wall itself is what a car meets).
       wall('tyre', 0, 0.1, 1.78); strips('tyre').strip(idx, k => at(k, 0, 1.78), k => at(k, 0.12, 1.9), k => len[k] / 4, 0.93, 1); cap('tyre', 0.12, 1.2, 1.9);
+      wall('tyre', 1.2, 0.1, 1.9); closeEnds('tyre', 0.1, [[0, 1.78], [0.12, 1.9], [1.2, 1.9]]);     // the back of the block and its ends
       sponsorPoly(strips('sponsor'), pts, nrm, len, 0.03, 0.45, 1.45, b.side);
       wall('white', 0.03, 1.6, 1.78);
       if (b.fence) {
@@ -216,11 +222,13 @@ export function buildTrackScene(T, ground) {
     } else if (b.type === BARRIER.ARMCO) {
       // the containment wall: a plain sponsored tyre wall, 1.2 m high, rounded top, no armco and no posts
       wall('tyre', 0, 0.05, 1.1); strips('tyre').strip(idx, k => at(k, 0, 1.1), k => at(k, 0.1, 1.2), k => len[k] / 4, 0.93, 1); cap('tyre', 0.1, 0.8, 1.2);
+      wall('tyre', 0.8, 0.05, 1.2); closeEnds('tyre', 0.05, [[0, 1.1], [0.1, 1.2], [0.8, 1.2]]);   // the back and the ends
       sponsorPoly(strips('sponsor'), pts, nrm, len, 0.02, 0.25, 0.95, b.side, 1);
     } else if (b.type === BARRIER.CONCRETE) {
       if (b.impact) {
         // tyres stacked in front of the street wall where cars arrive
         wall('tyre', -1.0, 0, 1.0); cap('tyre', -1.0, 0, 1.0);
+        wall('tyre', 0.03, 0, 1.0); closeEnds('tyre', 0, [[-1.0, 1.0], [0.03, 1.0]]);                     // the back and the ends
       } else {
         wall('street', 0, -0.3, 1.4, 6);
         sponsorPoly(strips('sponsor'), pts, nrm, len, 0.03, 0.15, 1.05, b.side, 2);
