@@ -32,6 +32,7 @@
     "results": "node tools/results.mjs",
     "finish-live": "node tools/finish-live.mjs",
     "hudsettings": "node tools/hudsettings.js",
+    "drsanim": "node tools/drsanim.js",
     "minisectors": "node tools/minisectors.js",
     "reversedrs": "node tools/reversedrs.js",
     "camera": "node tools/camera.js",

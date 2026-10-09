@@ -9,6 +9,7 @@ import { normaliseLivery, liveryEquals, DEFAULT_LIVERY } from './livery.js';
 import { light } from './lamps.js';
 import { ease } from './loop.js';
 import { acquireTextures, releaseTextures, SIDE_W, SIDE_H } from './liveryTex.js';
+import { stepFlap, flapAngle } from './drsFlap.js';
 
 const VIBRATION = 0.006;   // metres of body movement per unit of surface roughness (rumble is 1.2, gravel 0.6)
 
@@ -45,6 +46,11 @@ function stripeGeometry(L, zc, w) {
 
 // Where the side panel sits: between the wheels, on the flat side of the body (x metres, y metres, size).
 const SIDE = { x0: -0.8, x1: 1.0, y0: 0.25, y1: 0.65 };
+
+// The rear wing from the tail forward: the flap (WING_FLAP m of chord) hinges at WING_HINGE m from the tail, and the main plane
+// (WING_MAIN m) runs forward from the hinge. The flap's trailing edge is 5 cm behind the tail, so the wing runs 0.42 m in all.
+// A 0.22 m flap lifts its trailing edge about 10 cm at 28 degrees, enough to read from behind and from the side.
+const WING_FLAP = 0.22, WING_MAIN = 0.2, WING_HINGE = 0.27;
 
 export class CarView {
   // `livery` is a livery object (src/livery.js), or a plain colour number as before.
@@ -92,10 +98,20 @@ export class CarView {
     cab.castShadow = true;
     this.body.add(cab);
 
-    // Rear wing
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.05, W - 0.1), this.wingMat);
-    wing.position.set(b + 0.25, 1.22, 0);
-    this.body.add(wing);
+    // Rear wing: the main plane (its front 0.2 m) and the DRS flap behind it. The flap turns about its leading edge, the line
+    // where it meets the main plane, so its trailing edge lifts and a slot opens. Both take the livery's wing colour; the
+    // underside of the flap and the trailing face of the main plane are in a much darker slot colour, so the slot reads as a gap.
+    const slot = new THREE.MeshStandardMaterial({ color: 0x060708, roughness: 0.8 });
+    const main = new THREE.Mesh(new THREE.BoxGeometry(WING_MAIN, 0.05, W - 0.1), [this.wingMat, slot, this.wingMat, this.wingMat, this.wingMat, this.wingMat]);
+    main.position.set(b + WING_HINGE + WING_MAIN / 2, 1.22, 0);
+    this.body.add(main);
+    this.flapPivot = new THREE.Group();
+    this.flapPivot.position.set(b + WING_HINGE, 1.22, 0);
+    const flap = new THREE.Mesh(new THREE.BoxGeometry(WING_FLAP, 0.035, W - 0.1), [this.wingMat, this.wingMat, this.wingMat, slot, this.wingMat, this.wingMat]);
+    flap.position.set(-WING_FLAP / 2, 0, 0);
+    this.flapPivot.add(flap);
+    this.body.add(this.flapPivot);
+    this._flap = 0;     // 0 shut, 1 open (src/drsFlap.js)
     for (const s of [-1, 1]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.38, 0.05), dark);
       post.position.set(b + 0.3, 1.02, s * 0.5);
@@ -182,7 +198,7 @@ export class CarView {
   // Every material of the car, for fading it out (src/ghosts.js) and for disposal.
   materials() {
     const set = new Set();
-    this.root.traverse(o => { if (o.isMesh) set.add(o.material); });
+    this.root.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => set.add(m)); });
     return [...set];
   }
 
@@ -256,6 +272,10 @@ export class CarView {
     this._ph = ((this._ph || 0) + hz * dt) % 1000;
     car.vibration = this._amp * VIBRATION * (0.65 * Math.sin(this._ph * Math.PI * 2) + 0.35 * Math.sin(this._ph * Math.PI * 2 * 2.31 + 1.3));
     this.body.position.y = car.vibration;
+
+    // DRS flap: eases open while the car's DRS is on and shuts otherwise. Remote cars get the flag from their packets (src/ghosts.js).
+    this._flap = stepFlap(this._flap, car.drs ? 1 : 0, dt);
+    this.flapPivot.rotation.z = -flapAngle(this._flap);     // negative z lifts the trailing edge (the flap's tail is at -x)
 
     const steer = lerp(p.steer, car.steer), wheel = lerp(p.wheel, car.wheelSpinAngle);
     for (const w of this.wheels) {

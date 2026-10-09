@@ -26,7 +26,7 @@ console.log('WIRE FORMAT');
   const s = { t: 123456.7, x: 1234.5678, y: 12.345, z: -987.654, h: 2.12345, vx: 41.236, vz: -3.141, yr: 0.4567, st: -0.21, w: 7.5, thr: 0.8, brk: 0, pz: 0.05, rx: -0.02, col: 3, lap: 4, s: 2345.67, name: 'Ada', bl: 91.2344, ll: 92.5 };
   const wire = JSON.parse(JSON.stringify(encodeState(s)));      // through JSON, as the data channel does
   const d = decodeState(wire);
-  check(d && d.name === 'Ada' && d.col === 3 && d.lap === 4, 'round trip: name, colour, lap');
+  check(d && d.name === 'Ada' && d.col === 3 && d.lap === 4 && d.drs === true, 'round trip: name, flags, lap');
   for (const k of ['x', 'y', 'z']) check(d && near(d[k], s[k], 0.006), `round trip ${k}`);
   for (const k of ['vx', 'vz', 'yr', 'st', 'thr', 'brk', 'pz', 'rx']) check(d && near(d[k], s[k], 0.006), `round trip ${k}`);
   check(d && near(d.bl, 91.234, 0.0006) && d.ll === 92.5, 'round trip best and last lap times');
@@ -43,7 +43,7 @@ console.log('WIRE FORMAT');
   check(evil && !/[<>"&\u0000\n]/.test(evil.name) && evil.name.length <= 16, 'name is stripped to plain text and capped');
   check(cleanName(null) === '' && cleanName('  a   b ') === 'a b', 'cleanName');
   const wild = decodeState(wire.map((v, i) => i === 15 ? 99 : i === 16 ? -5 : v));
-  check(wild && wild.col <= 7 && wild.lap === 0, 'colour and lap clamped');
+  check(wild && wild.col === 0 && wild.drs === false && wild.lap === 0, 'flags out of range read as 0, lap clamped');
 
   // lap times ride after the name, so the format stays safe both ways
   const oldPacket = wire.slice(0, wire.length - 2);          // what a player without lap times sends: ends at the name
@@ -62,9 +62,9 @@ console.log('WIRE FORMAT');
   // from a real car
   const track = buildTrack(), car = new Car(GT, track);
   car.placeAt(500, 3);
-  const st = decodeState(JSON.parse(JSON.stringify(encodeState(stateFromCar(car, 2, 4, 'Zed', 1000)))));
+  const st = decodeState(JSON.parse(JSON.stringify(encodeState(stateFromCar(car, 2, 'Zed', 1000)))));
   check(st && near(st.x, car.x, 0.01) && near(st.s, car.loc.s, 0.1) && st.lap === 2 && st.bl === 0 && st.ll === 0, 'state from a Car');
-  const st2 = decodeState(JSON.parse(JSON.stringify(encodeState(stateFromCar(car, 3, 4, 'Zed', 1000, 88.8, 89.9)))));
+  const st2 = decodeState(JSON.parse(JSON.stringify(encodeState(stateFromCar(car, 3, 'Zed', 1000, 88.8, 89.9)))));
   check(st2 && st2.bl === 88.8 && st2.ll === 89.9, 'state from a Car carries best and last lap');
 }
 
@@ -132,7 +132,7 @@ console.log('SILENCE AND REMOVAL');
   const factory = { create: info => { made.push(info.id); return { setPose() {}, setOpacity() {}, setLabel() {}, dispose() { gone.push(info.id); } }; } };
   const g = new Ghosts(factory);
   for (let t = 0; t <= 1000; t += 50) g.receive('p1', mkState(t, { col: 2 }), t);
-  g.receive('p2', mkState(900, { col: 2, name: 'B' }), 900);   // legacy colour index is ignored
+  g.receive('p2', mkState(900, { col: 2, name: 'B' }), 900);   // flags without the DRS bit: no DRS
   check(made.length === 2 && g.size === 2, 'two cars created');
   check(g.map.get('p1').livery && g.map.get('p2').livery && liveryEquals(g.map.get('p1').livery, defaultLivery('p1')), 'cars are painted from their livery, the same on every screen');
   let s = g.solids(1100);

@@ -209,7 +209,7 @@ export function createLobby(ctx) {
     if (!held && pose <= sentStamp) return;                  // no physics step since the last one we sent
     const stamp = Math.max(held ? now : pose, sentStamp + 0.001);
     sentStamp = stamp;
-    const st = stateFromCar(ctx.car, ctx.timer.currentLap(), mp.col, name(), stamp, ctx.timer.best, ctx.timer.last);
+    const st = stateFromCar(ctx.car, ctx.timer.currentLap(), name(), stamp, ctx.timer.best, ctx.timer.last);
     if (held) { st.vx = 0; st.vz = 0; st.yr = 0; }
     mp.sendState(encodeState(st));
   }, SEND_MS);

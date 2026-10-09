@@ -66,7 +66,7 @@ export function startBots(o) {
       while (acc >= STEP) { bot.car.step(bot.ap.drive(bot.car)); bot.simT += STEP; bot.timer.update(bot.car.loc.s, bot.simT); acc -= STEP; }
       n++;
       if (!bot.open || ws.readyState !== 1) return;
-      if (n % 3 === 0) { send(packState(encodeState(stateFromCar(bot.car, bot.timer.currentLap(), i, spec.name, bot.simT * 1000, bot.timer.best, bot.timer.last)))); log.sent++; }
+      if (n % 3 === 0) { send(packState(encodeState(stateFromCar(bot.car, bot.timer.currentLap(), spec.name, bot.simT * 1000, bot.timer.best, bot.timer.last)))); log.sent++; }
       if (n % 6 === 0 && bot.spectators > 0) { send(encodeTelemetry(telemetryFromCar(bot.car))); log.telemetry++; }
     }, 1000 / 60));
   }

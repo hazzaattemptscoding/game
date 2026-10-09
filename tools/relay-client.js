@@ -84,6 +84,15 @@ console.log('FRAMING');
   check(FIELDS.length === 17, 'the packed layout matches the 17 state fields');
   const nan = packState(encodeState(sample())); new DataView(nan.buffer).setFloat32(9, NaN);       // the x field
   eq(decodeState(unpackState(nan)), null, 'a NaN in a frame is rejected by decodeState');
+  // the DRS flag rides in col through the binary frame: bit 0 is DRS open, a value out of range reads as 0
+  for (const [label, col, drs] of [['DRS open', 1, true], ['DRS shut', 0, false], ['other bits with DRS', 3, true], ['other bits without DRS', 6, false]]) {
+    const d = decodeState(unpackState(packState(encodeState(sample({ col })))));
+    check(d && d.col === col && d.drs === drs, `flags through the frame: ${label}`);
+  }
+  for (const col of [9, -3, 1e6]) {
+    const d = decodeState(unpackState(packState(encodeState(sample({ col })))));
+    check(d && d.col === 0 && d.drs === false, `a bad flags value (${col}) reads as 0`);
+  }
 }
 
 // ---------------------------------------------------------------- 2. RelayClient: join, ping, backoff

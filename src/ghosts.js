@@ -25,11 +25,12 @@ export const MAX_NAME = 16;
 export const MAX_PLAYERS = 8;
 
 // How a remote car looks comes from its livery (src/livery.js), which its player sends, and from nothing local: the same
-// car looks the same on every screen. `col` stays in the state packet only so old and new clients can talk; it is not used.
+// car looks the same on every screen. `col` is the car's flags (bit 0: DRS open); the field keeps its old place in the packet so
+// old clients, which ignore it, can still talk to new ones.
 
 // Fields of one state, in wire order. t is the sender's clock in ms, h the heading, vx/vz the velocity,
 // yr the yaw rate, st the steering angle, w the wheel angle, thr/brk the pedals, pz/rx the slope pitch and roll
-// of the body, col an unused legacy colour index, lap and s the race progress (lap number and metres into the lap).
+// of the body, col the flags (FLAG_DRS, bit 0 = DRS open), lap and s the race progress (lap number and metres into the lap).
 export const FIELDS = ['t', 'x', 'y', 'z', 'h', 'vx', 'vz', 'yr', 'st', 'w', 'thr', 'brk', 'pz', 'rx', 'col', 'lap', 's'];
 
 export function cleanName(s) {
@@ -39,6 +40,9 @@ export function cleanName(s) {
 const round = (n, d) => { const k = 10 ** d; return Math.round(n * k) / k; };
 const TAU = Math.PI * 2;
 const wrapAngle = a => Math.atan2(Math.sin(a), Math.cos(a));
+// The bits of `col`. Only DRS is sent; the other bits are reserved and read as 0 by this version.
+export const FLAG_DRS = 1;
+
 const DIGITS = { t: 0, x: 2, y: 2, z: 2, h: 3, vx: 2, vz: 2, yr: 3, st: 3, w: 2, thr: 2, brk: 2, pz: 3, rx: 3, col: 0, lap: 0, s: 1 };
 
 // One state on the wire: a flat array ['s', ...numbers, name, best, last]. Around 120 bytes as JSON.
@@ -102,7 +106,9 @@ export function decodeState(a) {
   if (Math.abs(o.x) > 1e5 || Math.abs(o.y) > 1e4 || Math.abs(o.z) > 1e5 || Math.abs(o.vx) > 400 || Math.abs(o.vz) > 400 || Math.abs(o.yr) > 50) return null;
   if (Math.abs(o.h) > 1e3 || Math.abs(o.st) > 3 || Math.abs(o.pz) > 3 || Math.abs(o.rx) > 3) return null;
   o.thr = Math.max(0, Math.min(1, o.thr)); o.brk = Math.max(0, Math.min(1, o.brk));
-  o.col = Math.max(0, Math.min(7, Math.round(o.col)));
+  const flags = Math.round(o.col);
+  o.col = flags >= 0 && flags <= 7 ? flags : 0;      // a flags value out of range reads as none
+  o.drs = (o.col & FLAG_DRS) !== 0;
   o.lap = Math.max(0, Math.min(9999, Math.round(o.lap)));
   o.s = Math.max(0, Math.min(1e5, o.s));
   o.name = cleanName(a[FIELDS.length + 1]);
@@ -112,11 +118,12 @@ export function decodeState(a) {
 }
 
 // Reads the sending player's own car into a state (t is added by the caller). best and last are the lap times in seconds, or null.
-export function stateFromCar(car, lap, col, name, t, best = null, last = null) {
+// The flags in col come from the car: DRS open or not.
+export function stateFromCar(car, lap, name, t, best = null, last = null) {
   return {
     t, x: car.x, y: car.y, z: car.z, h: wrapAngle(car.heading), vx: car.vx, vz: car.vz, yr: car.yawRate, st: car.steer, w: car.wheelSpinAngle,
     thr: car.throttle, brk: car.brake, pz: car.groundPitch || 0, rx: car.groundRoll || 0,
-    col, lap, s: car.loc.s || 0, name, bl: best || 0, ll: last || 0,
+    col: car.drs ? FLAG_DRS : 0, lap, s: car.loc.s || 0, name, bl: best || 0, ll: last || 0,
   };
 }
 
@@ -258,6 +265,7 @@ export class StateBuffer {
       for (const f of SMOOTH) out[f] = a[f] + (c[f] - a[f]) * u;
       out.h = a.h + wrapAngle(c.h - a.h) * u;
       out.w = a.w + wrapAngle(c.w - a.w) * u;
+      out.drs = a.drs;      // a flag is not blended: the newest packet at or before the moment shown
       // race progress: lap and the distance into it go together, so across a lap line take both from one packet
       if (a.lap === c.lap) out.s = a.s + (c.s - a.s) * u;
       else { const p = u < 0.5 ? a : c; out.lap = p.lap; out.s = p.s; }
@@ -450,7 +458,7 @@ export function threeFactory(scene, tagRoot) {
       tagRoot.appendChild(tag);
       // a stand-in for the physics car that CarView.update reads; the slope comes straight from the sender
       const fake = { prev: null, x: 0, y: 0, z: 0, heading: 0, steer: 0, wheelSpinAngle: 0, wheel: 0, ax: 0, ay: 0, brake: 0, fwdSpeed: 0, bump: 0,
-        loc: { tx: 1, tz: 0, grade: 0 }, groundPitch: 0, groundRoll: 0 };
+        loc: { tx: 1, tz: 0, grade: 0 }, groundPitch: 0, groundRoll: 0, drs: false };
       fake.prev = fake;
       let shown = 1;
       return {
@@ -459,6 +467,7 @@ export function threeFactory(scene, tagRoot) {
           fake.x = p.x; fake.y = p.y; fake.z = p.z; fake.heading = p.h; fake.steer = p.st; fake.wheelSpinAngle = fake.wheel = p.w;
           fake.fwdSpeed = p.vx * Math.cos(p.h) + p.vz * Math.sin(p.h); fake.ay = fake.fwdSpeed * p.yr; fake.brake = p.brk;
           fake.groundPitch = p.pz; fake.groundRoll = p.rx;
+          fake.drs = !!p.drs;      // the DRS flap (src/drsFlap.js, car.js) follows the packet
           view.update(fake, 1);
         },
         setLivery(l) { view.setLivery(l); },
