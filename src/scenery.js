@@ -433,9 +433,9 @@ function watchOffice(M, p, ground) {
 // Nissen hut: 4.9 m wide, 11 m long half-cylinder of corrugated steel, brick ends.
 function nissenHut(M, p, ground) {
   const g = new THREE.Group(), r = 2.45, L = 11;
-  const shell = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 16, 1, true, -Math.PI / 2, Math.PI), M.hut);
-  shell.rotation.z = Math.PI / 2;
-  shell.rotation.y = Math.PI / 2;
+  // the shell is the upper half of the cylinder, in the same plane as the brick ends (x across, y up), so it closes the hut's sides
+  const shell = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 16, 1, true, Math.PI / 2, Math.PI), M.hut);
+  shell.rotation.x = Math.PI / 2;
   const endGeo = new THREE.CircleGeometry(r, 16, 0, Math.PI);
   for (const z of [-L / 2, L / 2]) {
     const end = new THREE.Mesh(endGeo, M.brick);
