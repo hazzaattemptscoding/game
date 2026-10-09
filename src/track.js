@@ -54,6 +54,7 @@ const PLAIN_RUNOFF = 22;   // flat grass beside the track where no corner needs 
 const GRAVEL_APRON = 3;    // a gravel trap always has at least this much paved apron in front of it
 const STREET_GAP = 0.8;    // clear space between the kerb and a street-section wall, metres
 const BRIDGE_RUNOFF = 2.0;   // the deck is this much wider than the track on each side, and the parapet stands on its edge
+const BOARD_BEHIND = 0.5;    // a distance board stands this far behind the barrier face (never more than 1 m in front of it)
 const BRIDGE_APPROACH = 40; // metres before and after the deck where a parapet funnels in towards it
 const MIN_EDGE = 4;        // the 4 m minimum from the track edge to any barrier
 const MIN_BARRIER = 5;     // working clearance margin beyond the 4 m minimum (street, pit and bridge excepted)
@@ -1384,6 +1385,8 @@ export const BOARD_SETS = [[150, [300, 200, 100]], [80, [200, 100]], [30, [100]]
 function buildFurniture(T, corners) {
   const { N } = T, HW = T.hw;
   T.furniture = [];
+  const wl = wallLines(T);
+  T.wallIn = wl.inner;
   const place = (type, value, i, d, extra = {}) => {
     const x = T.x[i] + T.nx[i] * d, z = T.z[i] + T.nz[i] * d;
     return { type, value, i, s: T.s[i], d, x, z, y: T.groundAt(x, z, i), ...extra };
@@ -1410,10 +1413,6 @@ function buildFurniture(T, corners) {
   }
   const SPACED = ['board', 'post', 'panel'];   // these keep 30 m apart; signs only need 6 m
   const nearOther = (x, z, r, types) => T.furniture.some(f => (!types || types.includes(f.type)) && (f.x - x) ** 2 + (f.z - z) ** 2 < r * r);
-  const nearBarrier = (x, z, r) => T.segs.some(sg => {
-    const t = Math.max(0, Math.min(1, ((x - sg.ax) * (sg.bx - sg.ax) + (z - sg.az) * (sg.bz - sg.az)) / (sg.len * sg.len)));
-    return (x - sg.ax - t * (sg.bx - sg.ax)) ** 2 + (z - sg.az - t * (sg.bz - sg.az)) ** 2 < r * r;
-  });
 
   // pit lane speed signs: at the start of the limiter, then every 100 m, on the pit wall
   const lim = runsOf(N, i => T.pitLimiter[i])[0] || [];
@@ -1422,10 +1421,11 @@ function buildFurniture(T, corners) {
     T.furniture.push(place('sign', T.layout.pit.speedLimit, i, -(T.pitIn[i] - PIT_WALL / 2), { faces: 'pit' }));
   }
 
-  // distance boards: the biggest set that fits, counting down to where braking ends
+  // distance boards: the biggest set that fits, counting down to where braking ends. Each board stands at the barrier
+  // (BOARD_BEHIND outside its face), so the driver reads it against the wall, never out on the apron.
   for (const c of corners) {
     if (!c.brakeDistance) continue;
-    const sd = c.outside === 'L' ? 0 : 1, g = sd ? 1 : -1;
+    const sd = c.outside === 'L' ? 0 : 1;
     const entry = BOARD_SETS.find(([min]) => c.brakeDistance > min);
     if (!entry) continue;
     const options = [entry[1], ...BOARD_SETS.map(e => e[1]).filter(set => set.length < entry[1].length)];
@@ -1434,17 +1434,45 @@ function buildFurniture(T, corners) {
       let ok = true;
       for (const n of set) {
         const i = wrap(Math.round((c.brakeEnd - n) / T.ds), N);
-        const d = g * (HW[i] + Math.max(3, T.kerb[sd][i] + T.sausage[sd][i] + 1.5));   // 3 m or more beyond the white line, clear of the kerb
+        const d = boardOffset(T, i, sd);
+        if (d === null) { ok = false; break; }
         const b = place('board', n, i, d, { corner: c.name });
-        const inGravel = T.gravelOut[sd][i] > 0 && Math.abs(d) >= T.gravelIn[sd][i] - 1;
-        const inPit = sd === 0 && T.pitOut[i] > 0;
-        if (T.isBridge[i] || inPit || inGravel || T.street[sd][i] || nearBarrier(b.x, b.z, 6) ||
+        const inPit = sd === 0 && T.pitOut[i] > 0;   // (a board behind the barrier is clear of the gravel, which the barrier stops cars short of)
+        if (T.isBridge[i] || inPit || T.street[sd][i] ||
             nearOther(b.x, b.z, 30, SPACED) || nearOther(b.x, b.z, 6) || boards.some(o => (o.x - b.x) ** 2 + (o.z - b.z) ** 2 < 900)) { ok = false; break; }
         boards.push(b);
       }
       if (ok) { T.furniture.push(...boards); break; }
     }
   }
+
+}
+
+// The barrier line on each side at every sample: the nearest barrier point on that side (inner) and the furthest within a
+// few samples (outer), measured out from the track centre line. Boards and trackside objects are placed against these.
+function wallLines(T) {
+  const N = T.N;
+  const inner = [0, 1].map(() => new Float64Array(N).fill(Infinity)), outer = [0, 1].map(() => new Float64Array(N).fill(-Infinity));
+  for (const b of T.barriers) {
+    const g = b.side ? 1 : -1;
+    for (const p of b.pts) {
+      for (let k = -3; k <= 3; k++) {
+        const i = wrap(p[3] + k, N);
+        const a = ((p[0] - T.x[i]) * T.nx[i] + (p[2] - T.z[i]) * T.nz[i]) * g;
+        if (a <= 0) continue;
+        inner[b.side][i] = Math.min(inner[b.side][i], a);
+        outer[b.side][i] = Math.max(outer[b.side][i], a);
+      }
+    }
+  }
+  return { inner, outer };
+}
+
+// the signed offset (d) of a distance board on side sd at sample i: BOARD_BEHIND outside the barrier face, or null if
+// there is no barrier there (so the board is not placed at all)
+export function boardOffset(T, i, sd) {
+  const a = T.wallIn[sd][i];
+  return Number.isFinite(a) ? (sd ? 1 : -1) * (a + BOARD_BEHIND) : null;
 }
 
 function runsOf(N, test) {

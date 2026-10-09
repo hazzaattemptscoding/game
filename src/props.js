@@ -10,6 +10,7 @@ import { Kit, trackPoint, hash01, sponsorRow } from './meshKit.js';
 import { wallClearance } from './grandstands.js';
 import { garageBay } from './pitBuilding.js';
 import { flagMaterial, addFlag } from './lamps.js';
+import { boardOffset } from './track.js';
 
 const wrapN = (i, n) => ((i % n) + n) % n;
 
@@ -106,9 +107,10 @@ export function buildProps(T, ground, blockers, stands) {
     for (const f of T.furniture || []) {
       if (f.type !== 'board' || f.value !== 100) continue;
       const i = wrapN(f.i + 50, T.N), sd = f.d < 0 ? 0 : 1;
-      if (T.isBridge[i] || T.street[sd][i] || (sd === 0 && T.pitOut[i]) || T.gravelOut[sd][i] > 0 && Math.abs(f.d) >= T.gravelIn[sd][i] - 1) continue;
-      const p = trackPoint(T, T.s[i], f.d);
-      if (T.segs.some(sg => segDist(p.x, p.z, sg) < 6)) continue;
+      // stands at the barrier like the 100 m board (boardOffset), so the same clearance applies here
+      const d = boardOffset(T, i, sd);
+      if (d === null || T.isBridge[i] || T.street[sd][i] || (sd === 0 && T.pitOut[i])) continue;
+      const p = trackPoint(T, T.s[i], d);
       if (T.furniture.some(o => o !== f && Math.hypot(o.x - p.x, o.z - p.z) < 6)) continue;
       const y = T.groundAt(p.x, p.z, i), heading = Math.atan2(T.tz[i], T.tx[i]);
       const rot = -heading - Math.PI / 2 + Math.sign(f.d) * 10 * Math.PI / 180;
