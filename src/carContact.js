@@ -55,11 +55,13 @@ function overlapCentre(subject, clip) {
   return [cx / (3 * area), cz / (3 * area)];
 }
 
-export function carContact(a, b, length, width) {
+// lengthB and widthB are b's own size when it is another class (src/cars.js); they default to a's, the same car.
+export function carContact(a, b, length, width, lengthB = length, widthB = width) {
   const dxc = a.x - b.x, dzc = a.z - b.z;
-  if (dxc * dxc + dzc * dzc > length * length + width * width) return null;
-  const hl = length / 2 - RADIUS, hw = width / 2 - RADIUS;
-  const A = box(a, hl, hw, []), B = box(b, hl, hw, []);
+  // the largest car's diagonal bounds both (the early out only needs to be generous)
+  const L = Math.max(length, lengthB), W = Math.max(width, widthB);
+  if (dxc * dxc + dzc * dzc > L * L + W * W) return null;
+  const A = box(a, length / 2 - RADIUS, width / 2 - RADIUS, []), B = box(b, lengthB / 2 - RADIUS, widthB / 2 - RADIUS, []);
 
   // separating axis test on the shrunk rectangles
   let best = Infinity, bnx = 0, bnz = 0, overlapping = true;
@@ -99,7 +101,7 @@ export function carContact(a, b, length, width) {
     mid = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2];
   }
   // where the force acts: the middle of the overlap of the full outlines
-  const fa = box(a, hl + RADIUS, hw + RADIUS, []), fb = box(b, hl + RADIUS, hw + RADIUS, []);
+  const fa = box(a, length / 2, width / 2, []), fb = box(b, lengthB / 2, widthB / 2, []);
   const c = overlapCentre(fa, fb) || mid || [(a.x + b.x) / 2, (a.z + b.z) / 2];
   return { nx, nz, depth, px: c[0], pz: c[1] };
 }

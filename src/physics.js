@@ -58,10 +58,8 @@ export function tyreCurve(slip, peak, slide) {
 
 export class Car {
   constructor(cfg, track) {
-    this.cfg = cfg;
     this.track = track;
-    this.a = cfg.wheelbase * (1 - cfg.frontWeight); // centre of gravity to front axle
-    this.b = cfg.wheelbase * cfg.frontWeight;       // centre of gravity to rear axle
+    this.setConfig(cfg);
     this.assistTc = true; this.assistAbs = true; this.assistEsc = true;   // each assist is switched on its own, see setAssists
     this.wetGrip = 1;         // set by weather, 1 = dry
     this.loc = { i: 0 };
@@ -69,6 +67,16 @@ export class Car {
     this.wheelSurf = [0, 0, 0, 0]; // FL FR RL RR
     this.events = { shift: 0, hit: 0 };
     this.placeAt(0, 0);
+  }
+
+  // Change the class of car (src/cars.js) in place, so everything holding this object keeps it. Only sensible when stopped:
+  // the engine and gearbox are put back to idle and the car stays where it is.
+  setConfig(cfg) {
+    this.cfg = cfg;
+    this.a = cfg.wheelbase * (1 - cfg.frontWeight); // centre of gravity to front axle
+    this.b = cfg.wheelbase * cfg.frontWeight;       // centre of gravity to rear axle
+    this.gear = 1; this.rpm = cfg.idleRpm; this.shiftTimer = 0; this.steerRange = cfg.maxLock;
+    this.assistTc = this.assistTc ?? true; this.assistAbs = this.assistAbs ?? true; this.assistEsc = this.assistEsc ?? true;
   }
 
   // true, false, or { tc, abs, esc } (a missing key leaves that assist as it is)
@@ -152,8 +160,9 @@ export class Car {
     // A zone is a stretch of road, not a direction: a car driven the other way round has DRS wherever it is in one.
     // There is no separate activation point, so it opens on the button anywhere inside, from either end.
     const inZone = T.inDRS(loc.s);
-    if (inZone && inp.drs && inp.brake < 0.05 && this.gear > 0) this.drs = true;
-    if (!inZone || inp.brake > 0.05) this.drs = false;
+    // a car with no DRS (hasDRS false, the 108) never opens it, whatever the button and the zone
+    if (inZone && c.hasDRS !== false && inp.drs && inp.brake < 0.05 && this.gear > 0) this.drs = true;
+    if (!inZone || c.hasDRS === false || inp.brake > 0.05) this.drs = false;
 
     // --- aero ---
     const q = 0.5 * AIR * vx * vx;
@@ -229,16 +238,20 @@ export class Car {
     const curveR = tyreCurve(alphaR, c.peakSlipRear, c.slideGripRear);
 
     // --- forward/back force each axle wants ---
-    const reqF = -brake * c.brakeForce * c.brakeBias * dir;
-    const reqR = drive - brake * c.brakeForce * (1 - c.brakeBias) * dir;
-
+    // The engine drives one axle: the rear (most cars) or the front (the 108). The driven tyres share their grip between
+    // pulling and steering, so a front-drive car on power runs wide. The rear path is the same as it was before front drive.
+    const frontDrive = c.drive === 'front';
+    const drives = drive * dir > 0 && brake === 0;   // the driven tyres are pulling: traction control, otherwise ABS
+    let reqF = -brake * c.brakeForce * c.brakeBias * dir;
+    let reqR = drive - brake * c.brakeForce * (1 - c.brakeBias) * dir;
+    if (frontDrive) { reqF += drive; reqR = -brake * c.brakeForce * (1 - c.brakeBias) * dir; }
     // --- combine with cornering: a tyre has one budget of grip to share ---
-    const front = this.axle(reqF, FmaxF, curveF, false);
-    const rearDrives = drive * dir > 0 && brake === 0;   // the rear tyres are pulling: traction control, otherwise ABS
-    const rear = this.axle(reqR, FmaxR, curveR, rearDrives);
-    this.tc = rear.assisted && rearDrives;
+    const front = this.axle(reqF, FmaxF, curveF, frontDrive && drives);
+    const rear = this.axle(reqR, FmaxR, curveR, !frontDrive && drives);
+    const driven = frontDrive ? front : rear;
+    this.tc = driven.assisted && drives;
     this.abs = (front.assisted || rear.assisted) && brake > 0;
-    this.spin = rear.slipping && drive * dir > 0;
+    this.spin = driven.slipping && drive * dir > 0;
     this.lock = (front.slipping || rear.slipping) && brake > 0;
 
     // --- total forces on the body ---
@@ -379,7 +392,7 @@ export class Car {
     const cross = (ax, az, bx, bz) => ax * bz - az * bx;
     for (const o of others) {
       if (o.silent > 0.5 || o.age < 1.5) continue;
-      const k = carContact(this, o, c.length, c.width);
+      const k = carContact(this, o, c.length, c.width, o.length ?? c.length, o.width ?? c.width);   // each car's own size
       if (!k) continue;
       const cx = k.px - this.x, cz = k.pz - this.z, r = this.yawRate, ro = o.yawRate || 0;   // contact arms from each centre
       const rx = k.px - o.x, rz = k.pz - o.z;

@@ -167,7 +167,7 @@ export const CITY = {
 //   mass 1170 kg race weight (Wikipedia, supercars.net), minimum 1100 kg. 1200 kg with driver is used.
 //   power 466 kW (625 bhp with restrictors), 746 Nm: en.wikipedia.org/wiki/Aston_Martin_DBR9. The torque curve is ESTIMATE.
 //   six-speed sequential gearbox (Xtrac): Wikipedia. Ratios, final drive, tyre radius: ESTIMATE.
-//   grip 1.9 g, large downforce, top speed about 300 km/h: ESTIMATE for a GT1 with slicks.
+//   grip 1.75 g, large downforce, top speed about 290 km/h: ESTIMATE for a GT1 with slicks.
 export const GT1 = {
   id: 'GT1',
   label: 'GT1',
@@ -188,7 +188,7 @@ export const GT1 = {
   wheelRadius: 0.34,   // ESTIMATE: race slick, the GT's size
 
   // --- Tyres ------------------------------------------------------------
-  grip: 1.9,           // ESTIMATE: race slicks with the downforce below
+  grip: 1.75,          // ESTIMATE: race slicks with the downforce below
   frontGrip: 1.0,
   rearGrip: 1.06,
   loadSensitivity: 0.15,
@@ -201,7 +201,7 @@ export const GT1 = {
 
   // --- Aero -------------------------------------------------------------
   dragArea: 0.95,      // ESTIMATE: GT1 wing set, top speed about 300 km/h
-  downforceArea: 4.2,  // ESTIMATE: big downforce, a little over the GT's 2.5
+  downforceArea: 3.6,  // ESTIMATE: big downforce, a little over the GT's 2.5
   aeroBalance: 0.42,
   drsDragCut: 0.12,
   drsDownforceCut: 0.1,
