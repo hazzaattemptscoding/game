@@ -1,6 +1,6 @@
-// The GT car as simple shapes: an extruded side profile for the body, a
-// glasshouse, wing, wheels that spin and steer, brake lights and
-// headlights. A proper model comes in phase 3.
+// The car as simple shapes: an extruded side profile for the body, a glasshouse, wing, wheels that spin and steer, lamps.
+// Each car class (src/cars.js, by cfg.id) has its own profile, set out in the shape functions below. GT is the original car
+// and is unchanged. A proper model comes in phase 3.
 //
 // Local axes: +x forward, +y up, +z right (matches the physics).
 
@@ -13,21 +13,39 @@ import { stepFlap, flapAngle } from './drsFlap.js';
 
 const VIBRATION = 0.006;   // metres of body movement per unit of surface roughness (rumble is 1.2, gravel 0.6)
 
-// The top line of the body and cab as pieces of (x, y) points from the nose to the tail, with how far the extruded surface
-// stands out from the outline there (the bevel size), so stripes can lie on it.
-const quad = (p0, c, p1, n) => Array.from({ length: n + 1 }, (_, i) => { const u = i / n, v = 1 - u; return [v * v * p0[0] + 2 * v * u * c[0] + u * u * p1[0], v * v * p0[1] + 2 * v * u * c[1] + u * u * p1[1]]; });
-function stripePieces(L) {
-  const f = L / 2, b = -L / 2;
-  const body1 = [...quad([f - 0.15, 0.18], [f, 0.2], [f, 0.42], 6), ...quad([f, 0.42], [f - 0.25, 0.62], [f - 1.0, 0.72], 12).slice(1), [0.9, 0.7325]];
-  const cab = [...quad([0.9, 0.7], [0.3, 1.15], [-0.3, 1.2], 12), [-1.2, 1.18], ...quad([-1.2, 1.18], [-1.6, 1.05], [-1.7, 0.8], 8).slice(1)];
-  const deck = [[-1.7, 0.815], [b + 0.4, 0.82], ...quad([b + 0.4, 0.82], [b, 0.84], [b, 0.6], 8).slice(1)];
-  return [{ pts: body1, off: 0.1 }, { pts: cab, off: 0.08 }, { pts: deck, off: 0.1 }];
+// A side outline as a path: a start point, then steps. ['L', x, y] is a straight line to (x, y). ['Q', cx, cy, x, y] is a curve
+// to (x, y) with control point (cx, cy). A sixth number on a curve is how many points to sample for the livery stripes; the
+// extruded body uses the true curve.
+function pathShape(p) {
+  const s = new THREE.Shape();
+  s.moveTo(p.start[0], p.start[1]);
+  for (const op of p.ops) {
+    if (op[0] === 'L') s.lineTo(op[1], op[2]);
+    else s.quadraticCurveTo(op[1], op[2], op[3], op[4]);
+  }
+  return s;
 }
 
-// A ribbon of width w centred at z = zc following the pieces, lifted 8 mm off the surface.
-function stripeGeometry(L, zc, w) {
+// The points of a path, for the stripes: the start, then each step's points.
+function samplePath(p) {
+  const pts = [p.start];
+  let x0 = p.start[0], y0 = p.start[1];
+  for (const op of p.ops) {
+    if (op[0] === 'L') { x0 = op[1]; y0 = op[2]; pts.push([x0, y0]); continue; }
+    const [, cx, cy, x1, y1, n = 8] = op;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n, v = 1 - t;
+      pts.push([v * v * x0 + 2 * v * t * cx + t * t * x1, v * v * y0 + 2 * v * t * cy + t * t * y1]);
+    }
+    x0 = x1; y0 = y1;
+  }
+  return pts;
+}
+
+// A ribbon of width w centred at z = zc following the stripe pieces ({ pts, off }), lifted 8 mm off the surface.
+function stripeGeometry(pieces, zc, w) {
   const pos = [], idx = [];
-  for (const { pts, off } of stripePieces(L)) {
+  for (const { pts, off } of pieces) {
     const base = pos.length / 3;
     for (let i = 0; i < pts.length; i++) {
       const a = pts[Math.max(0, i - 1)], c = pts[Math.min(pts.length - 1, i + 1)];
@@ -44,94 +62,201 @@ function stripeGeometry(L, zc, w) {
   return g;
 }
 
-// Where the side panel sits: between the wheels, on the flat side of the body (x metres, y metres, size).
-const SIDE = { x0: -0.8, x1: 1.0, y0: 0.25, y1: 0.65 };
+// A pair of lamps, one each side: p is the right one ([x, y, z]), s its size, rz its tilt about the z axis.
+const pair = (p, s, rz = 0) => [{ p, s, rz }, { p: [p[0], p[1], -p[2]], s, rz }];
 
-// The rear wing from the tail forward: the flap (WING_FLAP m of chord) hinges at WING_HINGE m from the tail, and the main plane
-// (WING_MAIN m) runs forward from the hinge. The flap's trailing edge is 5 cm behind the tail, so the wing runs 0.42 m in all.
-// A 0.22 m flap lifts its trailing edge about 10 cm at 28 degrees, enough to read from behind and from the side.
-const WING_FLAP = 0.22, WING_MAIN = 0.2, WING_HINGE = 0.27;
+// The shape of each class. Every one returns the same fields:
+//   half      half the body's width (the body's bevel is inside it)
+//   cabHalf   half the glasshouse's width
+//   body      the closed side outline, extruded across the body. Its bevel makes the car 0.1 m longer than the outline,
+//             so outlines stop 0.1 m short of the ends of the car.
+//   cab       the closed outline of the glasshouse
+//   stripes   the top lines for the livery stripes: { path, off }, off being how far the surface stands out from the line
+//   side      the side panel: its centre (x, y) and width (its height follows from the texture)
+//   plate     the bonnet number plate: the quadratic bonnet curve (c0, c1, c2), its size and how far it stands off
+//   wing      the rear wing: x of the flap's hinge, y, the main plane and flap chords, span, and posts { x, y, z, h }; or null
+//   arches    wheel arch flares, each { x, r }: a half disc of radius r about the axle at wheel height, on each side
+//   dark      dark parts of the body, each { p, s }: splitter, diffuser, trims
+//   tails     the rear lamps, { p, s, rz }, both sides; heads the front lamps, the same shape
+// Local x runs from the tail (negative) to the nose (positive), and y is up from the road.
+
+// GT: the original car. Its numbers are unchanged.
+function gtShape(c) {
+  const L = c.length, W = c.width, f = L / 2, b = -L / 2, h = 1.0;
+  return {
+    half: W / 2, cabHalf: (W - 0.7) / 2,
+    body: { start: [b, 0.18], ops: [['L', f - 0.15, 0.18], ['Q', f, 0.2, f, 0.42], ['Q', f - 0.25, 0.62, f - 1.0, 0.72], ['L', b + 0.4, 0.82], ['Q', b, 0.84, b, 0.6], ['L', b, 0.18]] },
+    cab: { start: [0.9, 0.7], ops: [['Q', 0.3, 1.15, -0.3, h + 0.2], ['L', -1.2, h + 0.18], ['Q', -1.6, 1.05, -1.7, 0.8], ['L', 0.9, 0.7]] },
+    stripes: [
+      { path: { start: [f - 0.15, 0.18], ops: [['Q', f, 0.2, f, 0.42, 6], ['Q', f - 0.25, 0.62, f - 1.0, 0.72, 12], ['L', 0.9, 0.7325]] }, off: 0.1 },
+      { path: { start: [0.9, 0.7], ops: [['Q', 0.3, 1.15, -0.3, 1.2, 12], ['L', -1.2, 1.18], ['Q', -1.6, 1.05, -1.7, 0.8, 8]] }, off: 0.08 },
+      { path: { start: [-1.7, 0.815], ops: [['L', b + 0.4, 0.82], ['Q', b, 0.84, b, 0.6, 8]] }, off: 0.1 },
+    ],
+    side: { x: 0.1, y: 0.45, w: 1.8 },
+    plate: { c0: [f, 0.42], c1: [f - 0.25, 0.62], c2: [f - 1.0, 0.72], size: 0.44, off: 0.114 },
+    wing: { x: b + 0.27, y: 1.22, main: 0.2, flap: 0.22, span: W - 0.1, post: { x: b + 0.3, y: 1.02, z: 0.5, h: 0.38 } },
+    arches: [],
+    dark: [{ p: [f - 0.1, 0.16, 0], s: [0.4, 0.04, W] }],
+    tails: pair([b - 0.08, 0.62, 0.62], [0.05, 0.08, 0.45]),
+    heads: pair([f - 0.12, 0.5, 0.6], [0.05, 0.08, 0.38], -0.5),
+  };
+}
+
+// GT1: a long low racer. Low nose and roof, wide body with flared arches over the wheels, a front splitter, a rear diffuser
+// and a big rear wing on two uprights, with the DRS flap.
+function gt1Shape(c) {
+  const L = c.length, W = c.width, F = L / 2, f = F - 0.1, b = -F + 0.1;
+  const rad = c.wheelRadius + 0.1;
+  return {
+    half: 0.86, cabHalf: 0.62,
+    body: { start: [b, 0.2], ops: [['L', f - 0.2, 0.2], ['Q', f, 0.2, f, 0.34], ['Q', f - 0.5, 0.5, f - 1.6, 0.6], ['L', b + 0.7, 0.72], ['Q', b, 0.74, b, 0.46], ['L', b, 0.2]] },
+    cab: { start: [0.9, 0.62], ops: [['Q', 0.5, 0.98, 0.1, 1.0], ['L', -0.9, 1.0], ['Q', -1.35, 0.98, -1.7, 0.74], ['L', 0.9, 0.62]] },
+    stripes: [
+      { path: { start: [f - 0.2, 0.2], ops: [['Q', f, 0.2, f, 0.34, 6], ['Q', f - 0.5, 0.5, f - 1.6, 0.6, 12], ['L', 0.9, 0.62]] }, off: 0.1 },
+      { path: { start: [0.9, 0.62], ops: [['Q', 0.5, 0.98, 0.1, 1.0, 12], ['L', -0.9, 1.0], ['Q', -1.35, 0.98, -1.7, 0.74, 8]] }, off: 0.08 },
+      { path: { start: [-1.6, 0.72], ops: [['Q', b, 0.74, b, 0.46, 8]] }, off: 0.1 },
+    ],
+    side: { x: 0, y: 0.45, w: 1.5 },
+    plate: { c0: [f, 0.34], c1: [f - 0.5, 0.5], c2: [f - 1.6, 0.6], size: 0.36, off: 0.094 },
+    wing: { x: b + 0.1, y: 1.12, main: 0.3, flap: 0.3, span: W - 0.2, post: { x: b + 0.3, y: 0.9, z: 0.6, h: 0.4 } },
+    arches: [{ x: c.wheelbase * (1 - c.frontWeight), r: rad }, { x: -c.wheelbase * c.frontWeight, r: rad }],
+    dark: [{ p: [F - 0.12, 0.14, 0], s: [0.3, 0.04, W - 0.1] }, { p: [b + 0.25, 0.2, 0], s: [0.5, 0.08, W - 0.5] }],
+    tails: pair([b - 0.08, 0.34, 0.45], [0.05, 0.07, 0.5]),
+    heads: pair([F - 0.14, 0.36, 0.55], [0.05, 0.06, 0.4], -0.2),
+  };
+}
+
+// CITY: a Peugeot 108 style three-door hatchback. Upright glasshouse, steep hatch, short overhangs, small roof spoiler
+// (no wing), black lower bumper trims, two vertical rear lamp clusters and the claw daytime lights at the front.
+function cityShape(c) {
+  const L = c.length, W = c.width, F = L / 2, f = F - 0.1, b = -F + 0.1;
+  return {
+    half: W / 2, cabHalf: 0.6,
+    body: { start: [b, 0.2], ops: [['L', f - 0.06, 0.2], ['L', f, 0.34], ['L', f, 0.6], ['Q', f, 0.82, f - 0.3, 0.86], ['L', b + 0.2, 0.88], ['Q', b, 0.89, b, 0.7], ['L', b, 0.2]] },
+    cab: { start: [0.88, 0.88], ops: [['Q', 0.5, 1.3, 0.05, 1.37], ['Q', -0.8, 1.4, -1.25, 1.27], ['Q', -1.5, 1.15, -1.64, 0.9], ['L', 0.88, 0.88]] },
+    stripes: [
+      { path: { start: [f, 0.6], ops: [['Q', f, 0.82, f - 0.3, 0.86, 8], ['L', 0.88, 0.88]] }, off: 0.1 },
+      { path: { start: [0.88, 0.88], ops: [['Q', 0.5, 1.3, 0.05, 1.37, 12], ['Q', -0.8, 1.4, -1.25, 1.27, 12], ['Q', -1.5, 1.15, -1.64, 0.9, 8]] }, off: 0.08 },
+      { path: { start: [-1.64, 0.9], ops: [['L', b + 0.2, 0.88], ['Q', b, 0.89, b, 0.7, 8]] }, off: 0.1 },
+    ],
+    side: { x: -0.1, y: 0.5, w: 1.6 },
+    plate: { c0: [f, 0.6], c1: [f, 0.82], c2: [f - 0.3, 0.86], size: 0.3, off: 0.078 },
+    wing: null,
+    arches: [],
+    dark: [{ p: [F - 0.06, 0.27, 0], s: [0.08, 0.12, W - 0.5] }, { p: [-F + 0.06, 0.27, 0], s: [0.08, 0.14, W - 0.4] }, { p: [-1.22, 1.4, 0], s: [0.2, 0.03, W - 0.6] }],
+    tails: pair([b - 0.08, 0.76, 0.66], [0.05, 0.34, 0.16]),
+    heads: [...pair([F - 0.03, 0.78, 0.6], [0.05, 0.1, 0.36], -0.5), ...pair([F - 0.03, 0.54, 0.68], [0.04, 0.035, 0.22], 0.7)],
+  };
+}
+
+const SHAPES = { GT: gtShape, GT1: gt1Shape, CITY: cityShape };
+
+// The shape of a car class. A config with no id, or an id with no shape of its own, is the GT.
+export function bodySpec(cfg) {
+  return (cfg && Object.hasOwn(SHAPES, cfg.id) ? SHAPES[cfg.id] : gtShape)(cfg);
+}
+
+// Where the side panel's texture is shown: its shape (SIDE_W by SIDE_H pixels).
+const SIDE_ASPECT = SIDE_H / SIDE_W;
+
+// The rear wing and the DRS flap (src/drsFlap.js): the flap turns about its hinge, the leading edge where it meets the main plane,
+// so its trailing edge lifts and a slot opens. Both take the livery's wing colour; the underside of the flap and the trailing face
+// of the main plane are in a much darker slot colour, so the slot reads as a gap.
+const WING_POST_W = 0.1, WING_POST_T = 0.05;
 
 export class CarView {
   // `livery` is a livery object (src/livery.js), or a plain colour number as before.
   constructor(cfg, livery = DEFAULT_LIVERY) {
     livery = typeof livery === 'number' ? { ...DEFAULT_LIVERY, body: livery } : livery;
     this.cfg = cfg;
+    this.spec = bodySpec(cfg);
+    const sp = this.spec;
     this.root = new THREE.Group();     // follows position and heading
     this.slope = new THREE.Group();    // tilts with the road
     this.body = new THREE.Group();     // pitches and rolls with weight transfer
     this.root.add(this.slope);
     this.slope.add(this.body);
 
-    const L = cfg.length, W = cfg.width, r = cfg.wheelRadius;
+    const W = cfg.width, r = cfg.wheelRadius;
     const paint = this.paint = new THREE.MeshStandardMaterial({ color: 0xffd21f, roughness: 0.35, metalness: 0.3 });
     this.wingMat = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.5, metalness: 0.2 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.6 });
     const glass = new THREE.MeshStandardMaterial({ color: 0x14181d, roughness: 0.1, metalness: 0.6 });
 
     // Body: side profile extruded across the width, with rounded edges
-    const p = new THREE.Shape();
-    const h = 1.0, f = L / 2, b = -L / 2;
-    p.moveTo(b, 0.18);
-    p.lineTo(f - 0.15, 0.18);
-    p.quadraticCurveTo(f, 0.2, f, 0.42);
-    p.quadraticCurveTo(f - 0.25, 0.62, f - 1.0, 0.72);   // bonnet
-    p.lineTo(b + 0.4, 0.82);                              // deck
-    p.quadraticCurveTo(b, 0.84, b, 0.6);
-    p.lineTo(b, 0.18);
-    const bodyGeo = new THREE.ExtrudeGeometry(p, { depth: W - 0.24, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.1, bevelSegments: 3, curveSegments: 8 });
-    bodyGeo.translate(0, 0, -(W - 0.24) / 2);
+    const depth = 2 * sp.half - 0.24;
+    const bodyGeo = new THREE.ExtrudeGeometry(pathShape(sp.body), { depth, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.1, bevelSegments: 3, curveSegments: 8 });
+    bodyGeo.translate(0, 0, -depth / 2);
     const shell = new THREE.Mesh(bodyGeo, paint);
     shell.castShadow = true;
     this.body.add(shell);
 
     // Glasshouse
-    const g = new THREE.Shape();
-    g.moveTo(0.9, 0.7);
-    g.quadraticCurveTo(0.3, 1.15, -0.3, h + 0.2);
-    g.lineTo(-1.2, h + 0.18);
-    g.quadraticCurveTo(-1.6, 1.05, -1.7, 0.8);
-    g.lineTo(0.9, 0.7);
-    const cabGeo = new THREE.ExtrudeGeometry(g, { depth: W - 0.7, bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.08, bevelSegments: 2 });
-    cabGeo.translate(0, 0, -(W - 0.7) / 2);
+    const cabDepth = 2 * sp.cabHalf;
+    const cabGeo = new THREE.ExtrudeGeometry(pathShape(sp.cab), { depth: cabDepth, bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.08, bevelSegments: 2 });
+    cabGeo.translate(0, 0, -cabDepth / 2);
     const cab = new THREE.Mesh(cabGeo, glass);
     cab.castShadow = true;
     this.body.add(cab);
 
-    // Rear wing: the main plane (its front 0.2 m) and the DRS flap behind it. The flap turns about its leading edge, the line
-    // where it meets the main plane, so its trailing edge lifts and a slot opens. Both take the livery's wing colour; the
-    // underside of the flap and the trailing face of the main plane are in a much darker slot colour, so the slot reads as a gap.
+    // Rear wing, when the class has one (the flap is the DRS flap: the flapPivot takes its angle in update)
     const slot = new THREE.MeshStandardMaterial({ color: 0x060708, roughness: 0.8 });
-    const main = new THREE.Mesh(new THREE.BoxGeometry(WING_MAIN, 0.05, W - 0.1), [this.wingMat, slot, this.wingMat, this.wingMat, this.wingMat, this.wingMat]);
-    main.position.set(b + WING_HINGE + WING_MAIN / 2, 1.22, 0);
-    this.body.add(main);
-    this.flapPivot = new THREE.Group();
-    this.flapPivot.position.set(b + WING_HINGE, 1.22, 0);
-    const flap = new THREE.Mesh(new THREE.BoxGeometry(WING_FLAP, 0.035, W - 0.1), [this.wingMat, this.wingMat, this.wingMat, slot, this.wingMat, this.wingMat]);
-    flap.position.set(-WING_FLAP / 2, 0, 0);
-    this.flapPivot.add(flap);
-    this.body.add(this.flapPivot);
-    this._flap = 0;     // 0 shut, 1 open (src/drsFlap.js)
-    for (const s of [-1, 1]) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.38, 0.05), dark);
-      post.position.set(b + 0.3, 1.02, s * 0.5);
-      this.body.add(post);
+    this.wing = null; this.flapPivot = null;
+    if (sp.wing) {
+      const wg = sp.wing;
+      this.wing = new THREE.Group();
+      this.body.add(this.wing);
+      const main = new THREE.Mesh(new THREE.BoxGeometry(wg.main, 0.05, wg.span), [this.wingMat, slot, this.wingMat, this.wingMat, this.wingMat, this.wingMat]);
+      main.position.set(wg.x + wg.main / 2, wg.y, 0);
+      this.wing.add(main);
+      this.flapPivot = new THREE.Group();
+      this.flapPivot.position.set(wg.x, wg.y, 0);
+      const flap = new THREE.Mesh(new THREE.BoxGeometry(wg.flap, 0.035, wg.span), [this.wingMat, this.wingMat, this.wingMat, slot, this.wingMat, this.wingMat]);
+      flap.position.set(-wg.flap / 2, 0, 0);
+      this.flapPivot.add(flap);
+      this.wing.add(this.flapPivot);
+      for (const s of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(WING_POST_W, wg.post.h, WING_POST_T), dark);
+        post.position.set(wg.post.x, wg.post.y, s * wg.post.z);
+        this.wing.add(post);
+      }
     }
-    // splitter and diffuser
-    const split = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.04, W), dark);
-    split.position.set(f - 0.1, 0.16, 0);
-    this.body.add(split);
+    this._flap = 0;     // 0 shut, 1 open (src/drsFlap.js)
+
+    // Wheel arch flares: a half disc on each side over the wheel, in the body colour, standing out from the flatter body side
+    for (const a of sp.arches) {
+      const shape = new THREE.Shape();
+      shape.moveTo(-a.r, 0);
+      shape.absarc(0, 0, a.r, Math.PI, 0, true);     // the top half, from one side to the other
+      const z0 = sp.half - 0.16, zd = W / 2 - z0;     // out to the car's full width, so the tyre sits inside the flare
+      for (const s of [-1, 1]) {
+        const geo = new THREE.ExtrudeGeometry(shape, { depth: zd, bevelEnabled: false });
+        geo.translate(a.x, r, s > 0 ? z0 : -W / 2);
+        const flare = new THREE.Mesh(geo, paint);
+        flare.castShadow = true;
+        this.body.add(flare);
+      }
+    }
+
+    // Dark parts: splitter, diffuser and trims
+    for (const d of sp.dark) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(d.s[0], d.s[1], d.s[2]), dark);
+      m.position.set(d.p[0], d.p[1], d.p[2]);
+      this.body.add(m);
+    }
 
     // Lights
     this.brakeMat = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff1010, emissiveIntensity: 0.2 });
     this.headMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2d0, emissiveIntensity: 1.5 });
-    for (const s of [-1, 1]) {
-      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.45), this.brakeMat);
-      tail.position.set(b - 0.08, 0.62, s * 0.62);
+    for (const t of sp.tails) {
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(t.s[0], t.s[1], t.s[2]), this.brakeMat);
+      tail.position.set(t.p[0], t.p[1], t.p[2]);
       this.body.add(tail);
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.38), this.headMat);
-      head.position.set(f - 0.12, 0.5, s * 0.6);
-      head.rotation.z = -0.5;
+    }
+    for (const hd of sp.heads) {
+      const head = new THREE.Mesh(new THREE.BoxGeometry(hd.s[0], hd.s[1], hd.s[2]), this.headMat);
+      head.position.set(hd.p[0], hd.p[1], hd.p[2]);
+      head.rotation.z = hd.rz;
       this.body.add(head);
     }
 
@@ -164,27 +289,28 @@ export class CarView {
     for (const m of [this.sideMat, this.plateMat]) m.userData.alpha = true;
     this.decals = new THREE.Group();
     this.body.add(this.decals);
-    const sw = SIDE.x1 - SIDE.x0, sh = SIDE.y1 - SIDE.y0, sideGeo = new THREE.PlaneGeometry(sw, sh);
+    const sw = sp.side.w, sh = sw * SIDE_ASPECT, sideGeo = new THREE.PlaneGeometry(sw, sh);
     this.sides = [1, -1].map(sgn => {
       const m = new THREE.Mesh(sideGeo, this.sideMat);
-      m.position.set((SIDE.x0 + SIDE.x1) / 2, (SIDE.y0 + SIDE.y1) / 2, sgn * (W / 2 + 0.004));
+      m.position.set(sp.side.x, sp.side.y, sgn * (sp.half + 0.004));
       if (sgn < 0) m.rotation.y = Math.PI;
       this.decals.add(m);
       return m;
     });
-    // number plate on the bonnet, lying on the surface 0.5 m behind the nose, upright for a driver behind the car
+    // number plate on the bonnet, lying on the surface half way along the bonnet curve, upright for a driver behind the car
     {
-      const f = L / 2, u = 0.5, v = 1 - u, c0 = [f, 0.42], c1 = [f - 0.25, 0.62], c2 = [f - 1.0, 0.72];
+      const pl = sp.plate, u = 0.5, v = 1 - u, c0 = pl.c0, c1 = pl.c1, c2 = pl.c2;
       const px = v * v * c0[0] + 2 * v * u * c1[0] + u * u * c2[0], py = v * v * c0[1] + 2 * v * u * c1[1] + u * u * c2[1];
       const tx = 2 * v * (c1[0] - c0[0]) + 2 * u * (c2[0] - c1[0]), ty = 2 * v * (c1[1] - c0[1]) + 2 * u * (c2[1] - c1[1]);
       const m = Math.hypot(tx, ty), nx = ty / m, ny = -tx / m;      // outward normal (the tangent runs towards the tail)
-      const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.44), this.plateMat);
-      plate.position.set(px + nx * 0.114, py + ny * 0.114, 0);
+      const plate = new THREE.Mesh(new THREE.PlaneGeometry(pl.size, pl.size), this.plateMat);
+      plate.position.set(px + nx * pl.off, py + ny * pl.off, 0);
       // basis: right = +z, up = towards the nose (along the surface, against the tangent), normal = outward
       plate.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(-tx / m, -ty / m, 0), new THREE.Vector3(nx, ny, 0)));
       this.plate = plate;
       this.decals.add(plate);
     }
+    this._pieces = sp.stripes.map(({ path, off }) => ({ pts: samplePath(path), off }));
     this.stripes = [new THREE.Mesh(new THREE.BufferGeometry(), this.stripeMat), new THREE.Mesh(new THREE.BufferGeometry(), this.stripeMat)];
     for (const m of this.stripes) { m.visible = false; this.decals.add(m); }
     this._style = -1;
@@ -215,9 +341,8 @@ export class CarView {
     this.stripeMat.color.set(l.stripe);
     if (l.style !== this._style) {
       for (const m of this.stripes) m.geometry.dispose();
-      const L = this.cfg.length;
-      if (l.style === 1) { this.stripes[0].geometry = stripeGeometry(L, 0, 0.34); this.stripes[1].geometry = new THREE.BufferGeometry(); }
-      else if (l.style === 2) { this.stripes[0].geometry = stripeGeometry(L, -0.2, 0.1); this.stripes[1].geometry = stripeGeometry(L, 0.2, 0.1); }
+      if (l.style === 1) { this.stripes[0].geometry = stripeGeometry(this._pieces, 0, 0.34); this.stripes[1].geometry = new THREE.BufferGeometry(); }
+      else if (l.style === 2) { this.stripes[0].geometry = stripeGeometry(this._pieces, -0.2, 0.1); this.stripes[1].geometry = stripeGeometry(this._pieces, 0.2, 0.1); }
       else { this.stripes[0].geometry = new THREE.BufferGeometry(); this.stripes[1].geometry = new THREE.BufferGeometry(); }
       this._style = l.style;
     }
@@ -274,8 +399,9 @@ export class CarView {
     this.body.position.y = car.vibration;
 
     // DRS flap: eases open while the car's DRS is on and shuts otherwise. Remote cars get the flag from their packets (src/ghosts.js).
+    // A class with no rear wing has no flap to move.
     this._flap = stepFlap(this._flap, car.drs ? 1 : 0, dt);
-    this.flapPivot.rotation.z = -flapAngle(this._flap);     // negative z lifts the trailing edge (the flap's tail is at -x)
+    if (this.flapPivot) this.flapPivot.rotation.z = -flapAngle(this._flap);     // negative z lifts the trailing edge (the flap's tail is at -x)
 
     const steer = lerp(p.steer, car.steer), wheel = lerp(p.wheel, car.wheelSpinAngle);
     for (const w of this.wheels) {
