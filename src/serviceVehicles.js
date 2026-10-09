@@ -521,7 +521,7 @@ export function createVehicleMeshes(plan, ground) {
     g.setAttribute('aFx', new THREE.Float32BufferAttribute(acc.fx, 1));
     g.setAttribute('aPh', new THREE.Float32BufferAttribute(acc.ph, 1));
     const m = new THREE.Mesh(g, mat);
-    m.castShadow = true; m.receiveShadow = true; m.matrixAutoUpdate = false;
+    m.castShadow = false; m.receiveShadow = true; m.matrixAutoUpdate = false;   // no shadow casting: the sun pass would draw the whole set again (the crowded stretch is at the triangle budget)
     m.userData.debug = 'vehicles';
     m.onBeforeRender = () => { uniforms.uTime.value = performance.now() / 1000; };
     group.add(m);
