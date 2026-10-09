@@ -27,6 +27,7 @@ export class CameraRig {
     this._look = new THREE.Vector3();
     this.lookYaw = 0; this.lookPitch = 0;   // free look offsets, radians
     this.dragging = false; this.stick = [0, 0];
+    this.extraFov = 0;   // degrees added on top of the speed widening, set by the slipstream effect (src/slipFx.js)
   }
 
   // mouse drag: dx, dy in pixels
@@ -104,7 +105,7 @@ export class CameraRig {
       this.yaw = null;
     }
 
-    const fov = BASE_FOV + SPEED_FOV * Math.min(1, Math.max(0, car.fwdSpeed) / 75);
+    const fov = BASE_FOV + SPEED_FOV * Math.min(1, Math.max(0, car.fwdSpeed) / 75) + this.extraFov;
     if (Math.abs(cam.fov - fov) > 0.05) { cam.fov += (fov - cam.fov) * ease(3, dt); cam.updateProjectionMatrix(); }
   }
 }

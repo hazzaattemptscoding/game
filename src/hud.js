@@ -49,6 +49,7 @@ export class Hud {
       <div class="hud-flash" id="h-flash"></div>
       <div class="hud-warn" id="h-warn"></div>
       <div class="hud-dash">
+        <div class="hud-slip" id="h-slip" hidden><i class="hud-slip-dot"></i><span>SLIPSTREAM</span><span class="hud-slip-bar"><i id="h-slip-bar"></i></span></div>
         <div class="hud-rev"><i id="h-rev"></i></div>
         <div class="hud-main">
           <div class="hud-speed"><b id="h-speed">0</b><span id="h-unit">mph</span></div>
@@ -65,7 +66,7 @@ export class Hud {
       <pre class="hud-debug" id="h-debug"></pre>
       <div class="hud-help" id="h-help">Arrows or WASD to drive · Space for DRS · R reset · C camera · L racing line · Esc menu</div>`;
     const $ = id => root.querySelector('#' + id);
-    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), mini: $('h-mini'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), ping: $('h-ping'), live: $('h-live'), liveT: $('h-live-t'), liveBar: $('h-live-bar'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr') };
+    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), mini: $('h-mini'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), ping: $('h-ping'), live: $('h-live'), liveT: $('h-live-t'), liveBar: $('h-live-bar'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr'), slip: $('h-slip'), slipBar: $('h-slip-bar') };
     this.root = root;
     this._layout = '';
     this.perf = 'FPS';    // the FPS readout text, set from the loop (src/main.js)
@@ -139,6 +140,13 @@ export class Hud {
     const rev = Math.max(0, (car.rpm - car.cfg.idleRpm) / (car.cfg.redline - car.cfg.idleRpm));
     style(e.rev, `scaleX(${Math.min(1, rev).toFixed(3)})`);
     cls(e.rev, car.rpm > car.cfg.upshiftRpm - 300 ? 'hot' : '');
+
+    // slipstream chip: shows while the eased wake strength is over 0.1 (and stays until it is under 0.07, so it does not flicker at the edge)
+    const wk = car.wake || 0, slipShown = !e.slip.hidden;
+    if (wk > (slipShown ? 0.07 : 0.1)) {
+      if (slipShown === false) e.slip.hidden = false;
+      style(e.slipBar, `scaleX(${wk.toFixed(2)})`);
+    } else if (slipShown) e.slip.hidden = true;
 
     cls(e.drs, car.drs ? 'on' : car.cfg.hasDRS !== false && track.inDRS(car.loc.s) ? 'zone' : '');   // no DRS on a car without it
     cls(e.pit, car.pitLimiter ? 'on' : '');

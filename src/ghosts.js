@@ -393,7 +393,7 @@ export class Ghosts {
       g.ent.setPose(pose);
       g.ent.setOpacity(g.opacity);
       const f = this.fx[nfx] || (this.fx[nfx] = {});
-      f.x = pose.x; f.y = pose.y; f.z = pose.z; f.h = pose.h; f.v = Math.hypot(pose.vx, pose.vz); f.brk = pose.brk; f.o = g.opacity; f.len = carById(g.carId).length; nfx++;
+      f.x = pose.x; f.y = pose.y; f.z = pose.z; f.h = pose.h; f.v = Math.hypot(pose.vx, pose.vz); f.brk = pose.brk; f.o = g.opacity; f.len = carById(g.carId).length; f.id = g.id; f.cls = carById(g.carId).id; nfx++;
       g.ent.setLabel(project ? project(pose.x, pose.y + 2.1, pose.z) : null, this.nameOf(g), g.opacity, g.livery);
     }
     this.fx.length = nfx;

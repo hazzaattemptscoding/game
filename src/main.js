@@ -50,6 +50,8 @@ import '@fontsource/barlow/latin-500.css';
 import '@fontsource/barlow/latin-600.css';
 
 import { createCarFx } from './carFx.js';
+import { wakeFor } from './slipstream.js';
+import { createSlipFx } from './slipFx.js';
 const params = new URLSearchParams(location.search);
 const settings = loadSettings();
 
@@ -107,8 +109,9 @@ scene.add(marshal.group);
 const marshalWatch = new MarshalWatch(marshal, track);
 const racingLine = createRacingLine(track);   // optional colour coded racing line (L key, Settings); the page ?line=1 turns it on
 scene.add(racingLine.group);
+const slipFx = createSlipFx(canvas);   // speed lines and the wider view while drafting (src/slipFx.js)
 const carFx = createCarFx(scene);     // headlamp and tail light glow, road pools and spray for the other cars
-const selfFx = { x: 0, y: 0, z: 0, h: 0, v: 0, brk: 0, o: 1, self: true };
+const selfFx = { x: 0, y: 0, z: 0, h: 0, v: 0, brk: 0, o: 1, self: true, id: 'self', cls: 'GT' };
 if (params.get('line') === '1') settings.racingLine = true;
 // LED screen on the start gantry (gantryScreen.js draws it, this puts it on the mesh)
 const loadImage = src => { const i = new Image(); i.src = src; return i; };
@@ -328,7 +331,13 @@ function frame(now) {
     let keysNow = null, stepped = false;
     while (loop.due()) {
       stepped = true;
-      if (lobby.active) car.collideCars(lobby.solids(now - loop.acc * 1000));
+      if (lobby.active) {
+        const solids = lobby.solids(now - loop.acc * 1000);   // the other players where they are drawn now, the same poses the collisions use
+        car.collideCars(solids);
+        // slipstream: only live cars count (never the ghost lap), and only when the session allows it (not in a time trial)
+        const w = wakeFor(car, solids, { enabled: dir.api.slipstreamOn(), length: car.cfg.length });
+        car.setWake(w.strength, w.distance);
+      }
       car.step(drive());
       audio.latch(car);
       simTime += STEP;
@@ -410,7 +419,8 @@ function frame(now) {
   const cursorOn = settings.steering === 'cursor';
   steerBar.hidden = !(cursorOn && hudOn(settings, 'steerBar'));
   if (cursorOn) steerMark.style.left = `${(50 + playerInput.steer * 44).toFixed(1)}%`;
-  selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake; selfFx.len = car.cfg.length;
+  selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake; selfFx.len = car.cfg.length; selfFx.v = Math.max(0, car.fwdSpeed); selfFx.cls = car.cfg.id;
+  rig.extraFov = slipFx.update(paused || topDown ? 0 : car.wake, dt, now);
   carFx.update(dt, rig.camera, lobby.ghosts.fx, selfFx, env.resolved, topDown);
   renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);
