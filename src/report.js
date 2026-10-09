@@ -4,6 +4,17 @@ import { SURF, SURF_NAMES } from './track.js';
 const DB_NAME = 'lakeside-report-store';
 const STORE_NAME = 'reports';
 const SURFACE_NAME = SURF_NAMES;
+const DB_LIMIT = 200000;   // a database document may be 256 KiB; stay well under it
+
+// A report as it goes into the artifact database: the same fields, with the long input and telemetry lists cut to their
+// last stretch, and the screenshots dropped if the document would still be too big.
+export function compactReport(report) {
+  const tail = (list, n) => Array.isArray(list) && list.length > n ? list.slice(-n) : list;
+  let doc = { ...report, inputTimeline: tail(report.inputTimeline, 300), telemetry: tail(report.telemetry, 300) };
+  if (JSON.stringify(doc).length > DB_LIMIT) doc = { ...doc, screenshots: { omitted: true } };
+  if (JSON.stringify(doc).length > DB_LIMIT) doc = { ...doc, inputTimeline: tail(doc.inputTimeline, 60), telemetry: tail(doc.telemetry, 60) };
+  return doc;
+}
 
 export class ReportTool {
   constructor({ canvas, renderer, camera, scene, world, terrain, car, track, input, settings, history, onClose }) {
@@ -266,14 +277,21 @@ export class ReportTool {
       const share = navigator.share && navigator.canShare?.({ files: [file] }) ? navigator.share({ files: [file], title: 'Lakeside track report' }) : null;
       const localId = await this.store(report);
       let delivered = false;
-      // In the live artifact the page may not start a download itself: the viewer's downloads capability does it,
-      // with a confirmation. Anywhere else a plain download link works.
-      let handed = false;
+      // In the live artifact a report goes into the artifact's own database, where the owner (and Claude) can read it
+      // without a file. If that is not possible the viewer's downloads capability offers the file, with a confirmation.
+      // Anywhere else a plain download link works.
+      let sent = false, handed = false, failure = '';
       try {
-        const downloads = await window.claude?.use?.('downloads');
-        if (downloads) { await downloads.save({ filename, data: new Blob([json], { type: 'application/json' }) }); handed = true; delivered = true; }
-      } catch (error) { if (error?.code === 'declined') this.status.textContent = 'Download declined, report kept in this browser'; }
-      if (!handed && !window.claude) {
+        const db = await window.claude?.use?.('db');
+        if (db) { await db.collection('reports').doc(report.id).set(compactReport(report)); sent = true; delivered = true; }
+      } catch (error) { failure = error?.code || error?.message || 'unknown error'; }
+      if (!sent) {
+        try {
+          const downloads = await window.claude?.use?.('downloads');
+          if (downloads) { await downloads.save({ filename, data: new Blob([json], { type: 'application/json' }) }); handed = true; delivered = true; }
+        } catch (error) { failure = error?.code === 'declined' ? 'download declined' : failure || error?.code || error?.message || 'unknown error'; }
+      }
+      if (!sent && !handed && !window.claude) {
         const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
         const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
       }
@@ -286,7 +304,7 @@ export class ReportTool {
         catch (error) { if (error.name !== 'AbortError') throw error; }
       }
       if (delivered) await this.remove(localId);
-      if (!this.status.textContent.startsWith('Download declined')) this.status.textContent = delivered ? (handed ? 'Report downloaded' : 'Report sent') : 'Saved in this browser';
+      this.status.textContent = sent ? 'Report sent' : handed ? 'Report downloaded' : delivered ? 'Report sent' : `Saved in this browser only${failure ? ` (${failure})` : ''}`;
       await this.refreshCount();
     } catch (error) {
       this.status.textContent = `Could not save report: ${error.message}`;
