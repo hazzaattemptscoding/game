@@ -1070,7 +1070,7 @@ function buildBarriers(T, corners) {
     // funnels in, and ends in a tyre stack, so there is no gap between the barrier and the bridge
     for (const run of runsOf(N, i => T.isBridge[i] || nearBridge[i])) {
       follow(BARRIER.PARAPET, sd, run, i => g * T.wall[sd][i], 1, { why: 'bridge parapet over the main straight and its approach' });
-      for (const ends of [run.slice(0, 5), run.slice(-5)]) follow(BARRIER.TYRES, sd, ends, i => g * (T.wall[sd][i] + 0.3), 1, { impact: true, why: 'tyre stack at the end of the bridge parapet', spec: { length: 4, offset: T.wall[sd][ends[0]], angle: 0 } });
+      for (const ends of [run.slice(0, 5), run.slice(-5)]) follow(BARRIER.TYRES, sd, ends, i => g * (T.wall[sd][i] + 0.05), 1, { impact: true, bridgeEnd: true, why: 'tyre stack at the end of the bridge parapet', spec: { length: 4, offset: T.wall[sd][ends[0]], angle: 0 } });
     }
     // 4. the containment wall: ONE line that keeps a car on the flat ground. A 1.2 m plain sponsored tyre wall, except along
     // the tall stretches above (same line, taller, tapering over TALL_RAMP m), so the eye sees one line of barrier.
@@ -1200,6 +1200,8 @@ function buildBarriers(T, corners) {
     for (const p of P) p[1] = T.groundAt(p[0], p[2], p[3]);
   }
 
+  joinBarriers(T);
+
   // collision segments, each with a face normal pointing back towards the track
   T.segs = [];
   for (const b of T.barriers) {
@@ -1242,6 +1244,73 @@ function buildBarriers(T, corners) {
 
 // Deepest barrier penetration for one corner of a car (px, pz) at height py,
 // with the car's centre at (cx, cz). A face only pushes back a car whose centre is in front of it.
+// Where two barrier lines meet on the same side, the ends must touch. A lower-priority line (the containment wall, the low
+// walls of the pit lane) takes the higher one's end: it gains a point at the partner's sample and the partner's offset, and its
+// last JOIN_BLEND metres ease sideways onto that offset, so there is no hole and no sideways step at the join. The structures
+// (bridge parapet and its end stacks, street walls, the pit wall) never move. Pit tyre stacks stand in front of the pit wall
+// on purpose and take no part.
+const JOIN_BLEND = 12;  // metres over which a barrier line eases onto the offset of the line it joins (a gentle slope, no kink)
+function joinBarriers(T) {
+  const L = T.length, N = T.N;
+  const prio = b => b.type === BARRIER.PARAPET ? 5 : b.type === BARRIER.TYRES ? (b.bridgeEnd ? 5 : 0)
+    : b.type === BARRIER.CONCRETE || b.type === BARRIER.PITWALL ? 4 : b.type === BARRIER.PITSEP || b.type === BARRIER.PITOUTER ? 2
+    : b.type === BARRIER.ARMCO ? 1 : 0;
+  const lat = p => (p[0] - T.x[p[3]]) * T.nx[p[3]] + (p[2] - T.z[p[3]]) * T.nz[p[3]];
+  const ds = (i, j) => { const d = ((T.s[i] - T.s[j]) % L + L) % L; return d > L / 2 ? d - L : d; };
+  const ends = [];
+  for (const b of T.barriers) if (prio(b) > 0 && b.pts.length > 1) ends.push({ b, k: 0, p: b.pts[0] }, { b, k: b.pts.length - 1, p: b.pts[b.pts.length - 1] });
+  const moves = [];
+  for (const E of ends) {
+    const pE = E.p, dir = E.k === 0 ? -1 : 1;
+    let best = null;
+    for (const F of ends) {
+      if (F.b === E.b || F.b.side !== E.b.side || prio(F.b) <= prio(E.b)) continue;
+      const pF = F.b.pts[F.k], sd = ds(pF[3], pE[3]);
+      if (Math.abs(sd) > 3 || sd * dir < 0) continue;     // the partner's end lies beyond this end, within 3 m
+      const gap = Math.hypot(pF[0] - pE[0], pF[2] - pE[2]);
+      if (gap <= 0.05 || gap > 1.5) continue;
+      if (!best || prio(F.b) > prio(best.b) || (prio(F.b) === prio(best.b) && Math.abs(sd) < Math.abs(best.sd))) best = { b: F.b, p: pF, sd };
+    }
+    if (best) moves.push({ E, best });
+  }
+  // lines the 4 m rule holds back from the track edge: they cannot ease in past it, so the two lines meet at that offset instead
+  const EDGE_RULE = new Set([BARRIER.ARMCO, BARRIER.TYRES, BARRIER.PITOUTER]);
+  // the blend moves points sideways; a line held to the 4 m rule is never eased in past it, point by point
+  const shift = (b, pE, delta, held) => {
+    for (const p of b.pts) {
+      const dist = Math.abs(ds(p[3], pE[3]));
+      if (dist > JOIN_BLEND || !delta) continue;
+      const f = 1 - dist / JOIN_BLEND, w = f * f * (3 - 2 * f), i = p[3];
+      let d = lat(p) + delta * w;
+      if (held) { const edge = T.hw[i] + T.kerb[b.side][i] + T.sausage[b.side][i] + MIN_EDGE + 0.02; if (Math.abs(d) < edge) d = Math.sign(d || -1) * edge; }
+      p[0] = T.x[i] + T.nx[i] * d; p[2] = T.z[i] + T.nz[i] * d; p[1] = T.groundAt(p[0], p[2], i);
+    }
+  };
+  for (const { E, best } of moves) {
+    // the end is held by its point, not its index: an earlier join may have added a point at the other end of the same line
+    const b = E.b, pE = E.p, dir = E.k === 0 ? -1 : 1, iF = best.p[3], g = b.side ? 1 : -1, at = b.pts.indexOf(pE);
+    let dT = lat(best.p);
+    if (EDGE_RULE.has(b.type)) {
+      const edge = T.hw[iF] + T.kerb[b.side][iF] + T.sausage[b.side][iF] + MIN_EDGE + 0.02;
+      dT = g * Math.max(Math.abs(dT), edge);
+    }
+    const dE = lat(pE), best_p = best.p, partnerD = lat(best_p);
+    // the lines near the end ease onto the meeting offset, and so does the partner's end
+    shift(b, pE, dT - dE, EDGE_RULE.has(b.type));
+    shift(best.b, best_p, dT - partnerD, false);
+    const sd = best.sd;
+    if (sd !== 0) {
+      const q = [T.x[iF] + T.nx[iF] * dT, 0, T.z[iF] + T.nz[iF] * dT, iF];
+      q[1] = T.groundAt(q[0], q[2], iF);
+      // the end point gives way to the joint when the piece's next point is within 3 m of it (a short last piece would kink); else it is added
+      const near = dir > 0 ? b.pts[at - 1] : b.pts[at + 1];
+      if (near && Math.abs(ds(iF, near[3])) <= 3) b.pts[at] = q;
+      else if (dir > 0) { b.pts.push(q); if (b.hs) b.hs.push(0); }
+      else { b.pts.unshift(q); if (b.hs) b.hs.unshift(0); }
+    } else { pE[0] = T.x[pE[3]] + T.nx[pE[3]] * dT; pE[2] = T.z[pE[3]] + T.nz[pE[3]] * dT; pE[1] = T.groundAt(pE[0], pE[2], pE[3]); }
+  }
+}
+
 function collide(T, px, pz, cx, cz, py) {
   const { cell, map } = T.segGrid, gx = Math.floor(px / cell), gz = Math.floor(pz / cell);
   let best = null;
