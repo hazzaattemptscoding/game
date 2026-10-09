@@ -17,6 +17,8 @@ import { TRACK } from './track-data.js';
 export const MAX_BODY = 64 * 1024;
 export const NAME_MAX = 16, BUILD_MAX = 40;
 export const MIN_TIME = 60, MAX_TIME = 900, MIN_SECTOR = 5, SECTOR_TOLERANCE = 0.05;
+// The car classes (src/cars.js CAR_IDS, kept in step: tools/cars.js checks it). The GT is the default for a lap with no car.
+export const CAR_IDS = ['GT', 'GT1', 'CITY'];
 export const TOKEN_RE = /^[0-9a-f]{32}$/;
 export const GHOST_TOP = 10;
 export const GHOST_MIN_PER_S = 8, GHOST_MAX_PER_S = 12, GHOST_SLACK = 10;
@@ -27,7 +29,13 @@ export const GHOST_MAX_SPEED = 120;   // m/s, over any one step
 // quick driver, 1:30.1) averages 42.6 m/s. 53 m/s is 25 % above that, a margin for a better line or a better driver. So no lap of
 // this length can be posted under LAP_MIN_TIME (72.4 s), and no ghost can cover its path faster than MAX_AVG_SPEED.
 export const LAP_LENGTH = TRACK.length;   // m
-export const MAX_AVG_SPEED = 53;          // m/s
+export const MAX_AVG_SPEED = 53;          // m/s, the GT and the GT1
+// The cap per class. The GT1 is quicker than the GT, so it has the same cap (its floor is the same 72.4 s); the 108 averages about
+// 30 m/s on this lap (2:15 to 2:20 on the autopilot), so 40 m/s is far above it and far below any GT or GT1 lap.
+export const MAX_AVG_SPEED_BY_CAR = { GT: MAX_AVG_SPEED, GT1: MAX_AVG_SPEED, CITY: 40 };
+export const carMaxSpeed = car => MAX_AVG_SPEED_BY_CAR[car] || MAX_AVG_SPEED;
+// the fastest lap of this length a class can post, in seconds (72.4 for the GT and GT1, about 96 for the 108)
+export const carMinTime = car => LAP_LENGTH / carMaxSpeed(car);
 export const LAP_MIN_TIME = LAP_LENGTH / MAX_AVG_SPEED;
 export const GHOST_MIN_PATH = 0.9 * LAP_LENGTH;   // m. Recorded laps run about 0.98 of the length (the line sits inside the centreline on corners)
 // The ghost must stay this close to the centreline. The tarmac is 13 m wide and the pit lane sits 15.5 m off the centreline, so 60 m
@@ -40,11 +48,18 @@ export const RATE_LIMIT = 20, RATE_WINDOW_MS = 10 * 60 * 1000;
 export const DEFAULT_N = 20, MAX_N = 100;
 
 const WEATHER = ['dry', 'wet'], MODE = ['solo', 'online'], DIR = ['fwd', 'rev'], ASSISTS = ['on', 'off'];
-export const BOARDS = WEATHER.flatMap(w => MODE.flatMap(m => DIR.flatMap(d => ASSISTS.map(a => `${w}-${m}-${d}-${a}`))));
+// one board per mix of conditions, for each car class. The GT keeps the names it had before classes; the others add the id.
+const suffix = car => (car === 'GT' ? '' : '-' + car.toLowerCase());
+export const BOARDS = CAR_IDS.flatMap(car => WEATHER.flatMap(w => MODE.flatMap(m => DIR.flatMap(d => ASSISTS.map(a => `${w}-${m}-${d}-${a}${suffix(car)}`)))));
 
 export const parseTimesRoute = pathname => pathname === '/times' || pathname === '/times/' ? 'times' : pathname === '/ghost' || pathname === '/ghost/' ? 'ghost' : null;
 
-export const boardKey = b => b && typeof b === 'object' && WEATHER.includes(b.weather) && MODE.includes(b.mode) && DIR.includes(b.dir) && ASSISTS.includes(b.assists) ? `${b.weather}-${b.mode}-${b.dir}-${b.assists}` : null;
+// the board name of a board object; a missing car is the GT, an unknown one is no board
+export const boardKey = b => {
+  if (!b || typeof b !== 'object' || !WEATHER.includes(b.weather) || !MODE.includes(b.mode) || !DIR.includes(b.dir) || !ASSISTS.includes(b.assists)) return null;
+  const car = b.car === undefined ? 'GT' : b.car;
+  return CAR_IDS.includes(car) ? `${b.weather}-${b.mode}-${b.dir}-${b.assists}${suffix(car)}` : null;
+};
 export const validBoardKey = k => typeof k === 'string' && BOARDS.includes(k);
 
 // Letters of any language, digits, space . _ -. Whitespace of any kind becomes one space, other control characters are removed.
@@ -85,7 +100,7 @@ export function distToLine(x, z, pts = TRACK.line) {
 }
 
 // null when the ghost is fine, else a plain reason. The checks run from the cheapest to the most work.
-export function ghostProblem(b64, time) {
+export function ghostProblem(b64, time, car = 'GT') {
   const g = decodeGhost(b64);
   if (!g) return 'ghost is not a whole number of samples';
   const n = g.length / 4;
@@ -102,7 +117,7 @@ export function ghostProblem(b64, time) {
     path += d;
   }
   if (path < GHOST_MIN_PATH) return 'ghost is too short for a full lap';
-  if (path > time * MAX_AVG_SPEED) return 'ghost averages too fast for a lap of this length';
+  if (path > time * carMaxSpeed(car)) return 'ghost averages too fast for a lap of this length';
   for (let i = 0; i < n; i++) if (distToLine(g[i * 4 + 1], g[i * 4 + 2]) > OFF_TRACK_M) return 'ghost leaves the track';
   const near = (x, z, [px, pz]) => Math.hypot(x - px, z - pz) <= LINE_TOL_M;
   if (!near(g[1], g[2], TRACK.start) || !near(g[(n - 1) * 4 + 1], g[(n - 1) * 4 + 2], TRACK.start)) return 'ghost does not start and finish on the start/finish line';
@@ -122,11 +137,15 @@ export function validateLap(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { error: 'body must be a JSON object' };
   const name = cleanDriverName(body.name);
   if (!name) return { error: `name must be 1 to ${NAME_MAX} characters: letters, digits, space . _ -` };
-  const board = boardKey(body.board);
+  // the car: at the top level (the game sends it there too) or on the board; a missing one is the GT
+  const car = body.car === undefined ? (body.board && body.board.car !== undefined ? body.board.car : 'GT') : body.car;
+  if (!CAR_IDS.includes(car)) return { error: 'unknown car' };
+  if (body.board && body.board.car !== undefined && body.board.car !== car) return { error: 'car and board car differ' };
+  const board = boardKey({ ...(body.board || {}), car });
   if (!board) return { error: 'unknown board' };
   const { time, sectors } = body;
   if (!isNum(time) || time < MIN_TIME || time > MAX_TIME) return { error: `time must be a number from ${MIN_TIME} to ${MAX_TIME} seconds` };
-  if (time < LAP_MIN_TIME) return { error: `time is too fast for a lap of this length (at least ${LAP_MIN_TIME.toFixed(1)} seconds)` };
+  if (time < carMinTime(car)) return { error: `time is too fast for a lap of this length in this car (at least ${carMinTime(car).toFixed(1)} seconds)` };
   if (!Array.isArray(sectors) || sectors.length !== 3 || !sectors.every(isNum)) return { error: 'sectors must be three numbers' };
   if (sectors.some(s => s < MIN_SECTOR)) return { error: `every sector must be at least ${MIN_SECTOR} seconds` };
   if (Math.abs(sectors[0] + sectors[1] + sectors[2] - time) > SECTOR_TOLERANCE) return { error: 'sectors must add up to the lap time' };
@@ -134,9 +153,9 @@ export function validateLap(body) {
   if (body.build !== undefined && (typeof body.build !== 'string' || body.build.length > BUILD_MAX)) return { error: `build must be a string of at most ${BUILD_MAX} characters` };
   if (body.ghost === undefined || body.ghost === null) return { error: 'ghost is required: the line of the lap, sent with every lap' };
   if (typeof body.ghost !== 'string') return { error: 'ghost must be a string' };
-  const p = ghostProblem(body.ghost, time);
+  const p = ghostProblem(body.ghost, time, car);
   if (p) return { error: p };
-  return { name, key: driverKey(name), board, time: ms(time), sectors: sectors.map(ms), ghost: body.ghost, token: body.token };
+  return { name, key: driverKey(name), board, car, time: ms(time), sectors: sectors.map(ms), ghost: body.ghost, token: body.token };
 }
 
 // The ownership token is kept only as a SHA-256 hash (hex), in the store, so a copy of the rows holds no token.

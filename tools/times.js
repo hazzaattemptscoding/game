@@ -74,8 +74,10 @@ for (const bad of ['', '   ', '\u0000', 'a<b', 'a/b', 'a@b', 'a!', '😀', 'a,b'
 eq(T.driverKey('HaRRy'), 'harry', 'driver key is lowercase');
 
 // ---- boards ----
-eq(T.BOARDS.length, 16, '16 boards');
-check(new Set(T.BOARDS).size === 16 && T.BOARDS.includes(BK) && T.BOARDS.includes('wet-online-rev-off'), 'board keys');
+eq(T.BOARDS.length, 48, '16 boards for each of the three car classes');
+check(new Set(T.BOARDS).size === 48 && T.BOARDS.includes(BK) && T.BOARDS.includes('wet-online-rev-off') && T.BOARDS.includes('wet-online-rev-off-city'), 'board keys (the GT keeps the old names)');
+eq(T.boardKey({ ...board, car: 'CITY' }), BK + '-city', 'a 108 board has the car on the end');
+eq(T.boardKey({ ...board, car: 'XX' }), null, 'an unknown car is no board');
 eq(T.boardKey(board), BK, 'board key from fields');
 for (const bad of [{ ...board, weather: 'snow' }, { ...board, mode: 'x' }, { ...board, dir: 'up' }, { ...board, assists: 'maybe' }, { weather: 'dry' }, null, BK]) eq(T.boardKey(bad), null, 'bad board ' + JSON.stringify(bad));
 

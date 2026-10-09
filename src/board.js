@@ -73,7 +73,11 @@ const cleanEntry = e => e && typeof e === 'object' && Number.isFinite(e.time) &&
 
 // the saved list, or [] (private mode, nothing saved, or damaged data)
 // reverse laps are kept in their own list
-export const bestKey = (reverse = false) => (reverse ? BEST_KEY + '.reverse' : BEST_KEY);
+// Each car class keeps its own list. The GT keeps the old keys, so a saved list is still there; the others add the car's id.
+export const bestKey = (reverse = false, car = 'GT') => {
+  const base = reverse ? BEST_KEY + '.reverse' : BEST_KEY;
+  return !car || car === 'GT' ? base : base + '.' + String(car).toLowerCase();
+};
 
 export function loadBest(storage = globalThis.localStorage, key = BEST_KEY) {
   try {
@@ -101,7 +105,8 @@ const cell = c => `<td class="${c.cls}">${sec(c.time)}</td>`;
 // ctx: { timer, lobby, storage }. `lobby.active` and `lobby.board(own)` come from lobby.js. Returns { show, hide, toggle, update }.
 export function createBoard(root, ctx) {
   const storage = ctx.storage || (() => { try { return localStorage; } catch (e) { return null; } })();
-  let key = bestKey(!!ctx.timer.reverse), best = loadBest(storage, key);
+  const carNow = () => (ctx.car ? ctx.car() : 'GT');
+  let key = bestKey(!!ctx.timer.reverse, carNow()), best = loadBest(storage, key);
   let personal = personalSectors(best);     // from before this session: it is not updated as you drive
   let seen = ctx.timer.history.length, fresh = null, shown = false, lastDraw = -1;
 
@@ -122,7 +127,7 @@ export function createBoard(root, ctx) {
       html += `<section><h3>Room</h3><table><thead><tr><th></th><th>Driver</th><th>Laps</th><th>Best</th><th>Last</th><th>Gap</th></tr></thead><tbody>${players.map((p, i) =>
         `<tr class="${p.me ? 'me' : ''}"><td>${i + 1}</td><td class="name">${esc(p.name)}${p.me ? ' <em>you</em>' : ''}</td><td>${p.laps}</td><td>${p.best ? fmtTime(p.best) : '-'}</td><td>${p.last ? fmtTime(p.last) : '-'}</td><td>${p.gap ? '+' + p.gap.toFixed(3) : ''}</td></tr>`).join('')}</tbody></table></section>`;
     } else {
-      html += `<section><h3>Your best laps${key === BEST_KEY ? '' : ', reverse'}</h3>${best.length ? `<table><thead><tr><th></th><th>Time</th><th>S1</th><th>S2</th><th>S3</th><th>Date</th></tr></thead><tbody>${best.map((e, i) =>
+      html += `<section><h3>Your best laps${ctx.timer.reverse ? ', reverse' : ''}${carNow() === 'GT' ? '' : ', ' + carNow()}</h3>${best.length ? `<table><thead><tr><th></th><th>Time</th><th>S1</th><th>S2</th><th>S3</th><th>Date</th></tr></thead><tbody>${best.map((e, i) =>
         `<tr class="${e === fresh ? 'me' : ''}"><td>${i + 1}</td><td>${fmtTime(e.time)}</td>${[0, 1, 2].map(k => `<td>${sec(e.sectors[k])}</td>`).join('')}<td>${esc(e.date)}${e.warn ? ' <em>invalid</em>' : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="bd-none">Finish a lap to start your list. It is kept in this browser.</p>'}</section>`;
     }
     root.innerHTML = html;
@@ -137,8 +142,8 @@ export function createBoard(root, ctx) {
     update(simTime, now) {
       const h = ctx.timer.history;
       if (h.length < seen) seen = h.length;       // the timer was reset
-      if (bestKey(!!ctx.timer.reverse) !== key) {  // the direction changed: switch to that direction's list
-        key = bestKey(!!ctx.timer.reverse); best = loadBest(storage, key); personal = personalSectors(best); fresh = null; lastDraw = -1;
+      if (bestKey(!!ctx.timer.reverse, carNow()) !== key) {  // the direction or the car changed: switch to that list
+        key = bestKey(!!ctx.timer.reverse, carNow()); best = loadBest(storage, key); personal = personalSectors(best); fresh = null; lastDraw = -1;
       }
       for (; seen < h.length; seen++) {
         const l = h[seen];

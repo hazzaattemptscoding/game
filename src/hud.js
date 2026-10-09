@@ -140,7 +140,7 @@ export class Hud {
     style(e.rev, `scaleX(${Math.min(1, rev).toFixed(3)})`);
     cls(e.rev, car.rpm > car.cfg.upshiftRpm - 300 ? 'hot' : '');
 
-    cls(e.drs, car.drs ? 'on' : track.inDRS(car.loc.s) ? 'zone' : '');
+    cls(e.drs, car.drs ? 'on' : car.cfg.hasDRS !== false && track.inDRS(car.loc.s) ? 'zone' : '');   // no DRS on a car without it
     cls(e.pit, car.pitLimiter ? 'on' : '');
     // each assist chip: struck through and dim when that assist is switched off, lit when it is working, grey when it is ready
     cls(e.tc, car.assistTc ? (car.tc ? 'act' : 'arm') : 'off');

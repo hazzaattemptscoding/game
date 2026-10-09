@@ -22,7 +22,7 @@ const FINISH_DELAY_MS = 3000;       // the car keeps rolling this long after the
 const JUMP_SHOW_MS = 3500;
 
 export function createDirector(g) {
-  const { car, timer, track, view, lobby, settings, params } = g;
+  const { car, timer, track, lobby, settings, params } = g;   // the view is read as g.view: a change of car class replaces it
   const flow = new Flow();
   const sessHud = createSessionHud(document.getElementById('sess'));
   let session = null, finishedAt = null, pausedAt = 0, pos = null, jumpShownUntil = 0, lastPhase = '';
@@ -172,6 +172,7 @@ export function createDirector(g) {
     getAutopilot: () => g.getAutopilot(),
     setAutopilot: v => g.setAutopilot(v),
     livery: () => g.liveryChanged(),
+    car: id => g.setCar(id),   // the garage's car class (src/cars.js)
     globalTimes: g.globalTimes || null,
     go(id) {
       if (id === 'practice') menu.push('setup', { mode: 'practice' });
@@ -207,7 +208,7 @@ export function createDirector(g) {
     car.placeAt(spot.s, spot.d);   // forward, on the grid: the timer goes back to forward too (the boards read it)
     timer.reverse = false;
     timer.markJump();
-    view.update(car, 1);
+    g.view.update(car, 1);
     menu.open('main', 'main');
     if (screen) { for (const s of [].concat(screen)) menu.push(s.id || s, s.params); }
   }

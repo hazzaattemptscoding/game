@@ -9,6 +9,7 @@ import { HUD_ELEMENTS, MAP_SIZES, MAP_POSITIONS, PRESET_ORDER, PRESET_NAMES, SCA
 import { boardLabel, cleanName as cleanTimesName } from './globalTimes.js';
 import { fmtTime } from './hud.js';
 import { loadBest, bestKey } from './board.js';
+import { CAR_LIST, carById } from './cars.js';
 import { ownLivery, localPlayerId, STRIPE_STYLES } from './livery.js';
 import { TIME_NAMES, WEATHER_NAMES } from './weather.js';
 
@@ -81,7 +82,7 @@ const setupDefaults = { laps: 5, custom: false, assists: 'any', racingLine: true
 export const raceSetup = settings => ({ ...setupDefaults, ...(settings.raceSetup || {}) });
 
 // the best valid lap saved in this browser (board.js keeps the list, fastest first), or null
-const bestTime = reverse => { const l = loadBest(undefined, bestKey(!!reverse)); return l.length ? l[0].time : null; };
+const bestTime = (reverse, car = 'GT') => { const l = loadBest(undefined, bestKey(!!reverse, car)); return l.length ? l[0].time : null; };
 
 // The circuit outline for the summary card: the track's own points, thinned to about 160 and fitted to the box.
 function trackSvg(track) {
@@ -149,9 +150,9 @@ function navList(ctx, activeId) {
 function driverChip(ctx) {
   const l = ownLivery(ctx.settings.livery, localPlayerId());
   const lobbyName = ctx.api.lobby && typeof ctx.api.lobby.name === 'function' ? ctx.api.lobby.name() : '';
-  const style = l.style ? STRIPE_STYLES[l.style] : null;
+  const style = l.style ? STRIPE_STYLES[l.style] : null, car = carById(ctx.settings.car).label;
   return h('div', 'driver', h('b', 'no', l.number >= 0 ? String(l.number) : '-'),
-    h('span', '', h('strong', '', l.name || lobbyName || 'Driver'), h('small', '', style ? `GT · ${style}` : 'GT')));
+    h('span', '', h('strong', '', l.name || lobbyName || 'Driver'), h('small', '', style ? `${car} · ${style}` : car)));
 }
 
 // The rail depends on the menu's context (menu.kind), not on the screen: from the main menu it is the main nav with the current
@@ -307,7 +308,7 @@ function setupScreen() {
       groups.append(...weatherRows(ctx, segRow, h, 'Conditions'));
 
       function refresh() {
-        const perLap = bestTime(false) || DEFAULT_LAP_S;
+        const perLap = bestTime(false, settings.car) || DEFAULT_LAP_S;
         big.replaceChildren(`${cur.laps} ${cur.laps === 1 ? 'lap' : 'laps'}`, h('small', '', `about ${Math.max(1, Math.round(cur.laps * perLap / 60))} min`));
         facts.replaceChildren(...fact('Start', 'Standing'), ...fact('Conditions', conditions()), ...fact('Assists', cur.assists === 'off' ? 'All off' : 'Any'), ...fact('Track limits', cur.trackLimits === 'warn' ? 'Warn only' : 'Penalty'));
       }
@@ -573,6 +574,7 @@ function timesScreen() {
         segRow('Session', [['solo', 'Solo'], ['online', 'Online']], () => board.mode, v => { board.mode = v; load(); }),
         segRow('Direction', [['fwd', 'Normal'], ['rev', 'Reverse']], () => board.dir, v => { board.dir = v; load(); }),
         segRow('Assists', [['on', 'On'], ['off', 'All off']], () => board.assists, v => { board.assists = v; load(); }),
+        segRow('Car', CAR_LIST.map(c => [c.id, c.label]), () => board.car, v => { board.car = v; load(); }),   // each car class has its own boards
       ];
       c.append(group('Board', ...rows));
       const ghostLine = h('div', 'row t-ghost');
@@ -595,6 +597,7 @@ function timesScreen() {
           const got = await client.ghost(board, e.name);
           if (!got || !gt.loadGhost({ ...got, board: { ...board } })) { status.textContent = 'That ghost could not be loaded.'; return; }
           showGhost();
+          if (board.car && board.car !== ctx.settings.car) ctx.api.car && ctx.api.car(board.car);   // race it in the class it was driven in
           const s = ctx.api.session && ctx.api.session();
           const wantRev = board.dir === 'rev';
           if (s && s.mode === 'practice' && !!s.reverse === wantRev) ctx.api.resume();
@@ -648,7 +651,7 @@ function garageScreen() {
       import('./garage.js').then(m => {
         if (dead) return;
         box.replaceChildren();
-        inst = m.mountGarage(box, { settings: ctx.settings, save: ctx.save, onChange: () => { ctx.api.livery && ctx.api.livery(); } });
+        inst = m.mountGarage(box, { settings: ctx.settings, save: ctx.save, onChange: () => { ctx.api.livery && ctx.api.livery(); }, onCar: id => { ctx.api.car && ctx.api.car(id); } });
       }).catch(() => { if (!dead) box.replaceChildren(h('p', 'm-sub', 'Coming soon.'), h('p', 'm-note', 'The garage is not ready yet.')); });
       return { dispose() { dead = true; if (inst && inst.dispose) inst.dispose(); } };
     },
