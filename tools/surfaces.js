@@ -6,6 +6,7 @@
 // Run with `npm run surfaces`. Fails if any count is above its limit.
 
 import { buildWorld, surfaceIndex, GROUND } from './lib/headless.js';
+import { SURF } from '../src/track.js';
 
 const DECAL = new Set(['line', 'rumble', 'island']);          // paint: allowed to sit on a surface
 const LIMITS = { holes: 0, terrainTop: 0, onRoad: 0, zfight: 0 };
@@ -62,6 +63,34 @@ for (const [k, list] of Object.entries(found)) {
   if (list.length > LIMITS[k]) fails.push(`${k}: ${list.length} (limit ${LIMITS[k]})`);
 }
 if (pairs.size) console.log('  z-fight layer pairs: ' + [...pairs].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', '));
+// ---- the owner's reports, checked on the surface classes the car drives on
+{
+  const sampleAt = s0 => Math.round(s0 / T.ds) % T.N;
+  const range = (a, b) => { const out = []; for (let s0 = a; s0 <= b; s0 += 1) out.push(sampleAt(s0)); return out; };
+  const named = [];
+  // 1. the start straight has no kerb on its left: the car sees the white edge line and then grass
+  for (const i of [...range(0, 120), ...range(3790, 3834)]) {
+    const hw = T.hw[i];
+    if (T.kerb[0][i] > 0 || T.surfaceAt(i, -(hw - 0.05)) !== SURF.PAINT || T.surfaceAt(i, -(hw + 0.3)) === SURF.KERB) { named.push(`kerb left of the straight at s=${T.s[i].toFixed(0)}`); break; }
+  }
+  // 2. Sandbag exit: the left run-off is paved from s 1362 (where cars run wide), 11 m wide, and no grass sits beside it
+  for (const i of range(1365, 1420)) {
+    if (T.runoff[0][i] < 10.9 || ![SURF.RUNOFF, SURF.RUNOFF_ROUGH, SURF.RUMBLE].includes(T.surfaceAt(i, -(T.hw[i] + 5)))) { named.push(`no paved run-off left at s=${T.s[i].toFixed(0)}`); break; }
+  }
+  // 3. Guardroom and Final Approach exit, left: rumble bands a third and two thirds across the apron
+  let bands = 0, badBand = 0;
+  for (const i of range(3550, 3690)) {
+    if (T.runoff[0][i] <= 1.8) continue;
+    for (const f of [1 / 3, 2 / 3]) {
+      bands++;
+      if (T.surfaceAt(i, -(T.hw[i] + T.kerb[0][i] + T.sausage[0][i] + T.runoff[0][i] * f)) !== SURF.RUMBLE) badBand++;
+    }
+  }
+  if (bands < 200) named.push(`only ${bands} rumble band samples on the exit run-off`);
+  if (badBand) named.push(`${badBand} rumble band samples are not rumble`);
+  console.log(`  named checks: kerb on the straight, Sandbag run-off, exit rumble (${bands} band samples)${named.length ? '   ' + named.join('; ') : '   all clear'}`);
+  if (named.length) fails.push(...named);
+}
 if (fails.length) { console.log('  FAILED:'); for (const f of fails) console.log('   - ' + f); process.exitCode = 1; } else console.log('  all clear');
 if (process.env.VERBOSE) for (const [k, list] of Object.entries(found)) console.log(k, list.map(w => w.match(/s=(\d+)/)[1]).filter((v, i, a) => a.indexOf(v) === i).join(' '));
 if (process.env.BREAKDOWN) for (const k of ['terrainTop']) {

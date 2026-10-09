@@ -14,7 +14,9 @@ import { planStands, trackBlockers, wallClearance, SITES, GAP } from '../src/gra
 import { GANTRY_CLEAR, GANTRY_LOWEST, GANTRY_S, TOWER_HALF, gantryLegs } from '../src/gantry.js';
 import { planPiers, pierBlocked } from '../src/bridge.js';
 import { trackPoint } from '../src/meshKit.js';
-import { planExtras, footBlockers, footprintPoints, SMALL_RULES } from '../src/venueExtras.js';
+import { planExtras, footBlockers, footprintPoints, SMALL_RULES, PIT_ARROWS } from '../src/venueExtras.js';
+import { planFences } from '../src/grandstands.js';
+import { entryRoadAt } from '../src/track.js';
 import { planMasts, MAST_BEHIND, MAST_BARRIER } from '../src/floodlights.js';
 
 const T = buildTrack(), ground = createGround(T), errors = [];
@@ -56,6 +58,22 @@ for (const st of everything) {
   console.log(`  ${st.name.padEnd(18)} ${(st.kind || '').padEnd(11)} s ${st.s.toFixed(0).padStart(4)}  ${st.side ? 'right' : 'left '}  ${st.len} m x ${st.rows} rows  ${minWall.toFixed(1)} m behind the wall, ${minSeg.toFixed(1)} m from any barrier`);
 }
 
+// ---- spectator fences: no panel or post across the pit entry road (the mouth stays open)
+{
+  // sanity: a point 3.5 m out from the track edge at the mouth is on the entry road, so the test below means something
+  const i0 = Math.round((T.pitRange[0] + 8) / T.ds) % T.N, d0 = -(T.pitEntryEdge[i0] + 3.5);
+  const onRoad = (x, z) => { const r = entryRoadAt(T, x, z, 0); return !!r && r.out === 0; };
+  if (!onRoad(T.x[i0] + T.nx[i0] * d0, T.z[i0] + T.nz[i0] * d0)) fail('the test point on the pit entry road is not on the road');
+  const { runs, posts } = planFences(T, ground, stands);
+  let across = 0;
+  for (const r of runs) {
+    for (let k = 0; k <= 10; k++) { const t = k / 10; if (onRoad(r.a[0] + (r.b[0] - r.a[0]) * t, r.a[2] + (r.b[2] - r.a[2]) * t)) { across++; break; } }
+  }
+  for (const [x, , z] of posts) if (onRoad(x, z)) across++;
+  if (across) fail(`${across} spectator fence panels or posts stand on the pit entry road`);
+  console.log(`  spectator fence: ${runs.length} panels and ${posts.length} posts, ${across} on the pit entry road`);
+}
+
 // ---- footbridges: stairs and towers behind the walls, the deck 7 m or more above the road
 for (const b of extras.bridges) {
   const c = trackPoint(T, b.s, 0);
@@ -87,6 +105,18 @@ small.flags.forEach(p => checkPoint('banner flag', p.x, p.z, SMALL_RULES.flag));
 small.pit.forEach(p => { checkPoint('pit board', p.x, p.z, SMALL_RULES.pit); if (!(T.pitOut[trackPoint(T, p.s, 0).i] || true)) fail('pit board'); });
 small.fence.forEach(p => { checkPoint('fence post', p.ax, p.az, SMALL_RULES.fence); checkPoint('fence post', p.bx, p.bz, SMALL_RULES.fence); });
 if (small.pit.length !== 2) fail(`${small.pit.length} pit boards placed, wanted the entry and the exit`);
+// the pit entry board stands 20 to 60 m before the mouth, on the pit side, and its arrow points ahead and to the left (the pit side)
+{
+  const L = T.length, board = small.pit.find(p => p.tile === 8);
+  if (!board) fail('no pit entry board (tile 8)');
+  else {
+    const before = ((T.pitRange[0] - board.s) % L + L) % L;
+    if (before < 20 || before > 60) fail(`pit entry board is ${before.toFixed(0)} m before the mouth, wanted 20 to 60`);
+    const i = Math.round(board.s / T.ds) % T.N, lat = (board.x - T.x[i]) * T.nx[i] + (board.z - T.z[i]) * T.nz[i];
+    if (lat >= 0) fail(`pit entry board is on the right of the track (${lat.toFixed(1)} m), the pit entry is on the left`);
+    if (!(PIT_ARROWS.entry[0] < 0 && PIT_ARROWS.entry[1] > 0)) fail(`pit entry arrow ${JSON.stringify(PIT_ARROWS.entry)} does not point ahead and to the left`);
+  }
+}
 if (small.signs.length < 6 || small.bins.length < 10 || small.flags.length < 8 || small.fence.length < 200) fail(`too little small furniture: ${small.signs.length} signs, ${small.bins.length} bins, ${small.flags.length} flags, ${small.fence.length} fence panels`);
 const masts = planMasts(T, allBlockers, everything);
 if (masts.length < 20) fail(`only ${masts.length} floodlight masts placed`);

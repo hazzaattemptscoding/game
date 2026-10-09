@@ -5,7 +5,7 @@
 //
 // Body frame: vx forward, vy to the right, yaw rate r positive = turning right.
 
-import { SURF } from './track.js';
+import { SURF, BARRIER } from './track.js';
 import { carContact } from './carContact.js';
 
 export const STEP = 1 / 120;
@@ -31,8 +31,15 @@ export const SURFACE = {
   [SURF.RUNOFF_ROUGH]: { grip: 0.95, drag: 0.002, bump: 0.25, spacing: 4 },   // starts like RUNOFF; physics.js fades it towards the gravel
 };
 
-const WALL_BOUNCE = 0.25;   // how much speed comes back off a barrier (0 = dead stop, 1 = rubber ball)
-const WALL_FRICTION = 0.5;  // how much the barrier scrubs speed when you slide along it
+// Barriers. Concrete, armco and the pit walls are hard: the car comes back off them at a quarter of its speed, and a rub along
+// them takes off half of the normal impulse in speed. Tyre walls (BARRIER.TYRES) are softer: the rebound is gentler (a fifth, not a
+// quarter) and a rub along the tyres takes off only 0.15 of the normal impulse, so a glancing hit costs far less speed. A straight-on
+// hit leaves 0.2 of its speed instead of 0.25, which is the price of the softer face.
+const WALL_FEEL = {
+  hard: { bounce: 0.25, friction: 0.5 },     // how much speed comes back off a barrier (0 = dead stop, 1 = rubber ball), and how much the barrier scrubs
+  [BARRIER.TYRES]: { bounce: 0.2, friction: 0.15 },
+};
+export const wallFeel = type => WALL_FEEL[type] || WALL_FEEL.hard;
 const CAR_BOUNCE = 0.2;     // how much closing speed comes back off another car (restitution)
 const CAR_FRICTION = 0.3;   // how much of the normal impulse a sideways rub may take off the relative sliding speed
 const CAR_PUSH = 0.3;       // metres a car is pushed out of another in one physics step at most (the rest follows in later steps)
@@ -416,11 +423,11 @@ export class Car {
   collideWalls() {
     const c = this.cfg, T = this.track, loc = this.loc;
     const ch = Math.cos(this.heading), sh = Math.sin(this.heading);
-    let deepest = 0, cx = 0, cz = 0, nnx = 0, nnz = 0;
+    let deepest = 0, cx = 0, cz = 0, nnx = 0, nnz = 0, feel = WALL_FEEL.hard;
     for (const lx of [c.length / 2, -c.length / 2]) for (const ly of [-c.width / 2, c.width / 2]) {
       const ox = lx * ch - ly * sh, oz = lx * sh + ly * ch;
       const hit = T.collide ? T.collide(this.x + ox, this.z + oz, this.x, this.z, loc.h) : null;
-      if (hit && hit.pen > deepest) { deepest = hit.pen; cx = ox; cz = oz; nnx = hit.nx; nnz = hit.nz; }
+      if (hit && hit.pen > deepest) { deepest = hit.pen; cx = ox; cz = oz; nnx = hit.nx; nnz = hit.nz; feel = wallFeel(hit.type); }
     }
     if (deepest <= 0) return;
 
@@ -434,14 +441,14 @@ export class Car {
     if (vn >= 0) { T.locate(this.x, this.z, loc.i, loc); return; }
     const cross = (ax, az, bx, bz) => ax * bz - az * bx;
     const kn = 1 / m + cross(cx, cz, nnx, nnz) ** 2 / I;
-    const jn = -(1 + WALL_BOUNCE) * vn / kn;
+    const jn = -(1 + feel.bounce) * vn / kn;
     let tx = px - vn * nnx, tz = pz - vn * nnz;
     const vt = Math.hypot(tx, tz);
     let jt = 0;
     if (vt > 1e-3) {
       tx /= vt; tz /= vt;
       const kt = 1 / m + cross(cx, cz, tx, tz) ** 2 / I;
-      jt = -Math.min(vt / kt, WALL_FRICTION * jn);
+      jt = -Math.min(vt / kt, feel.friction * jn);
     }
     const Jx = jn * nnx + jt * tx, Jz = jn * nnz + jt * tz;
     this.vx += Jx / m; this.vz += Jz / m;

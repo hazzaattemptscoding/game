@@ -132,10 +132,23 @@ export const LAYOUT = {
     [56.1, 59.1, 10.5, 60, 50],  // Guardroom Chicane: 2.5 m narrower than the rest of the lap, more punishing
   ],
 
-  // V-shaped run-off beside a street wall: [from point, side, width m, length m]. At `from` the wall steps out square to the
-  // track, leaving a paved apron `width` wide, and the wall line then runs back to the track limits in a straight line over `length`.
+  // V-shaped run-off beside a street wall: [from point, side, width m, length m, hold m]. At `from` the wall steps out square to the
+  // track, leaving a paved apron `width` wide. It holds that width for `hold` metres, then the wall line runs back to the track
+  // limits in a straight line over `length`.
   vrunoff: [
-    [24.45, 'L', 11, 75],      // Sandbag exit, the long left wall
+    [23, 'L', 11, 75, 64],     // Sandbag exit, the long left wall: the apron starts at the exit (s 1362), where cars run wide, and reaches its old end at s 1501
+  ],
+
+  // Rumble strips: [from point, to point, side]. A grooved band across the apron (two bands, a third of the way in from the kerb and
+  // two thirds) wherever the apron is paved. Where a car runs wide on a straight exit, not in the corners themselves.
+  rumble: [
+    [59, 61.8, 'L'],           // Guardroom Chicane and Final Approach exit, along the pit entry road's pit wall (s 3538 to 3707)
+  ],
+
+  // Tyre barriers stacked on the track side of the pit wall where the car can reach it: [from point, to point, side, gap m].
+  // The pit wall stays (the pit entry road is behind it); the tyres stand `gap` metres in front of its track face.
+  tyreWall: [
+    [59, 61.8, 'L', 1.2],      // the same stretch: the pit entry road's wall stands about 12 m from the track edge
   ],
 
   // Raised sausage kerbs on the inside of the chicane, to stop cars cutting it.

@@ -108,6 +108,9 @@ export const footBlockers = bridges => bridges.flatMap(b => b.sides.flatMap(s =>
 
 // ---- small things: signs, bins, banner flags, pit boards and the perimeter fence ---------------------------------------
 export const SIGN_LABELS = ['GRANDSTAND', 'GATE', 'FIRST AID', 'TOILETS', 'FAN ZONE', 'CAR PARK', 'MEDIA', 'EXIT', 'PIT ENTRY', 'PIT EXIT', 'HOSPITALITY', 'VIEWING AREA'];
+// Arrows on the pit boards, as [right, up] on the face the approaching driver reads. The entry board stands 40 m before the
+// mouth on the pit side, so its arrow points ahead and to the left (up and left: the way the car goes, not sideways across the road).
+export const PIT_ARROWS = { entry: [-1, 1], exit: [1, 0] };
 export const SMALL_RULES = { sign: { behind: 2.5, barrier: 3 }, bin: { behind: 3, barrier: 3 }, flag: { behind: 6, barrier: 5 }, pit: { behind: 2.2, barrier: 2.5 }, fence: { behind: 30, barrier: 20 } };
 
 export function planSmall(T, ground, blockers, obstacles) {
@@ -166,6 +169,16 @@ export function planSmall(T, ground, blockers, obstacles) {
 // ---- drawing ----------------------------------------------------------------------------------------------------------
 
 // a box from point A to point B (any direction), `t` and `t2` thick
+// a solid arrow centred on (cx, cy) on the canvas, pointing along [right, up] (canvas y runs down, so up is -y)
+function drawArrow(x, cx, cy, [dx, dy], colour) {
+  const L = Math.hypot(dx, dy), ux = dx / L, uy = -dy / L;
+  const tipX = cx + ux * 36, tipY = cy + uy * 36;
+  x.strokeStyle = colour; x.fillStyle = colour; x.lineWidth = 12; x.lineCap = 'round';
+  x.beginPath(); x.moveTo(cx - ux * 30, cy - uy * 30); x.lineTo(tipX - ux * 12, tipY - uy * 12); x.stroke();
+  x.beginPath(); x.moveTo(tipX, tipY);
+  for (const sgn of [1, -1]) { const a = Math.atan2(uy, ux) + Math.PI + sgn * 0.55; x.lineTo(tipX + Math.cos(a) * 24, tipY + Math.sin(a) * 24); }
+  x.closePath(); x.fill();
+}
 let signAtlas = null;
 function signTexture() {
   if (signAtlas) return signAtlas;
@@ -179,7 +192,8 @@ function signTexture() {
     x.fillStyle = pit ? '#ffd21f' : '#f2f2ee';
     x.font = `bold ${label.length > 9 ? 34 : 44}px sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
     x.fillText(label, px + 128, py + (pit ? 48 : 64));
-    if (pit) { x.font = 'bold 40px sans-serif'; x.fillText(k === 8 ? '<<<<' : '>>>>', px + 128, py + 94); }
+    if (k === 8) drawArrow(x, px + 128, py + 100, PIT_ARROWS.entry, '#ffd21f');
+    else if (pit) { x.font = 'bold 40px sans-serif'; x.fillStyle = '#ffd21f'; x.fillText('>>>>', px + 128, py + 94); }
   });
   signAtlas = new THREE.CanvasTexture(c);
   signAtlas.colorSpace = THREE.SRGBColorSpace; signAtlas.anisotropy = 4;

@@ -1,7 +1,7 @@
 // Geometry and containment audit. Run with `npm run audit`.
 
 import { buildTrack, BARRIER } from '../src/track.js';
-import { Car } from '../src/physics.js';
+import { Car, wallFeel } from '../src/physics.js';
 import { GT } from '../src/cars.js';
 
 const T = buildTrack(), errors = [];
@@ -270,6 +270,36 @@ let bridgeSlope = 0;
     }
     if (reported > 3) errors.push(`ground near the bridge: ${reported - 3} more cliff cells`);
   }
+}
+
+// ---- the track fixes from the owner's reports: tyres in front of the exit wall, and softer than concrete
+{
+  // a tyre wall gives a softer impact than concrete: a gentler rebound, and a glancing rub costs less speed
+  const hard = wallFeel(BARRIER.CONCRETE), tyre = wallFeel(BARRIER.TYRES);
+  if (!(tyre.bounce < hard.bounce && tyre.friction < hard.friction)) errors.push(`tyre walls are not softer than concrete (bounce ${tyre.bounce} vs ${hard.bounce}, friction ${tyre.friction} vs ${hard.friction})`);
+  // speed lost along the wall on a 20 degree hit at unit speed: the wall takes friction x (1 + bounce) x normal speed off the tangential speed
+  const lost = f => Math.min(Math.cos(Math.PI / 9), f.friction * (1 + f.bounce) * Math.sin(Math.PI / 9));
+  if (lost(tyre) >= lost(hard)) errors.push(`a 20 degree rub costs ${lost(tyre).toFixed(3)} of the speed against tyres, ${lost(hard).toFixed(3)} against concrete`);
+  // tyre stacks stand on the track side of the pit wall where the exit run-off is (layout.tyreWall), 4 m or more from the edge
+  const L = T.length, a = T.sAtPoint(59), span = ((T.sAtPoint(61.8) - a) % L + L) % L;
+  // the nearest barrier point to sample i (within 3 samples: the lines are laid every few samples)
+  const nearPt = (list, i) => { let best = null, bd = 4; for (const p of list) { const k = Math.abs(((p[3] - i) % T.N + T.N + 1) % T.N - 1); if (k < bd) { bd = k; best = p; } } return best; };
+  const tyrePts = [], wallPts = [];
+  for (const b of T.barriers) if (b.side === 0) for (const p of b.pts) { if (b.type === BARRIER.TYRES) tyrePts.push(p); else if (b.type === BARRIER.PITWALL) wallPts.push(p); }
+  let missing = 0, close = 0, nearEdge = 0, samples = 0;
+  for (let i = 0; i < T.N; i++) {
+    const along = ((T.s[i] - a) % L + L) % L;
+    if (along > span || i % 5) continue;
+    samples++;
+    const t = nearPt(tyrePts, i), w = nearPt(wallPts, i);
+    if (!t) { missing++; continue; }
+    const dt = Math.abs((t[0] - T.x[i]) * T.nx[i] + (t[2] - T.z[i]) * T.nz[i]);
+    if (dt - T.hw[i] - T.kerb[0][i] - T.sausage[0][i] < 4) nearEdge++;
+    if (w) { const dw = Math.abs((w[0] - T.x[i]) * T.nx[i] + (w[2] - T.z[i]) * T.nz[i]); if (dw - dt < 0.5 || dw - dt > 2) close++; }
+  }
+  if (missing) errors.push(`${missing} of ${samples} samples along the exit wall have no tyre stack in front of the pit wall`);
+  if (nearEdge) errors.push(`${nearEdge} tyre stack samples stand under 4 m from the track edge`);
+  if (close) errors.push(`${close} tyre stack samples are not 0.5 to 2 m in front of the pit wall`);
 }
 
 console.log(`Lakeside geometry audit: ${T.length.toFixed(0)} m`);

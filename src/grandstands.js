@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import * as tex from './textures.js';
 import { Kit, metreUV, sponsorPanel, sponsorRow, trackPoint, hash01 } from './meshKit.js';
+import { entryRoadAt } from './track.js';
 import { lampMaterial, flagMaterial, addFlag } from './lamps.js';
 
 export const GAP = 11;          // metres from the containment wall to the front of a stand
@@ -297,8 +298,10 @@ function hospitality(kit, st, low, spots) {
 }
 
 // Spectator fence behind the barrier line, in front of each stand: a diamond mesh 2.5 m high on posts, following the ground.
-function buildFences(T, ground, stands, fenceMat) {
-  const kit = new Kit(), post = new Kit();
+// The fence stops at the pit entry road: no panel or post stands on the road or its run-off, so the mouth stays open.
+export function planFences(T, ground, stands) {
+  const runs = [], posts = [];
+  const onEntryRoad = (x, z) => { const r = entryRoadAt(T, x, z, 0); return !!r && r.out === 0; };
   for (const st of stands) {
     const sg = st.side ? 1 : -1, c = trackPoint(T, st.s, 0);
     const half = st.len / 2 + 6;
@@ -309,13 +312,22 @@ function buildFences(T, ground, stands, fenceMat) {
       const cur = [x, y, z];
       if (prev) {
         const du = Math.hypot(x - prev[0], z - prev[2]) / 2;
-        kit.quad('fence', [prev[0], prev[1] - 0.3, prev[2]], [x, y - 0.3, z], [x, y + 2.5, z], [prev[0], prev[1] + 2.5, prev[2]], [[u, 0], [u + du, 0], [u + du, 1.4], [u, 1.4]]);
+        const cut = onEntryRoad(x, z) || onEntryRoad(prev[0], prev[2]) || onEntryRoad((x + prev[0]) / 2, (z + prev[2]) / 2);
+        if (!cut) runs.push({ a: prev, b: cur, u, du });
         u += du;
       }
-      if (!prev || k % 4 === 0) post.box('post', 0.08, 2.9, 0.08, x, y + 1.15, z);
+      if ((!prev || k % 4 === 0) && !onEntryRoad(x, z)) posts.push([x, y, z]);
       prev = cur;
     }
   }
+  return { runs, posts };
+}
+
+function buildFences(T, ground, stands, fenceMat) {
+  const { runs, posts: postAt } = planFences(T, ground, stands);
+  const kit = new Kit(), post = new Kit();
+  for (const { a, b, u, du } of runs) kit.quad('fence', [a[0], a[1] - 0.3, a[2]], [b[0], b[1] - 0.3, b[2]], [b[0], b[1] + 2.5, b[2]], [a[0], a[1] + 2.5, a[2]], [[u, 0], [u + du, 0], [u + du, 1.4], [u, 1.4]]);
+  for (const [x, y, z] of postAt) post.box('post', 0.08, 2.9, 0.08, x, y + 1.15, z);
   const g = kit.build({ fence: fenceMat }, { fence: { cast: false } });
   g.traverse(o => { if (o.isMesh) { o.renderOrder = 2; o.userData.debug = 'fence'; } });
   const posts = post.build({ post: new THREE.MeshStandardMaterial({ color: 0x3a3f44, roughness: 0.5, metalness: 0.5 }) });

@@ -170,6 +170,7 @@ export function buildTrack(layout = LAYOUT, corners = CORNERS) {
   buildSides(track, corners);
   smoothKerbs(track);
   buildVRunoff(track);
+  buildRumble(track);
   buildReach(track);
   buildBridgeGround(track);
 
@@ -629,15 +630,26 @@ function smoothKerbs(T) {
 
 // V-shaped run-off beside a street wall (layout.vrunoff). The wall steps out square to the track at the start, which is why this
 // runs after the wall has been eased and the kerbs smoothed, and comes back to the track limits in a straight line.
+// The apron holds its full width for `hold` metres first (layout vrunoff's fifth value, 0 if none), then tapers over `length`.
 function buildVRunoff(T) {
-  for (const [from, side, width, length] of T.layout.vrunoff || []) {
+  for (const [from, side, width, length, hold = 0] of T.layout.vrunoff || []) {
     const sd = side === 'L' ? 0 : 1, i0 = Math.round(T.sAtPointRaw(from) / T.ds);
-    for (let k = 0; k <= length; k++) {
-      const i = wrap(i0 + k, T.N), w = width * (1 - k / length);
+    for (let k = 0; k <= hold + length; k++) {
+      const i = wrap(i0 + k, T.N), w = width * (1 - Math.max(0, k - hold) / length);
       const edge = T.hw[i] + T.kerb[sd][i] + T.sausage[sd][i];
       T.runoff[sd][i] = Math.max(T.runoff[sd][i], w);
       T.wall[sd][i] = Math.max(T.wall[sd][i], edge + T.runoff[sd][i] + STREET_GAP);
     }
+  }
+}
+
+// Rumble strips (layout.rumble): the paved apron of the zone becomes concrete, so the rumble bands are painted across it
+// (trackMesh.js) and the surface is RUMBLE on the two bands, a third and two thirds of the way out. Runs after the pit road's
+// own run-off, which is tarmac, so only the apron that is paved gets bands.
+function buildRumble(T) {
+  for (const [from, to, side] of T.layout.rumble || []) {
+    const sd = side === 'L' ? 0 : 1, i0 = Math.round(T.sAtPointRaw(from) / T.ds), i1 = Math.round(T.sAtPointRaw(to) / T.ds);
+    for (let i = i0; i <= i1; i++) { const j = wrap(i, T.N); if (T.runoff[sd][j] > 1.8) T.concrete[sd][j] = 1; }
   }
 }
 
@@ -1151,6 +1163,22 @@ function buildBarriers(T, corners) {
     }
     add(BARRIER.PITOUTER, 0, pts, { why: 'low wall on the far side of the pit entry road' });
   }
+  // tyre barriers in front of the pit wall where a car can reach it (layout.tyreWall). Each point is the wall's own sample, moved
+  // `gap` metres towards the track along that sample's normal, so the stack stands on the run-off in front of the wall.
+  for (const [from, to, side, gap] of T.layout.tyreWall || []) {
+    const sd = side === 'L' ? 0 : 1, a = T.sAtPointRaw(from), span = ((T.sAtPointRaw(to) - a) % T.length + T.length) % T.length;
+    const inSpan = i => ((T.s[i] - a) % T.length + T.length) % T.length <= span;
+    for (const b of T.barriers.filter(b => b.type === BARRIER.PITWALL && b.side === sd)) {
+      const pts = [];
+      for (const p of b.pts) {
+        const i = p[3];
+        if (!inSpan(i)) continue;
+        const d = (p[0] - T.x[i]) * T.nx[i] + (p[2] - T.z[i]) * T.nz[i];
+        pts.push(P(i, d + gap * (sd ? -1 : 1)));
+      }
+      add(BARRIER.TYRES, sd, pts, { impact: true, why: 'tyre barriers in front of the pit wall where the exit run-off is (layout.tyreWall)' });
+    }
+  }
   for (const run of runsOf(N, i => T.pitSepWall[i])) {
     follow(BARRIER.PITSEP, 0, run, i => -(T.pitIn[i] - EXIT_SEP_WALL), 2, { why: 'low wall between the pit exit road and the track' });
   }
@@ -1225,7 +1253,7 @@ function collide(T, px, pz, cx, cz, py) {
       const dn = (px - sg.ax) * sg.nx + (pz - sg.az) * sg.nz;
       const dc = (cx - sg.ax) * sg.nx + (cz - sg.az) * sg.nz;
       if (dn >= 0 || dc <= 0 || dn < -3) continue;
-      if (!best || -dn > best.pen) best = { pen: -dn, nx: sg.nx, nz: sg.nz };
+      if (!best || -dn > best.pen) best = { pen: -dn, nx: sg.nx, nz: sg.nz, type: sg.type };
     }
   }
   return best;

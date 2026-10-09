@@ -1,5 +1,38 @@
 # Changelog
 
+## Track fixes from the reports: kerb, run-off, pit entry sign and fence, exit tyres
+
+Five reports from the in-game Report tool.
+
+- **Kerb on the start straight (s 53 to 93 and 3798 to 13).** Both were outside kerbs of Final Approach, a corner whose exit is the
+  straight, and the car never gets near them (the racing line is 0.2 to 2.7 m right of centre). Final Approach is now locked in
+  `src/corners.js` with no outside kerbs. The left edge of the straight is the white edge line on grass.
+- **Run-off at the Sandbag exit (s 1340 to 1425, left).** The street wall stood 0.8 m from the edge until the paved V apron started
+  at s 1426. The apron now starts at s 1362 with the same 11 m width: `layout.vrunoff` takes a fifth value, the hold, and the
+  apron holds its full width for 64 m before the taper that ends where it did (s 1501).
+- **Pit entry sign.** The board is 40 m before the mouth on the pit side, and its arrow pointed sideways, away from the entry. The
+  arrow is now up and to the left, ahead of the board (`PIT_ARROWS` in `src/venueExtras.js`). The exit board is unchanged.
+- **Spectator fence across the pit entry road.** The Chicane Stand's fence (wall plus 4.5 m) crossed the entry road at s 3437 to
+  3440. `planFences` in `src/grandstands.js` leaves out every panel and post on the road, so the mouth is open. The pit wall and
+  attenuator are unchanged.
+- **Exit wall at Guardroom Chicane and Final Approach (s 3540 to 3705, left).** The run-off there is the pit entry road's tarmac,
+  so it cannot be wider than the 5.4 m between the track edge and the pit wall (the entry road sits 12 m out). The changes:
+  - rumble strips across the apron (`layout.rumble`, the apron becomes concrete there, as the Sebring aprons are);
+  - tyre stacks 1.2 m in front of the pit wall (`layout.tyreWall`, `BARRIER.TYRES`), so the run-off is 4.2 m wide, not 5.4 m;
+  - tyres are softer than concrete: `WALL_FEEL` in `src/physics.js`. Before, every barrier had the same rebound (0.25) and the same
+    scrub along the face (0.5). Tyres now rebound at 0.2 and scrub at 0.15, so a 20 degree rub costs 0.06 of the speed against
+    0.21 for concrete. A straight-on hit leaves 0.2 of the speed (0.25 before), so 80% of it is lost against 75%. The barrier type
+    now comes back from `collide()` with the penetration.
+
+Tests: `tools/venue.js` (no spectator fence on the pit entry road, the entry board 20 to 60 m before the mouth on the left and its
+arrow ahead and left), `tools/audit.js` (tyre stacks in front of the pit wall, 4 m from the edge; tyres softer than concrete),
+`tools/surfaces.js` (no kerb on the straight, the Sandbag run-off paved, the rumble bands are RUMBLE).
+
+Lap times: the analog quick (1:30.117) and steady (1:33.008) laps and the assists-on keyboard laps are unchanged. The assists-off
+profiles are slower: the wheel driver 1:36.650 to 1:42.392 (the held run-off: a car that runs wide now goes onto the paved apron
+instead of bouncing off the wall) and the new keyboard driver 2:10.525 to 3:12.467 (the rumble bands and the run-off together).
+The racing line data is unchanged.
+
 ## Bug pass 1: reverse DRS, track limits, lap bests, global times hardening
 
 - **Reverse DRS.** The DRS zone is a stretch of road, so a car driven the other way round has DRS in the same stretch. The zone opens
