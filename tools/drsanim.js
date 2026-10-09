@@ -1,14 +1,14 @@
 // DRS flap test. Run with `npm run drsanim`. No browser needed.
 //   1. the easing (src/drsFlap.js): 99 % within the open and close times, no overshoot, symmetric per its constants, frame
 //      rate independent, dt of 0 and bad dt, large dt clamped
-//   2. the flap on the real CarView (src/car.js) built in node: it opens and shuts with car.drs, and the trailing edge lifts
+//   2. the flap on the real CarView (src/car.js) built in node: it flattens and angles up with car.drs, and the trailing edge moves
 //   3. the DRS flag on the wire (src/ghosts.js): col bit 0 through stateFromCar, encodeState, packState, unpackState, decodeState
 //      and JSON, bad flags clamp to 0, the layout is unchanged
 //   4. the interpolation buffer takes the flag from the newest packet at or before the moment shown, never blended
-//   5. a remote car (threeFactory, the browser side, with a stub DOM) opens its flap from the flag in its pose
+//   5. a remote car (threeFactory, the browser side, with a stub DOM) flattens its flap from the flag in its pose
 
 import * as THREE from 'three';
-import { stepFlap, flapAngle, OPEN_ANGLE, OPEN_MS, CLOSE_MS, MAX_DT } from '../src/drsFlap.js';
+import { stepFlap, flapAngle, REST_ANGLE, OPEN_MS, CLOSE_MS, MAX_DT } from '../src/drsFlap.js';
 import { CarView } from '../src/car.js';
 import { GT } from '../src/cars.js';
 import { encodeState, packState, unpackState, decodeState, stateFromCar, StateBuffer, FLAG_DRS, FIELDS, threeFactory } from '../src/ghosts.js';
@@ -66,10 +66,10 @@ console.log('EASING');
   // large dt is clamped to MAX_DT: a stall does not jump the flap
   check(stepFlap(0, 1, 10) === stepFlap(0, 1, MAX_DT) && stepFlap(0, 1, sec(OPEN_MS)) === stepFlap(0, 1, MAX_DT), 'a long frame counts as MAX_DT');
   check(stepFlap(0, 1, 10) < 0.95, 'after a long stall the flap is still opening, not snapped open');
-  check(stepFlap(NaN, 1, 0.016) > 0 && stepFlap(NaN, 1, 0.016) <= 1, 'a NaN position is read as shut');
+  check(stepFlap(NaN, 1, 0.016) > 0 && stepFlap(NaN, 1, 0.016) <= 1, 'a NaN position is read as the rest position');
 
-  check(flapAngle(0) === 0 && flapAngle(1) === OPEN_ANGLE && flapAngle(3) === OPEN_ANGLE && flapAngle(-1) === 0, 'the angle is 0 shut, OPEN_ANGLE open, clamped');
-  check(near(OPEN_ANGLE, 28 * Math.PI / 180), 'open angle is 28 degrees');
+  check(flapAngle(0) === REST_ANGLE && flapAngle(1) === 0 && flapAngle(3) === 0 && flapAngle(-1) === REST_ANGLE, 'the trailing edge is REST_ANGLE up at rest, flat when open, clamped');
+  check(near(REST_ANGLE, 22 * Math.PI / 180), 'rest angle is 22 degrees');
 }
 
 // ---------------------------------------------------------------- 2. the flap on the car
@@ -84,16 +84,19 @@ console.log('CAR VIEW');
   const angle = () => -view.flapPivot.rotation.z;
 
   for (let i = 0; i < 3; i++) frame(false, 0.016);
-  check(Math.abs(angle()) < 1e-9, 'the flap is shut when DRS is off');
+  check(near(angle(), REST_ANGLE, 1e-9), 'the flap sits angled up at rest when DRS is off (trailing edge REST_ANGLE above the main plane)');
   for (let i = 0; i < 10; i++) frame(true, 0.016);
-  check(angle() >= 0.99 * OPEN_ANGLE - 1e-6 && angle() <= OPEN_ANGLE + 1e-9, 'the flap opens to about 28 degrees within 160 ms of car.drs');
+  check(angle() >= 0 && angle() <= 0.01 * REST_ANGLE + 1e-6, 'the flap flattens to the main plane (0 degrees) within 160 ms of car.drs');
   view.flapPivot.updateMatrix();
   const tail = new THREE.Vector3(-0.15, 0, 0).applyMatrix4(view.flapPivot.matrix);     // the flap's trailing corner, in body space
   const rise = tail.y - view.flapPivot.position.y, back = view.flapPivot.position.x - tail.x;
-  check(near(rise, 0.15 * Math.sin(angle()), 1e-9), 'the trailing edge lifts by the flap chord times sin(angle) (the slot opens)');
-  check(near(back, 0.15 * Math.cos(angle()), 1e-9) && rise > 0.06, 'the hinge stays put: the flap turns about its leading edge');
+  check(near(rise, 0.15 * Math.sin(angle()), 1e-9), 'the trailing edge lifts by the flap chord times sin(angle)');
+  check(rise < 0.001, 'with DRS open the trailing edge is level with the main plane');
+  const hingeFwd = view.spec.wing;
+  check(view.flapPivot.position.x > hingeFwd.x && view.flapPivot.position.x < hingeFwd.x + hingeFwd.main, 'the hinge sits inside the main plane, so the flap meets it with no gap');
+  check(near(back, 0.15 * Math.cos(angle()), 1e-9), 'the hinge stays put: the flap turns about its leading edge');
   for (let i = 0; i < 14; i++) frame(false, 0.016);
-  check(angle() < 0.01 * OPEN_ANGLE + 1e-6, 'the flap shuts again after DRS goes off');
+  check(near(angle(), REST_ANGLE, 0.01 * REST_ANGLE), 'the flap angles back up to its rest position after DRS goes off');
   const wing = view.flapPivot.children[0];
   check(wing.material[0] === view.wingMat && wing.material[3] !== view.wingMat, 'the flap is in the livery wing colour, its underside dark');
   view.dispose();
@@ -168,14 +171,14 @@ console.log('REMOTE CAR');
   const pose = { x: 0, y: 0, z: 0, h: 0, vx: 0, vz: 0, yr: 0, st: 0, w: 0, brk: 0, thr: 0, pz: 0, rx: 0 };
   const frame = drs => { view._t = performance.now() / 1000 - 0.016; ent.setPose({ ...pose, drs }); };
   for (let i = 0; i < 3; i++) frame(false);
-  check(Math.abs(view.flapPivot.rotation.z) < 1e-9, 'a remote car with no flag has its flap shut');
+  check(near(-view.flapPivot.rotation.z, REST_ANGLE, 1e-9), 'a remote car with no flag has its flap angled at rest');
   for (let i = 0; i < 10; i++) frame(true);
-  check(-view.flapPivot.rotation.z >= 0.99 * OPEN_ANGLE - 1e-6, 'a remote car with the DRS flag in its pose opens the flap');
+  check(-view.flapPivot.rotation.z <= 0.01 * REST_ANGLE + 1e-6, 'a remote car with the DRS flag in its pose flattens the flap');
   for (let i = 0; i < 14; i++) frame(false);
-  check(-view.flapPivot.rotation.z < 0.01 * OPEN_ANGLE + 1e-6, 'and shuts it when the flag goes off');
+  check(-view.flapPivot.rotation.z >= 0.99 * REST_ANGLE - 1e-6, 'and angles it back up when the flag goes off');
   // a pose without the field (the board ghost) is shut
   view._t = performance.now() / 1000 - 0.016; for (let i = 0; i < 10; i++) { view._t = performance.now() / 1000 - 0.016; ent.setPose(pose); }
-  check(Math.abs(view.flapPivot.rotation.z) < 0.01 * OPEN_ANGLE + 1e-6, 'a pose with no drs field keeps the flap shut');
+  check(near(-view.flapPivot.rotation.z, REST_ANGLE, 0.01 * REST_ANGLE), 'a pose with no drs field keeps the flap at rest');
   ent.dispose();
   if (!hadDoc) delete globalThis.document;
 }

@@ -21,7 +21,7 @@ import * as THREE from 'three';
 import { CarView, bodySpec } from '../src/car.js';
 import { CARS } from '../src/cars.js';
 import { deps } from '../src/liveryTex.js';
-import { OPEN_ANGLE } from '../src/drsFlap.js';
+import { REST_ANGLE } from '../src/drsFlap.js';
 import { previewFrame, PREVIEW_FOV, PREVIEW_AZ } from '../src/preview.js';
 
 let n = 0, fails = 0;
@@ -85,11 +85,11 @@ for (const [name, cfg] of Object.entries(CONFIGS)) {
   if (hasWing) {
     const car = restCar();
     drive(v, car, false, 3);
-    check(Math.abs(v.flapPivot.rotation.z) < 1e-9, `${name} flap is shut with DRS off`);
+    check(Math.abs(-v.flapPivot.rotation.z - REST_ANGLE) < 1e-9, `${name} flap is angled up at rest with DRS off`);
     drive(v, car, true, 10);
-    check(-v.flapPivot.rotation.z >= 0.99 * OPEN_ANGLE - 1e-6, `${name} flap opens with DRS`);
+    check(-v.flapPivot.rotation.z <= 0.01 * REST_ANGLE + 1e-6, `${name} flap flattens with DRS`);
     drive(v, car, false, 14);
-    check(-v.flapPivot.rotation.z < 0.01 * OPEN_ANGLE + 1e-6, `${name} flap shuts again`);
+    check(-v.flapPivot.rotation.z >= 0.99 * REST_ANGLE - 1e-6, `${name} flap angles up again`);
   } else {
     const car = restCar();
     drive(v, car, true, 10);

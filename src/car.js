@@ -114,10 +114,13 @@ export function bodySpec(cfg) {
 // Where the side panel's texture is shown: its shape (SIDE_W by SIDE_H pixels).
 const SIDE_ASPECT = SIDE_H / SIDE_W;
 
-// The rear wing and the DRS flap (src/drsFlap.js): the flap turns about its hinge, the leading edge where it meets the main plane,
-// so its trailing edge lifts and a slot opens. Both take the livery's wing colour; the underside of the flap and the trailing face
-// of the main plane are in a much darker slot colour, so the slot reads as a gap.
+// The rear wing and the DRS flap (src/drsFlap.js): the flap turns about its hinge, the leading edge where it meets the main plane.
+// At rest it is angled up, its trailing edge raised REST_ANGLE (high downforce, high drag); DRS flattens it to the main plane (low
+// drag). The hinge sits a little way inside the main plane, so the flap's leading edge is hidden in the main plane at every angle
+// and the slot between them stays closed. Both take the livery's wing colour; the underside of the flap and the trailing face of
+// the main plane are in a much darker slot colour, so the open slot reads as a gap.
 const WING_POST_W = 0.1, WING_POST_T = 0.05;
+const HINGE_SINK = 0.03;     // how far the flap's hinge sits inside the main plane, metres
 
 export class CarView {
   // `livery` is a livery object (src/livery.js), or a plain colour number as before.
@@ -175,7 +178,7 @@ export class CarView {
       main.position.set(wg.x + wg.main / 2, wg.y, 0);
       this.wing.add(main);
       this.flapPivot = new THREE.Group();
-      this.flapPivot.position.set(wg.x, wg.y, 0);
+      this.flapPivot.position.set(wg.x + HINGE_SINK, wg.y, 0);
       const flap = new THREE.Mesh(new THREE.BoxGeometry(wg.flap, 0.035, wg.span), [this.wingMat, this.wingMat, this.wingMat, slot, this.wingMat, this.wingMat]);
       flap.position.set(-wg.flap / 2, 0, 0);
       this.flapPivot.add(flap);
@@ -193,7 +196,7 @@ export class CarView {
         this.wing.add(post);
       }
     }
-    this._flap = 0;     // 0 shut, 1 open (src/drsFlap.js)
+    this._flap = 0;     // 0 at rest (angled), 1 open and flat (src/drsFlap.js)
 
     // Wheel arch flares: a half disc on each side over the wheel, in the body colour, standing out from the flatter body side
     for (const a of sp.arches || []) {
@@ -387,10 +390,10 @@ export class CarView {
     car.vibration = this._amp * VIBRATION * (0.65 * Math.sin(this._ph * Math.PI * 2) + 0.35 * Math.sin(this._ph * Math.PI * 2 * 2.31 + 1.3));
     this.body.position.y = car.vibration;
 
-    // DRS flap: eases open while the car's DRS is on and shuts otherwise. Remote cars get the flag from their packets (src/ghosts.js).
-    // A class with no rear wing has no flap to move.
+    // DRS flap: eases flat while the car's DRS is on and back to its angled rest position otherwise. Remote cars get the flag from
+    // their packets (src/ghosts.js). A class with no rear wing has no flap to move.
     this._flap = stepFlap(this._flap, car.drs ? 1 : 0, dt);
-    if (this.flapPivot) this.flapPivot.rotation.z = -flapAngle(this._flap);     // negative z lifts the trailing edge (the flap's tail is at -x)
+    if (this.flapPivot) this.flapPivot.rotation.z = -flapAngle(this._flap);     // negative z lifts the trailing edge (the flap's tail is at -x); 0 when open
 
     const steer = lerp(p.steer, car.steer), wheel = lerp(p.wheel, car.wheelSpinAngle);
     for (const w of this.wheels) {
