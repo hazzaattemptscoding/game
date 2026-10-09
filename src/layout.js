@@ -132,11 +132,11 @@ export const LAYOUT = {
     [56.1, 59.1, 10.5, 60, 50],  // Guardroom Chicane: 2.5 m narrower than the rest of the lap, more punishing
   ],
 
-  // V-shaped run-off beside a street wall: [from point, side, width m, length m, hold m]. At `from` the wall steps out square to the
-  // track, leaving a paved apron `width` wide. It holds that width for `hold` metres, then the wall line runs back to the track
-  // limits in a straight line over `length`.
+  // V-shaped run-off beside a street wall: [from point, side, width m, length m, hold m, ramp m]. At `from` the apron and the wall
+  // ease out from the street wall over `ramp` metres (smooth, no square step), to a paved apron `width` wide. It holds that width
+  // for `hold` metres from `from`, then the wall line runs back to the track limits in a straight line over `length`.
   vrunoff: [
-    [23, 'L', 11, 75, 64],     // Sandbag exit, the long left wall: the apron starts at the exit (s 1362), where cars run wide, and reaches its old end at s 1501
+    [23, 'L', 11, 75, 64, 35], // Sandbag exit, the long left wall: the apron starts at the exit (s 1362), where cars run wide, eases out over 35 m, and reaches its old end at s 1501
   ],
 
   // Rumble strips: [from point, to point, side]. A grooved band across the apron (two bands, a third of the way in from the kerb and

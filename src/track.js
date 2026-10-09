@@ -631,11 +631,14 @@ function smoothKerbs(T) {
 // V-shaped run-off beside a street wall (layout.vrunoff). The wall steps out square to the track at the start, which is why this
 // runs after the wall has been eased and the kerbs smoothed, and comes back to the track limits in a straight line.
 // The apron holds its full width for `hold` metres first (layout vrunoff's fifth value, 0 if none), then tapers over `length`.
+// It eases out from the street wall over `ramp` metres first (layout vrunoff's sixth value, 0 for a square start), so the wall never steps.
 function buildVRunoff(T) {
-  for (const [from, side, width, length, hold = 0] of T.layout.vrunoff || []) {
+  for (const [from, side, width, length, hold = 0, ramp = 0] of T.layout.vrunoff || []) {
     const sd = side === 'L' ? 0 : 1, i0 = Math.round(T.sAtPointRaw(from) / T.ds);
     for (let k = 0; k <= hold + length; k++) {
-      const i = wrap(i0 + k, T.N), w = width * (1 - Math.max(0, k - hold) / length);
+      const i = wrap(i0 + k, T.N);
+      const f = ramp ? Math.min(1, k / ramp) : 1, up = f * f * (3 - 2 * f);
+      const w = width * up * (1 - Math.max(0, k - hold) / length);
       const edge = T.hw[i] + T.kerb[sd][i] + T.sausage[sd][i];
       T.runoff[sd][i] = Math.max(T.runoff[sd][i], w);
       T.wall[sd][i] = Math.max(T.wall[sd][i], edge + T.runoff[sd][i] + STREET_GAP);

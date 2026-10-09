@@ -73,8 +73,9 @@ if (pairs.size) console.log('  z-fight layer pairs: ' + [...pairs].sort((a, b) =
     const hw = T.hw[i];
     if (T.kerb[0][i] > 0 || T.surfaceAt(i, -(hw - 0.05)) !== SURF.PAINT || T.surfaceAt(i, -(hw + 0.3)) === SURF.KERB) { named.push(`kerb left of the straight at s=${T.s[i].toFixed(0)}`); break; }
   }
-  // 2. Sandbag exit: the left run-off is paved from s 1362 (where cars run wide), 11 m wide, and no grass sits beside it
-  for (const i of range(1365, 1420)) {
+  // 2. Sandbag exit: the left run-off is paved from s 1362 (where cars run wide), eased out over 35 m to 11 m wide (full width from
+  // s 1397), and no grass sits beside it
+  for (const i of range(1400, 1420)) {
     if (T.runoff[0][i] < 10.9 || ![SURF.RUNOFF, SURF.RUNOFF_ROUGH, SURF.RUMBLE].includes(T.surfaceAt(i, -(T.hw[i] + 5)))) { named.push(`no paved run-off left at s=${T.s[i].toFixed(0)}`); break; }
   }
   // 3. Guardroom and Final Approach exit, left: rumble bands a third and two thirds across the apron
