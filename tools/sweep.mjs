@@ -2,7 +2,7 @@
 // and scans it, no WebGL needed. Every hit is printed with its s (metres along the lap) and the reason.
 //   node tools/sweep.mjs                 print every hit, grouped by check
 //   node tools/sweep.mjs --json out.json also write the hits as JSON (for a regression test to compare against)
-//   node tools/sweep.mjs --check seam    run one check only (seam, runoff, wall, furniture, gap, far)
+//   node tools/sweep.mjs --check seam    run one check only (seam, runoff, wall, furniture, gap, far, behind)
 //   SWEEP_ROOT=/path/to/other/checkout node tools/sweep.mjs   the same checks on another checkout
 // Checks (thresholds are at the top; tune them only with a picture in hand):
 //   seam     a barrier line breaks: a gap in the sample indices of one barrier, or a jump in position or height between
@@ -12,6 +12,7 @@
 //   furniture a piece of trackside furniture stands on paved track surface (run-off or pit) or hard against the kerb
 //   gap      a stretch of more than GAP_LIMIT metres on one side with no furniture at all (sparse trackside)
 //   far      a sign, board or flag stands more than FAR_LIMIT metres from the nearest barrier on its side
+//   behind   gravel or paved run-off lies just outside a barrier (0.5 to 3 m beyond its face): that ground must be grass
 // Exit status is 1 when any hit is found, so it can run as a test once the known hits are fixed.
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +31,10 @@ const RUNOFF_END = 1.0;     // a run-off wider than this that drops to nothing i
 const GAP_LIMIT = 300;      // metres of a side with no furniture
 const FAR_LIMIT = 12;
 const BOARD_FAR_LIMIT = 20;   // distance boards stand just past the paved apron when the barrier is further out (boardOffset), so a driver can read them       // metres from the nearest barrier
-const CAT = { seam: 'seam', runoff: 'runoff', wall: 'wall', furniture: 'furniture', gap: 'gap', far: 'far' };
+const CAT = { seam: 'seam', runoff: 'runoff', wall: 'wall', furniture: 'furniture', gap: 'gap', far: 'far', behind: 'behind' };
+const BEHIND_STEP = 0.5, BEHIND_REACH = 3;   // the ground checked outside each barrier face, metres
+// surfaces that must not lie outside a barrier (the pit side of a pit wall is pit road, not run-off, so it is not listed)
+const PAVED_BEHIND = new Set([SURF.GRAVEL, SURF.RUNOFF, SURF.RUNOFF_ROUGH, SURF.RUMBLE]);
 
 const args = process.argv.slice(2);
 const only = args.includes('--check') ? args[args.indexOf('--check') + 1] : null;
@@ -38,6 +42,7 @@ const jsonOut = args.includes('--json') ? args[args.indexOf('--json') + 1] : nul
 
 const T = buildTrack();
 const L = T.length;
+const SURF_NAME = Object.fromEntries(Object.entries(SURF).map(([k, v]) => [v, k.toLowerCase()]));
 const BN = Object.fromEntries(Object.entries(BARRIER).map(([k, v]) => [v, k]));
 const hits = [];
 const hit = (check, s, sd, msg) => hits.push({ check, s: Math.round(((s % L) + L) % L), side: sd, msg });
@@ -130,6 +135,22 @@ if (want('far')) {
     let best = Infinity;
     for (const p of bpts[sd]) { const d = Math.hypot(p[0] - f.x, p[2] - f.z); if (d < best) best = d; }
     if (best > (/board/i.test(f.type) ? BOARD_FAR_LIMIT : FAR_LIMIT)) hit(CAT.far, f.s, sd, `${f.type} is ${best.toFixed(0)} m from the nearest barrier on its side`);
+  }
+}
+
+// 8. gravel or paved run-off just outside a barrier: one hit per barrier point (the first such surface found behind it)
+if (want('behind')) {
+  for (const b of T.barriers) {
+    if (b.type === BARRIER.PITWALL || b.type === BARRIER.PITOUTER || b.type === BARRIER.PITSEP) continue;   // the pit lane side of a pit wall
+    const g = b.side ? 1 : -1;
+    for (const p of b.pts) {
+      const i = p[3];
+      const a = Math.abs((p[0] - T.x[i]) * T.nx[i] + (p[2] - T.z[i]) * T.nz[i]);
+      for (let k = BEHIND_STEP; k <= BEHIND_REACH + 1e-6; k += BEHIND_STEP) {
+        const surf = T.surfaceAt(i, g * (a + k));
+        if (PAVED_BEHIND.has(surf)) { hit(CAT.behind, T.s[i], b.side, `${BN[b.type]} at ${a.toFixed(1)} m has ${SURF_NAME[surf]} ${k.toFixed(1)} m behind it`); break; }
+      }
+    }
   }
 }
 

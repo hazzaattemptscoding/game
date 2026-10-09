@@ -44,7 +44,9 @@ export function buildGroundRibbon(T, strips, P, G) {
         // beside the separate pit entry road (pitEntryZone) the run-off is shared asphalt at the mouth, the painted island
         // until the pit wall starts, then tarmac to the wall; the bands end there and the road's own ribbon (buildEntryRoad) carries on
         const zone = sd === 0 && T.pitEntryZone && T.pitEntryZone[i];
-        push(T.runoff[sd][i], zone ? (!T.pitEntryRunoff[i] ? 'road' : T.pitEntryWall[i] ? 'apron' : 'island') : T.concrete[sd][i] ? 'concrete' : 'apron');
+        // beside the entry lane, past the mouth, the strip to the pit wall is grass (no paved apron)
+        if (zone && T.pitEntryRunoff[i]) push(Math.max(0, T.pitEntryEdge[i] - c), 'grass');
+        else push(T.runoff[sd][i], zone ? (!T.pitEntryRunoff[i] ? 'road' : 'island') : T.concrete[sd][i] ? 'concrete' : 'apron');
         push(T.gravelOut[sd][i] > 0 ? T.gravelIn[sd][i] - c : 0, 'grass');   // grass between the apron and a gravel trap set back from it
         push(T.gravelOut[sd][i] > 0 ? T.gravelOut[sd][i] - c : 0, 'gravel');
         if (zone) { push(0, 'grass'); push(0, 'pit'); push(0, 'grass'); push(0, 'meadow'); E.push(e); MAT.push(m); continue; }
