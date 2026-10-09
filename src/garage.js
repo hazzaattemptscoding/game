@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import { CarView } from './car.js';
+import { previewFrame, PREVIEW_AZ, PREVIEW_FOV } from './preview.js';
 import { CAR_LIST, carById } from './cars.js';
 import { BODY_COLOURS, ACCENT_COLOURS, STRIPE_STYLES, LIVERY_SPONSORS, SPONSOR_NAMES, MAX_NAME, normaliseLivery, cleanLiveryName, ownLivery, localPlayerId, liveryEquals } from './livery.js';
 import { sponsorBoard } from './textures.js';
@@ -105,24 +106,25 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
     floor.rotation.x = -Math.PI / 2; scene.add(floor);
     car = new CarView(carById(settings.car), livery);
     scene.add(car.root);
-    camera = new THREE.PerspectiveCamera(32, 1.6, 0.1, 100);
+    camera = new THREE.PerspectiveCamera(PREVIEW_FOV, 1.6, 0.1, 100);
     const size = () => {
       const w = Math.max(1, viewBox.clientWidth), h = Math.max(1, viewBox.clientHeight);
       renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
     };
     size();
     if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(size); ro.observe(viewBox); }
-    let t0 = performance.now(), ang = -0.9;
+    let t0 = performance.now(), ang = 0, spin = 0;
     const loop = now => {
       if (disposed) return;
       raf = requestAnimationFrame(loop);
       const dt = Math.min(0.1, (now - t0) / 1000); t0 = now;
       if (!document.hidden && viewBox.clientWidth > 0) {
-        ang += dt * 0.35;
-        const aspect = camera.aspect, dist = aspect < 1.3 ? 8.6 : 6.6;
-        camera.position.set(Math.cos(ang) * dist, 2.6, Math.sin(ang) * dist);
-        camera.lookAt(0, 0.6, 0);
-        for (const w of car.wheels) w.spin.rotation.z = -ang * 2;
+        // a slow sway to either side of the three-quarter front view, so the car never turns its back on the player
+        ang += dt * 0.4; spin += dt * 0.7;
+        const f = previewFrame(carById(settings.car), camera.aspect, PREVIEW_AZ + Math.sin(ang) * 14, car.hull.position.x);
+        camera.position.set(f.x, f.y, f.z);
+        camera.lookAt(...f.target);
+        for (const w of car.wheels) w.spin.rotation.z = -spin * 2;
         renderer.render(scene, camera);
       }
     };
