@@ -52,7 +52,8 @@ export function trackBlockers(T) {
     if (T.pitGarage[i] > 0) out.push({ x: T.x[i] - T.nx[i] * (T.pitOut[i] + 9), z: T.z[i] - T.nz[i] * (T.pitOut[i] + 9), r: 14, name: 'pit garages' });
     if (T.isBridge[i]) out.push({ x: T.x[i], z: T.z[i], r: Math.max(T.wall[0][i], T.wall[1][i]) + 3, name: 'bridge' });
   }
-  for (const f of T.furniture || []) out.push({ x: f.x, z: f.z, r: 3, name: 'board' });
+  // the fill objects (track.js FILL_GAP) stand 1.5 m behind a barrier, well clear of any stand's 10 m zone: a small radius
+  for (const f of T.furniture || []) out.push({ x: f.x, z: f.z, r: f.fill ? 0.5 : 3, name: 'board' });
   return out;
 }
 

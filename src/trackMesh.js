@@ -14,6 +14,7 @@ import { buildGantry, buildStartPaint } from './gantry.js';
 import { buildBridge } from './bridge.js';
 import { meadowMaterial } from './scenery.js';
 import { garageBay } from './pitBuilding.js';
+import { Kit } from './meshKit.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
 const ROAD_TIGHT = 80;       // metres: a cambered bend tighter than this gets four road strips across, not two
@@ -353,39 +354,93 @@ function attenuator(pts, nrm, material) {
 // ---------------------------------------------------------------------------
 // Distance boards and signs, as placed by track.js.
 
+// trackside objects placed in track.js to fill the bare stretches (track.js FILL_GAP): every part is one box or cylinder with
+// a vertex colour, merged into a single mesh, so the whole fill costs one draw call
+const FILL_TYPES = new Set(['marshal', 'tyres', 'cabinet', 'mast', 'banner']);
+const FILL_COLOURS = { metal: 0xdddddd, rubber: 0x1e1e20, red: 0xc8102e, yellow: 0xffd21f };
+function fillObjects(T, g) {
+  const kit = new Kit(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  const part = (colour, geo, x, y, z, rotY = 0) => {
+    e.set(0, rotY, 0, 'YXZ');
+    m4.compose(v.set(x, y, z), q.setFromEuler(e), one);
+    geo.applyMatrix4(m4);
+    const c = new THREE.Color(FILL_COLOURS[colour]);
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(new Array(geo.attributes.position.count * 3).fill(0).map((_, k) => [c.r, c.g, c.b][k % 3]), 3));
+    kit.push('fill', geo);
+  };
+  const box = (colour, w, h, d, x, y, z, rotY) => part(colour, new THREE.BoxGeometry(w, h, d), x, y, z, rotY);
+  for (const f of T.furniture) {
+    if (!FILL_TYPES.has(f.type)) continue;
+    const i = f.i, heading = Math.atan2(T.tz[i], T.tx[i]), rot = -heading;   // local x runs along the track, the broad face looks across it
+    const { x, y, z } = f;
+    if (f.type === 'marshal') {
+      // a marshal post with a yellow flag at the top
+      box('metal', 0.07, 1.6, 0.07, x, y + 0.8, z);
+      box('yellow', 0.5, 0.36, 0.03, x, y + 1.42, z, rot);
+    } else if (f.type === 'tyres') {
+      // a stack of three tyres
+      for (let k = 0; k < 3; k++) part('rubber', new THREE.CylinderGeometry(0.42, 0.42, 0.28, 14), x, y + 0.14 + k * 0.28, z);
+    } else if (f.type === 'cabinet') {
+      // a fire extinguisher cabinet on a short post
+      box('metal', 0.05, 0.6, 0.05, x, y + 0.3, z);
+      box('red', 0.5, 0.9, 0.22, x, y + 1.05, z, rot);
+    } else if (f.type === 'mast') {
+      // a light mast with the lamp head at the top
+      part('metal', new THREE.CylinderGeometry(0.1, 0.14, 9, 8), x, y + 4.5, z);
+      box('metal', 1.6, 0.35, 0.5, x, y + 9.1, z, rot);
+    } else if (f.type === 'banner') {
+      // a sponsor banner between two posts, along the track
+      const ax = Math.cos(heading), az = Math.sin(heading);
+      box('metal', 0.08, 2.4, 0.08, x - ax * 1.5, y + 1.2, z - az * 1.5);
+      box('metal', 0.08, 2.4, 0.08, x + ax * 1.5, y + 1.2, z + az * 1.5);
+      box('red', 3.0, 0.9, 0.05, x, y + 1.85, z, rot);
+    }
+  }
+  if (!kit.parts.size) return;
+  g.add(kit.build({ fill: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) }));
+}
+
+// Boards, bollards and signs are merged into a few meshes (one per material), not one mesh each: the same geometry,
+// drawn in far fewer calls. Each part keeps its debug category (boards yellow, bollards and signs cyan) for the top-down view.
 function furniture(T) {
   const g = new THREE.Group();
-  const bollardMat = { white: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.5 }), orange: new THREE.MeshStandardMaterial({ color: 0xff6a13, roughness: 0.5 }) };
+  const boardKit = new Kit(), signKit = new Kit(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  // a geometry turned by rotY and moved to (x, y, z), pushed into the kit under key
+  const put = (kit, key, geo, x, y, z, rotY = 0) => {
+    e.set(0, rotY, 0, 'YXZ');
+    m4.compose(v.set(x, y, z), q.setFromEuler(e), one);
+    kit.push(key, geo.applyMatrix4(m4));
+  };
   const boardMats = {}, postMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.6 });
   const signMat = new THREE.MeshStandardMaterial({ map: tex.speedSignTexture(T.layout.pit.speedLimit), roughness: 0.6, side: THREE.DoubleSide });
   for (const f of T.furniture) {
     const i = f.i, heading = Math.atan2(T.tz[i], T.tx[i]);
     if (f.type === 'board') {
-      boardMats[f.value] ||= new THREE.MeshStandardMaterial({ map: tex.distanceTexture(f.value), roughness: 0.6, side: THREE.DoubleSide });
-      const board = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.8), boardMats[f.value]);
-      board.position.set(f.x, f.y + 1.6, f.z);
-      // faces oncoming cars, angled 10 degrees towards the track
-      board.rotation.y = -heading - Math.PI / 2 + Math.sign(f.d) * 10 * Math.PI / 180;
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.25, 0.08), postMat);
-      post.position.set(f.x, f.y + 0.6, f.z);
-      g.add(tag(board, 'board'), tag(post, 'board'));
+      // a 1.2 m by 0.8 m board, faces oncoming cars, angled 10 degrees towards the track; its post stands under it
+      const rotY = -heading - Math.PI / 2 + Math.sign(f.d) * 10 * Math.PI / 180;
+      const key = `board${f.value}`;
+      boardMats[key] ||= new THREE.MeshStandardMaterial({ map: tex.distanceTexture(f.value), roughness: 0.6, side: THREE.DoubleSide });
+      const ex = [Math.cos(rotY), -Math.sin(rotY)], cy = f.y + 1.6, hw = 0.6, hh = 0.4;
+      const corner = (sx, sy) => [f.x + ex[0] * sx * hw, cy + sy * hh, f.z + ex[1] * sx * hw];
+      boardKit.quad(key, corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1));
+      boardKit.box('post', 0.08, 1.25, 0.08, f.x, f.y + 0.6, f.z);
     } else if (f.type === 'bollard') {
-      // a flexible white post with an orange band, standing on the kerb
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.9, 8), bollardMat.white);
-      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0625, 0.0625, 0.18, 8), bollardMat.orange);
-      const y = f.y + (f.raise || 0);   // pit exit bollards stand on the low wall
-      post.position.set(f.x, y + 0.45, f.z); band.position.set(f.x, y + 0.72, f.z);
-      post.castShadow = true;
-      g.add(tag(post, 'sign'), tag(band, 'sign'));
+      // a flexible white post with an orange band, standing on the kerb (pit exit bollards stand on the low wall)
+      const y = f.y + (f.raise || 0);
+      put(signKit, 'bollardWhite', new THREE.CylinderGeometry(0.06, 0.07, 0.9, 8), f.x, y + 0.45, f.z);
+      put(signKit, 'bollardOrange', new THREE.CylinderGeometry(0.0625, 0.0625, 0.18, 8), f.x, y + 0.72, f.z);
     } else if (f.type === 'sign') {
-      const sign = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24), signMat);
-      sign.position.set(f.x, f.y + 2.4, f.z);
-      sign.rotation.y = -heading - Math.PI / 2;
-      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.3, 6), postMat);
-      pole.position.set(f.x, f.y + 1.75, f.z);
-      g.add(tag(sign, 'sign'), tag(pole, 'sign'));
+      // a pit lane speed sign on a pole
+      put(signKit, 'signface', new THREE.CircleGeometry(0.6, 24), f.x, f.y + 2.4, f.z, -heading - Math.PI / 2);
+      put(signKit, 'post', new THREE.CylinderGeometry(0.05, 0.05, 1.3, 6), f.x, f.y + 1.75, f.z);
     }
   }
+  const noShadow = keys => Object.fromEntries(keys.map(k => [k, { cast: false, receive: false }]));
+  const boards = boardKit.build({ ...boardMats, post: postMat }, { debug: 'board', ...noShadow([...Object.keys(boardMats), 'post']) });
+  const signs = signKit.build({ bollardWhite: new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.5 }), bollardOrange: new THREE.MeshStandardMaterial({ color: 0xff6a13, roughness: 0.5 }), signface: signMat, post: postMat },
+    { debug: 'sign', bollardWhite: { cast: true, receive: false }, ...noShadow(['bollardOrange', 'signface', 'post']) });
+  g.add(boards, signs);
+  fillObjects(T, g);
   return g;
 }
 

@@ -55,6 +55,8 @@ const GRAVEL_APRON = 3;    // a gravel trap always has at least this much paved 
 const STREET_GAP = 0.8;    // clear space between the kerb and a street-section wall, metres
 const BRIDGE_RUNOFF = 2.0;   // the deck is this much wider than the track on each side, and the parapet stands on its edge
 const BOARD_BEHIND = 0.5;    // a distance board stands this far behind the barrier face (never more than 1 m in front of it)
+const FILL_GAP = 120;        // no stretch on one side may go longer than this without trackside furniture
+const CLUSTER_BEHIND = 1.5;  // fill objects stand this far behind the outer barrier line (out of the run-off, within reach of the barrier)
 const BRIDGE_APPROACH = 40; // metres before and after the deck where a parapet funnels in towards it
 const MIN_EDGE = 4;        // the 4 m minimum from the track edge to any barrier
 const MIN_BARRIER = 5;     // working clearance margin beyond the 4 m minimum (street, pit and bridge excepted)
@@ -1386,7 +1388,7 @@ function buildFurniture(T, corners) {
   const { N } = T, HW = T.hw;
   T.furniture = [];
   const wl = wallLines(T);
-  T.wallIn = wl.inner;
+  T.wallIn = wl.inner; T.wallOut = wl.outer;
   const place = (type, value, i, d, extra = {}) => {
     const x = T.x[i] + T.nx[i] * d, z = T.z[i] + T.nz[i] * d;
     return { type, value, i, s: T.s[i], d, x, z, y: T.groundAt(x, z, i), ...extra };
@@ -1446,6 +1448,41 @@ function buildFurniture(T, corners) {
     }
   }
 
+  // bare stretches: where a side has no trackside furniture for more than FILL_GAP metres, a cluster goes in at the
+  // middle of the gap, just behind the outer barrier line, and the gap is re-checked until none is left
+  const kinds = ['marshal', 'tyres', 'cabinet', 'banner', 'tyres', 'mast'];
+  let clusters = 0;
+  for (const sd of [0, 1]) {
+    const skipped = new Set();
+    for (let guard = 0; guard < 200; guard++) {
+      const ss = T.furniture.filter(f => (f.d < 0 ? 0 : 1) === sd).map(f => f.s).sort((a, b) => a - b);
+      let worst = null;
+      for (let k = 0; k < ss.length; k++) {
+        const next = k + 1 < ss.length ? ss[k + 1] : ss[0] + T.length, len = next - ss[k];
+        if (len > FILL_GAP && !skipped.has(Math.round(ss[k])) && (!worst || len > worst.len)) worst = { from: ss[k], len };
+      }
+      if (!worst) break;
+      const mid = worst.from + worst.len / 2;
+      const centre = wrap(Math.round(mid / T.ds), N);
+      let placed = false;
+      const reach = Math.floor(worst.len / 2 / T.ds);   // try the middle of the gap first, then each side of it in turn
+      const offs = [0];
+      for (let k = 6; k <= reach; k += 6) offs.push(k, -k);
+      for (const off of offs) {
+        const i0 = wrap(centre + off, N);
+        const spots = [0, 7, 14].map(k => wrap(i0 + k, N));   // three objects, a few metres apart, so it does not read as a fence
+        if (!spots.every(i => clusterSpot(T, i, sd, wl))) continue;
+        const cluster = spots.map((i, k) => place(kinds[(clusters * 3 + k) % kinds.length], 0, i, (sd ? 1 : -1) * (wl.outer[sd][i] + CLUSTER_BEHIND), { fill: true }));
+        if (cluster.some(f => nearOther(f.x, f.z, 6))) continue;
+        T.furniture.push(...cluster);
+        clusters++;
+        placed = true;
+        break;
+      }
+      if (!placed) skipped.add(Math.round(worst.from));
+    }
+  }
+  T.fillClusters = clusters;
 }
 
 // The barrier line on each side at every sample: the nearest barrier point on that side (inner) and the furthest within a
@@ -1473,6 +1510,22 @@ function wallLines(T) {
 export function boardOffset(T, i, sd) {
   const a = T.wallIn[sd][i];
   return Number.isFinite(a) ? (sd ? 1 : -1) * (a + BOARD_BEHIND) : null;
+}
+
+// the paved width on a side at sample i, from the centre line: track half width, kerbs and the run-off
+const HW_OF = (T, i, sd) => T.hw[i] + T.kerb[sd][i] + T.sausage[sd][i] + T.runoff[sd][i];
+
+// samples where a fill object may stand: outside the barrier line, off the bridge, and (on the pit side only) off the pit road
+function clusterSpot(T, i, sd, wl) {
+  if (!Number.isFinite(wl.outer[sd][i]) || T.isBridge[i]) return false;
+  if (wl.outer[sd][i] + CLUSTER_BEHIND < HW_OF(T, i, sd) + 0.5) return false;   // never on the paved apron
+  if (sd === 0 && (T.pitOut[i] || T.pitEntryZone[i])) return false;
+  if (sd === 0 && T.pitRange) {
+    const [a, b] = T.pitRange, rel = ((T.s[i] - a) % T.length + T.length) % T.length, span = ((b - a) % T.length + T.length) % T.length;
+    if (rel <= span + 40 || rel >= T.length - 40) return false;   // the pit road and 40 m either side of it
+  }
+  for (let k = -40; k <= 40; k += 4) if (T.isBridge[wrap(i + k, T.N)]) return false;   // and the bridge approach
+  return true;
 }
 
 function runsOf(N, test) {

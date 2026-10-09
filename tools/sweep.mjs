@@ -100,7 +100,8 @@ if (want('furniture')) {
     const i = f.i;
     const edge = T.hw[i] + T.kerb[f.d < 0 ? 0 : 1][i] + T.sausage[f.d < 0 ? 0 : 1][i];
     const sd = f.d < 0 ? 0 : 1;
-    const paved = T.runoff[sd][i] > 1.8 || T.pitIn?.[i] !== undefined && Math.abs(f.d) < T.pitWidth?.[i] + 0.5 && f.pit;
+    // paved: inside the run-off's own width (from the kerb out), so an object standing behind the barrier is not on it
+    const paved = T.runoff[sd][i] > 1.8 && Math.abs(f.d) < edge + T.runoff[sd][i] || T.pitIn?.[i] !== undefined && Math.abs(f.d) < T.pitWidth?.[i] + 0.5 && f.pit;
     if (Math.abs(f.d) < edge) hit(CAT.furniture, f.s, sd, `${f.type} at d=${f.d.toFixed(1)} is inside the kerb line (edge ${edge.toFixed(1)} m)`);
     else if (paved && !f.pit && !f.corner) hit(CAT.furniture, f.s, sd, `${f.type} (${f.corner || 'no corner'}) stands on the paved run-off at d=${f.d.toFixed(1)}`);
   }
