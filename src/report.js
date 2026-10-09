@@ -31,6 +31,7 @@ export class ReportTool {
     this.pointer = new THREE.Vector2();
     this.center = { x: car.x, z: car.z };
     this.zoom = 1;
+    this.sentThisSession = 0;   // reports sent or downloaded since the page loaded (the status line counts them)
     this.follow = false;
     this.tool = 'pick';
     this.opened = false;
@@ -54,6 +55,9 @@ export class ReportTool {
     document.getElementById('report-resume').addEventListener('click', () => this.close());
     document.getElementById('report-clear').addEventListener('click', () => { this.selections = []; this.clearHighlights(); this.renderSelections(); });
     document.getElementById('report-save').addEventListener('click', () => this.save());
+    // a change in the form clears the status line: it says what happened to the last report, until the next edit
+    this.note.addEventListener('input', () => { this.status.textContent = ''; });
+    this.category.addEventListener('change', () => { this.status.textContent = ''; });
     this.canvas.addEventListener('pointerdown', event => this.pointerDown(event));
     this.canvas.addEventListener('pointermove', event => this.pointerMove(event));
     this.canvas.addEventListener('pointerup', event => this.pointerUp(event));
@@ -254,12 +258,14 @@ export class ReportTool {
   }
 
   renderSelections() {
+    this.status.textContent = '';   // a change in the selection is a change in the form
     this.selectionText.textContent = this.selections.length ? this.selections.map((item, i) => `${i + 1}. ${item.type} · ${item.id}${item.corner ? ` · ${item.corner}` : ''}`).join('\n') : 'No features selected';
   }
 
   async save() {
     const saveButton = document.getElementById('report-save');
     saveButton.disabled = true;
+    let done = false;   // sent or downloaded: the form is reset and Save waits two seconds before it can be pressed again
     try {
       this.renderer.render(this.scene, this.camera);
       const screenshotMap = this.canvas.toDataURL('image/png');
@@ -294,6 +300,7 @@ export class ReportTool {
       if (!sent && !handed && !window.claude) {
         const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
         const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
+        handed = true;   // the file is handed to the browser as a download (not a local-only save)
       }
       if (import.meta.env.DEV) {
         const response = await fetch('/__lakeside-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json });
@@ -304,11 +311,21 @@ export class ReportTool {
         catch (error) { if (error.name !== 'AbortError') throw error; }
       }
       if (delivered) await this.remove(localId);
-      this.status.textContent = sent ? 'Report sent' : handed ? 'Report downloaded' : delivered ? 'Report sent' : `Saved in this browser only${failure ? ` (${failure})` : ''}`;
+      const label = sent || delivered ? 'Report sent' : handed ? 'Report downloaded' : `Saved in this browser only${failure ? ` (${failure})` : ''}`;
+      done = sent || delivered || handed;
+      if (done) {
+        this.sentThisSession++;
+        this.note.value = '';
+        this.selections = []; this.clearHighlights(); this.renderSelections();   // clears the status line, which is set below
+        const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        this.status.textContent = `${label} ${time} (${this.sentThisSession} this session)`;
+      } else {
+        this.status.textContent = label;   // the note stays, so nothing typed is lost
+      }
       await this.refreshCount();
     } catch (error) {
-      this.status.textContent = `Could not save report: ${error.message}`;
-    } finally { saveButton.disabled = false; }
+      this.status.textContent = `Could not save report: ${error.message}. Your note is still here.`;
+    } finally { setTimeout(() => { saveButton.disabled = false; }, done ? 2000 : 0); }
   }
 
   async store(report) {

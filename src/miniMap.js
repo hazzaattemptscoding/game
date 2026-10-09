@@ -113,7 +113,8 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour, ti
 
   function layout() {
     const st = settings.trackMap, scale = (settings.hudScale || 100) / 100;
-    const want = Math.round(Math.min(MAP_SIZES[st.size] * scale, innerWidth * 0.42));
+    // at most 42% of the width, 30% on a phone so the map clears the lap block and the session chip
+    const want = Math.round(Math.min(MAP_SIZES[st.size] * scale, innerWidth * (innerWidth < 640 ? 0.3 : 0.42)));
     const ratio = Math.min(2, devicePixelRatio || 1);
     if (want !== size || ratio !== dpr) {
       size = want; dpr = ratio;

@@ -20,11 +20,11 @@
   </div>
 </div>
 <div class="t-top">
-  <button data-action="settings" class="t-menu" aria-label="Menu">Menu</button>
-  <button data-action="camera" aria-label="Switch camera">Camera</button>
-  <button data-action="reset" aria-label="Back on track">Reset</button>
-  <button data-action="report" aria-label="Report a problem">Report</button>
-  <button data-action="board" class="t-times" aria-label="Lap times">Times</button>
+  <button data-action="settings" class="t-menu" aria-label="Menu" title="Menu (Esc)">Menu</button>
+  <button data-action="camera" aria-label="Switch camera" title="Switch camera (C)">Camera</button>
+  <button data-action="reset" aria-label="Back on track" title="Back on track (R)">Reset</button>
+  <button data-action="report" aria-label="Report a problem" title="Report a problem (F2)">Report</button>
+  <button data-action="board" class="t-times" aria-label="Lap times" title="Lap times (Tab)">Times</button>
 </div>
 <div id="sess" hidden>
   <div id="sess-chip" class="sess-chip" hidden></div>
@@ -51,8 +51,8 @@
     </select>
     <label for="report-note">Note</label>
     <textarea id="report-note" rows="3" maxlength="2000"></textarea>
-    <button id="report-save" type="button">Save report</button>
     <span id="report-status" role="status"></span>
+    <button id="report-save" type="button">Save report</button>
     <span id="report-pending">0 unsent</span>
   </section>
   <div id="report-rect" hidden></div>

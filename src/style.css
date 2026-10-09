@@ -26,7 +26,7 @@ html, body {
 #hud { position: fixed; inset: 0; pointer-events: none; font-family: var(--f-body); font-variant-numeric: tabular-nums; color: var(--text); font-size: 14px; }
 
 /* the lap block, top left: one flat panel; the lap time is the big numeral, Last and Best under it */
-.hud-times { position: absolute; left: 16px; top: calc(14px + env(safe-area-inset-top, 0px)); width: 236px; padding: 12px 14px 10px; background: var(--hud-card); border: 1px solid var(--line-strong); border-radius: var(--r-card); transform: scale(var(--hs, 1)); transform-origin: 0 0; }
+.hud-times { position: absolute; left: 16px; top: calc(12px + env(safe-area-inset-top, 0px)); width: 236px; padding: 12px 14px 10px; background: var(--hud-card); border: 1px solid var(--line-strong); border-radius: var(--r-card); transform: scale(var(--hs, 1)); transform-origin: 0 0; }
 .hud-cap { display: block; font-size: 11px; font-weight: 600; line-height: 1.2; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
 .hud-lap { font-family: var(--f-display); font-weight: 600; font-size: 44px; line-height: 1; letter-spacing: 0; color: var(--text); }
 .hud-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
@@ -87,7 +87,7 @@ html, body {
 .hud-flash.warn { --bar: var(--warn); }
 
 /* the dash, bottom right: speed, gear, revs and the assist lights */
-.hud-dash { position: absolute; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); width: 236px; padding: 12px 14px; background: var(--hud-card); border: 1px solid var(--line-strong); border-radius: var(--r-card); transform: scale(var(--hs, 1)); transform-origin: 100% 100%; }
+.hud-dash { position: absolute; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 236px; padding: 12px 14px; background: var(--hud-card); border: 1px solid var(--line-strong); border-radius: var(--r-card); transform: scale(var(--hs, 1)); transform-origin: 0 100%; }
 .hud-rev { height: 4px; margin-bottom: 10px; background: var(--pit-3); overflow: hidden; }
 .hud-rev i { display: block; height: 100%; background: var(--lake); transform-origin: left; }
 .hud-rev i.hot { background: var(--bad); }
@@ -107,11 +107,10 @@ html, body {
 .hud-lights span.off { color: var(--text-faint); border-color: var(--line); }
 
 /* the optional readouts: the handling line, the pedals and the keys, the help line */
-.hud-debug { position: absolute; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); margin: 0; padding: 8px 10px; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--text-dim); background: var(--hud-card); border: 1px solid var(--line); border-radius: var(--r-ctl); display: none; }
+.hud-debug { position: absolute; left: 268px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); margin: 0; padding: 8px 10px; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--text-dim); background: var(--hud-card); border: 1px solid var(--line); border-radius: var(--r-ctl); display: none; }
 .hud-help { position: absolute; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); padding: 6px 14px; font-size: 13px; color: var(--text-dim); background: var(--hud-card); border: 1px solid var(--line); border-radius: var(--r-ctl); white-space: nowrap; transition: opacity 1s; }
 .hud-help.fade { opacity: 0; }
 .hud-inputs { position: absolute; left: 50%; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) scale(var(--hs, 1)); transform-origin: 50% 100%; display: flex; align-items: flex-end; gap: 14px; }
-body.touch .hud-inputs { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
 .hud-pedals { display: flex; gap: 5px; }
 .hud-pedals span { position: relative; display: block; width: 12px; height: 46px; overflow: hidden; background: var(--pit-3); border-radius: 2px; }
 .hud-pedals i { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; transform: scaleY(0); transform-origin: bottom; background: var(--lake); }
@@ -271,16 +270,11 @@ body.hx-no-liveDelta .hud-live { display: none !important; }
 #menu .m-note { margin: 0; font-size: 13px; line-height: 1.4; color: var(--lake); }
 #menu .m-note.warn { color: var(--warn); }
 
-/* the rail: wordmark, the resume button (main menu), the seven entries with their number keys, the driver at the bottom */
+/* the rail: wordmark, the seven entries with their number keys, the driver at the bottom */
 #menu .rail { display: flex; flex-direction: column; gap: var(--s-5); min-height: 0; padding: var(--s-7) var(--s-5) var(--s-6); overflow-y: auto; background: color-mix(in srgb, var(--pit-1) 96%, transparent); border-right: 1px solid var(--line); }
 #menu .rail-brand { display: block; padding: 0; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
 #menu .rail-brand b { display: block; font-family: var(--f-display); font-weight: 700; font-size: 20px; line-height: 1; letter-spacing: .14em; text-transform: uppercase; }
 #menu .rail-brand span { display: block; margin-top: var(--s-2); font-size: 12px; letter-spacing: .01em; color: var(--text-faint); }
-#menu .btn.primary.resume { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; width: 100%; min-height: 52px; margin-top: var(--s-2); padding: var(--s-2) var(--s-4); border: 0; border-radius: var(--r-ctl); background: var(--accent-fill); color: var(--text); text-align: left; }
-#menu .btn.primary.resume:hover { background: color-mix(in srgb, var(--accent-fill) 88%, var(--text)); }
-#menu .btn.primary.resume:active { background: color-mix(in srgb, var(--accent-fill) 85%, var(--pit-0)); }
-#menu .btn.primary.resume b { font-family: var(--f-body); font-weight: 600; font-size: 16px; line-height: 1.2; }
-#menu .btn.primary.resume span { font-size: 12px; font-weight: 400; color: var(--text); opacity: .8; }
 #menu .nav { display: flex; flex-direction: column; gap: 2px; }
 #menu .nav-item { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); min-height: 40px; padding: var(--s-2) 10px; border: 0; border-radius: var(--r-ctl); background: none; color: var(--text-dim); font-size: 15px; font-weight: 500; text-align: left; cursor: pointer; transition: background-color var(--dur-press) var(--ease-out), color var(--dur-press) var(--ease-out); }
 #menu .nav-item:hover { background: var(--pit-2); color: var(--text); }
@@ -290,6 +284,11 @@ body.hx-no-liveDelta .hud-live { display: none !important; }
 #menu .nav-item[aria-current=page]::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
 #menu kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px solid var(--line-strong); border-radius: 3px; font-family: var(--f-body); font-size: 11px; font-weight: 600; line-height: 1.5; text-align: center; color: var(--text-faint); }
 #menu .nav-item[aria-current=page] kbd { border-color: var(--accent); color: var(--text); }
+/* the last mode used: a quiet tag under its label (the rail is narrow, so it does not sit beside the label) */
+#menu .nav-text { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+#menu .nav-text > span { white-space: nowrap; }
+#menu .nav-last { font-size: 11px; font-weight: 600; line-height: 1.2; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
+#menu .nav-item[aria-current=page] .nav-last { color: var(--text-dim); }
 #menu .driver { display: flex; align-items: center; gap: var(--s-3); margin-top: auto; padding-top: var(--s-4); border-top: 1px solid var(--line); color: var(--text-dim); font-size: 13px; }
 #menu .driver b.no { flex: none; min-width: 34px; padding: 2px 6px; background: var(--pit-3); border: 1px solid var(--line-strong); border-radius: 3px; color: var(--text); font-family: var(--f-display); font-weight: 700; font-size: 18px; line-height: 1.2; text-align: center; font-variant-numeric: tabular-nums; }
 #menu .driver strong { display: block; font-size: 14px; font-weight: 600; color: var(--text); }
@@ -363,11 +362,16 @@ body.hx-no-liveDelta .hud-live { display: none !important; }
 #menu .btn.danger, #menu .m-btn.danger { color: var(--bad); }
 #menu .btn.quiet, #menu .m-btn.quiet { min-height: 36px; border-color: transparent; background: none; color: var(--text-dim); }
 #menu .btn.quiet:hover, #menu .m-btn.quiet:hover { background: var(--pit-2); color: var(--text); }
-#menu .btn-row { display: flex; align-items: center; width: 100%; min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: 0; background: none; color: var(--text); font-size: 16px; font-weight: 500; justify-content: flex-start; text-align: left; cursor: pointer; }
+#menu .btn-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); width: 100%; min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: 0; background: none; color: var(--text); font-size: 16px; font-weight: 500; text-align: left; cursor: pointer; }
 #menu .btn-row:hover { background: var(--pit-2); }
 #menu .btn-row:active { transform: scale(.98); }
 #menu .btn-row + .btn-row { border-top: 1px solid var(--line); }
 #menu .btn-row.danger { color: var(--bad); }
+/* the pause pane: Resume is the one primary, its number badge sits on the right; the first control keeps 16 px under the title */
+#menu .m-screen.pause-body { padding-top: var(--s-4); }
+#menu .pause-resume { justify-content: space-between; }
+#menu .btn.primary kbd { border-color: color-mix(in srgb, var(--text) 45%, transparent); color: var(--text); }
+#menu .btn-row kbd { flex: none; }
 #menu .confirm p { margin: 0 0 var(--s-4); }
 #menu .confirm .actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 #menu .confirm .actions .btn { flex: 1 1 140px; }
@@ -458,7 +462,6 @@ body.hx-no-liveDelta .hud-live { display: none !important; }
   #menu .rail-brand { flex: 0 0 auto; }
   #menu .rail-brand b { font-size: 18px; }
   #menu .rail-brand span, #menu .driver { display: none; }
-  #menu .btn.primary.resume { flex: 1 1 100%; min-height: 48px; margin-top: var(--s-2); }
   #menu .nav { flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; gap: 4px; }
   #menu .nav-item { flex: 0 1 auto; min-height: 44px; padding: 0 var(--s-3); font-size: 14px; white-space: nowrap; }
   #menu .nav-item kbd { display: none; }
@@ -486,7 +489,7 @@ body.hx-no-liveDelta .hud-live { display: none !important; }
 body.menu-open .t-top, body.menu-open #touch, body.menu-open #steer-bar, body.menu-open #board { display: none !important; }
 body.menu-main #hud, body.menu-main #sess { display: none; }
 
-/* the pause rail: the session card (mode, laps, best, the lap in progress) and the shortcuts, under the wordmark */
+/* the pause context rail: the session card (mode, laps, best, the lap in progress), under the wordmark, on every screen of the pause menu */
 #menu .rail-pause { display: flex; flex-direction: column; gap: var(--s-4); }
 #menu .session-card { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-4); background: var(--pit-2); border: 1px solid var(--line); border-radius: var(--r-card); }
 #menu .session-card .gtitle { margin: 0 0 var(--s-1); }
@@ -559,7 +562,6 @@ body.menu-main #hud, body.menu-main #sess { display: none; }
 .stand-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stand-row em { font-style: normal; color: var(--text-faint); }
 .stand-row b { min-width: 52px; text-align: right; font-weight: 600; }
-body.touch .hud-stand { font-size: 12px; }
 
 /* cursor steering indicator: a thin flat bar at the bottom centre, the marker follows the steering */
 #steer-bar { position: fixed; left: 50%; bottom: calc(6px + env(safe-area-inset-bottom, 0px)); width: min(320px, 40vw); height: 4px; transform: translateX(-50%); background: var(--pit-3); pointer-events: none; }
@@ -605,13 +607,10 @@ body.touch .hud-stand { font-size: 12px; }
 #board .green { color: var(--timing-pb); }
 #board .yellow { color: var(--timing-slow); }
 #board .bd-none { margin: 0; font-size: 14px; color: var(--text-faint); }
-.t-top .t-times { display: none; }
-body.touch .t-top .t-times { display: block; }
-body.touch #board h2 { font-size: 20px; }
 @media (max-height: 560px) { #board { justify-content: flex-start; } }
 
-/* top buttons, always available: flat rectangles with 44 px targets */
-.t-top { position: fixed; right: 12px; top: calc(12px + env(safe-area-inset-top, 0px)); display: flex; gap: 6px; }
+/* the button row, top right, the same in both modes: Menu, Camera, Reset, Report, Times. Flat rectangles, 44 px targets. */
+.t-top { position: fixed; right: 16px; top: calc(12px + env(safe-area-inset-top, 0px)); display: flex; gap: 6px; }
 .t-top button { min-width: 44px; min-height: 44px; padding: 0 var(--s-3); font: inherit; font-size: 14px; font-weight: 600; color: var(--text); background: var(--hud-card); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); cursor: pointer; pointer-events: auto; }
 .t-top button:hover { background: var(--pit-3); }
 .t-top button:active { transform: scale(.98); }
@@ -621,7 +620,8 @@ body.touch #board h2 { font-size: 20px; }
 #touch { display: none; }
 body.touch #touch { display: block; }
 .t-steer { position: fixed; left: 0; top: 70px; bottom: 0; width: 50%; touch-action: none; }
-.t-hint { position: absolute; left: 16px; top: 300px; font-size: 14px; color: var(--text-faint); }
+.t-hint { position: absolute; left: 16px; top: 300px; font-size: 14px; color: var(--text-faint); transition: opacity 160ms var(--ease-out); }
+body.steered .t-hint { opacity: 0; }   /* gone after the first steer touch (src/input.js) */
 .t-knob { position: fixed; width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--text); background: color-mix(in srgb, var(--pit-0) 40%, transparent); transform: translate(-50%, -50%); display: none; pointer-events: none; }
 .t-knob.on { display: block; }
 .t-pedals { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: 84px 96px; grid-template-rows: 56px 150px; gap: 8px; }
@@ -630,14 +630,6 @@ body.touch #touch { display: block; }
 .t-drs { grid-column: 1 / 3; }
 .t-brake.on { background: color-mix(in srgb, var(--bad) 18%, var(--pit-1)); border-color: var(--bad); }
 .t-gas.on { background: color-mix(in srgb, var(--lake) 18%, var(--pit-1)); border-color: var(--lake); }
-/* touch: the dash and the lap block stack at the bottom left, the pedals at the bottom right, the buttons along the top, the chip under them on a phone */
-body.touch .hud-dash { left: 12px; right: auto; top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: 168px; transform: scale(var(--hs, 1)); transform-origin: 0 100%; }
-body.touch .hud-times { left: 12px; top: auto; bottom: calc(136px + env(safe-area-inset-bottom, 0px)); width: 170px; transform: scale(var(--hs, 1)); transform-origin: 0 100%; }
-body.touch .hud-speed b { font-size: 44px; }
-body.touch .hud-gear { font-size: 36px; }
-body.touch .hud-help, body.touch .hud-debug { display: none !important; }
-body.touch .hud-lap { font-size: 34px; }
-body.touch .hud-warn { top: calc(18% + 44px); font-size: 15px; }
 
 /* the track report tool (src/reportTool.js): the header, the tools and the form, all on the tokens */
 #report-layer { position: fixed; inset: 0; z-index: 8; pointer-events: none; color: var(--text); font-family: var(--f-body); font-variant-numeric: tabular-nums; }
@@ -659,7 +651,10 @@ body.touch .hud-warn { top: calc(18% + 44px); font-size: 15px; }
 #report-layer #report-save { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--text); }
 #report-layer #report-save:hover { background: color-mix(in srgb, var(--accent-fill) 88%, var(--text)); }
 #report-layer button:disabled { opacity: .45; }
-#report-status, #report-pending { font-size: 12px; color: var(--text-dim); }
+/* the status line sits above Save and reads as text: what happened to the report (sent, downloaded, saved here) */
+#report-status { min-height: 20px; font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--text); }
+#report-status:empty { min-height: 0; }
+#report-pending { font-size: 12px; color: var(--text-dim); }
 #report-rect { position: fixed; z-index: 7; border: 1px dashed var(--accent-soft); background: var(--accent-tint); pointer-events: none; }
 body.report-mode #touch { display: none !important; }
 @media (max-width: 600px) {
@@ -675,18 +670,21 @@ body.report-mode #touch { display: none !important; }
 #trackmap { position: absolute; pointer-events: none; overflow: hidden; border-radius: var(--r-card); background: var(--pit-1); outline: 1px solid var(--line-strong); }
 #trackmap[hidden] { display: none; }
 #trackmap canvas { display: block; width: 100%; height: 100%; }
-#trackmap.pos-tr { right: 16px; top: calc(58px + env(safe-area-inset-top, 0px)); }
+#trackmap.pos-tr { right: 16px; top: calc(64px + env(safe-area-inset-top, 0px)); }   /* directly under the button row */
 #trackmap.pos-tl { left: 16px; top: calc(250px + env(safe-area-inset-top, 0px)); }
 #trackmap.pos-bl { left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
 #trackmap.pos-br { right: 16px; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
-body.touch #trackmap.pos-br, body.touch #trackmap.pos-tr { top: auto; bottom: calc(232px + env(safe-area-inset-bottom, 0px)); right: 12px; }   /* above the pedals, clear of the messages at the top */
-body.touch #trackmap.pos-bl { bottom: calc(440px + env(safe-area-inset-bottom, 0px)); }
-body.touch #trackmap.pos-tl { top: calc(150px + env(safe-area-inset-top, 0px)); }
 /* a phone: the five buttons take one row, the chip goes under them; the chip also drops on any window under 1000 px, so it clears the buttons */
 @media (max-width: 1000px) { .sess-chip { top: calc(62px + env(safe-area-inset-top, 0px)); } }
+/* a phone (portrait): the chip sits under the buttons, so the lap block and the map start below it; the dash is narrower so the
+   pedals (touch only) fit beside it; the input keys and the help line are not drawn over the pedals. The same in both modes. */
 @media (max-width: 640px) {
   .t-top { left: 12px; justify-content: flex-end; }
   .t-top button { min-width: 44px; padding: 0 8px; font-size: 13px; }
+  .hud-times { top: calc(104px + env(safe-area-inset-top, 0px)); width: 220px; }
+  .hud-dash { width: 168px; }
+  #trackmap.pos-tr { top: calc(104px + env(safe-area-inset-top, 0px)); }
+  .hud-inputs, .hud-help { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

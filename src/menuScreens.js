@@ -124,36 +124,21 @@ function openEntry(ctx, id) {
   return m.jump(id);
 }
 
-// The primary button at the top of the main menu: resumes the last mode used (settings.lastMode, saved on each start)
-function resumeButton(ctx) {
-  const { settings, api } = ctx;
-  const mode = settings.lastMode || 'practice';
-  const reverse = mode === 'practice' && settings.practiceReverse === true;
-  const bests = { practice: () => bestTime(reverse), timetrial: () => bestTime(false) };
-  const best = bests[mode] ? bests[mode]() : null;
-  const R = {
-    practice: ['Drive free practice', () => api.startPractice({ start: settings.practiceStart === 'standing' ? 'standing' : 'pit', reverse })],
-    timetrial: ['Drive time trial', () => api.startTimeTrial()],
-    race: ['Set up a race', () => openEntry(ctx, 'race')],
-    online: ['Go online', () => openEntry(ctx, 'online')],
-  };
-  const [label, go] = R[mode] || R.practice;
-  const b = h('button', 'btn primary resume', h('b', '', label), best ? h('span', '', `Best lap ${fmtTime(best)}`) : null);
-  b.type = 'button'; b.dataset.first = '1';
-  b.addEventListener('click', go);
-  return b;
-}
-
+// The main menu's nav. The entry for the last mode used (settings.lastMode, saved on each start) carries a quiet 'Last' tag, and
+// on the main menu it is the one that takes the focus when the menu opens.
 function navList(ctx, activeId) {
   const nav = h('nav', 'nav');
   nav.setAttribute('aria-label', 'Main menu');
+  const last = ctx.settings.lastMode || 'practice';
   HOME.forEach(([id, label], i) => {
     // Online shows a lake dot while the driver is in a room (live state)
     const live = id === 'online' && ctx.api.inRoom && ctx.api.inRoom() ? h('i', 'live-dot') : null;
-    const b = h('button', 'nav-item', h('span', '', label, live), h('kbd', '', String(i + 1)));
+    const isLast = id === last ? h('em', 'nav-last', 'Last') : null;
+    const b = h('button', 'nav-item', h('span', 'nav-text', h('span', '', label, live), isLast), h('kbd', '', String(i + 1)));
     b.type = 'button';
     b.style.setProperty('--i', String(i));
     if (id === activeId) b.setAttribute('aria-current', 'page');
+    if (isLast && activeId === 'main') b.dataset.first = '1';   // the main menu opens with the focus on it
     b.addEventListener('click', () => openEntry(ctx, id));
     nav.append(b);
   });
@@ -169,17 +154,20 @@ function driverChip(ctx) {
     h('span', '', h('strong', '', l.name || lobbyName || 'Driver'), h('small', '', style ? `GT · ${style}` : 'GT')));
 }
 
+// The rail depends on the menu's context (menu.kind), not on the screen: from the main menu it is the main nav with the current
+// section selected; from the pause menu, on every screen, it is the session card. Never an empty rail, never a nav that leaves the game.
 function railNodes(ctx, top) {
   const main = ctx.menu.kind === 'main';
   const brand = h(main ? 'button' : 'div', 'rail-brand', h('b', '', 'Lakeside'), h('span', '', 'GT racing in the browser'));
   if (main) { brand.type = 'button'; brand.addEventListener('click', () => ctx.menu.jump('main')); }
   const out = [brand];
   if (main) {
-    if (top.id === 'main') out.push(resumeButton(ctx));
     const active = top.id === 'setup' ? ((top.params && top.params.mode) || 'race') : top.id;
     out.push(navList(ctx, active));
+  } else {
+    const card = sessionCard(ctx);
+    if (card) out.push(h('div', 'rail-pause', card));
   }
-  if (top.id === 'pause') out.push(pauseRail(ctx));
   out.push(driverChip(ctx));
   return out;
 }
@@ -216,7 +204,7 @@ function sessionCard(ctx) {
       h('span', '', 'Lap now'), h('b', '', st.current != null ? fmtTime(st.current) : '-:--.---')));
 }
 
-// the pause rail's shortcuts: the same actions as the pane, numbered 1 to 4
+// the pause actions, numbered 1 to 4 (number keys): Resume, Restart session, Settings, Global times. The pane shows them.
 function pauseActions(ctx) {
   return [
     ['Resume', () => ctx.api.resume()],
@@ -225,35 +213,31 @@ function pauseActions(ctx) {
     ['Global times', () => ctx.menu.push('times')],
   ];
 }
-function pauseRail(ctx) {
-  const nav = h('nav', 'nav');
-  nav.setAttribute('aria-label', 'Pause menu');
-  pauseActions(ctx).forEach(([label, fn], i) => {
-    const b = h('button', 'nav-item', h('span', '', label), h('kbd', '', String(i + 1)));
-    b.type = 'button';
-    b.addEventListener('click', fn);
-    nav.append(b);
-  });
-  return h('div', 'rail-pause', sessionCard(ctx), nav);
-}
+
+// a pane row with its number key badge (when it has one)
+const kbdBadge = n => (n ? h('kbd', '', String(n)) : null);
 
 function pauseScreen() {
   return {
     title: 'Paused', backable: false, rail: true,
     onDigit: (n, mounted, ctx) => { const a = pauseActions(ctx)[n - 1]; if (a) a[1](); },
     mount(c, ctx) {
-      const resume = btn('Resume', 'btn primary', () => ctx.api.resume());
+      c.classList.add('pause-body');   // the first control sits below the title with room to breathe
+      const [[, resumeFn], ...keyed] = pauseActions(ctx);
+      const resume = h('button', 'btn primary pause-resume', h('span', '', 'Resume'), kbdBadge(1));
+      resume.type = 'button';
+      resume.addEventListener('click', resumeFn);
       resume.dataset.first = '1';
       const list = h('div', 'rows');
-      const items = [
-        ['Restart session', '', () => ctx.api.restart()],
-        ['Settings', '', () => ctx.menu.push('settings')],
-        ['Global times', '', () => ctx.menu.push('times')],
-        ...(ctx.api.screen && ctx.api.screen.canControl() ? [['Screen control', '', () => ctx.menu.push('screen')]] : []),
-        ['Report a problem', '', () => ctx.api.report()],
-        ['Back to main menu', 'danger quiet', () => confirmLeave()],
-      ];
-      for (const [label, cls, fn] of items) list.append(btn(label, 'btn-row ' + cls, fn));
+      const row = (label, fn, key, cls = '') => {
+        const b = h('button', 'btn-row ' + cls, h('span', '', label), kbdBadge(key));
+        b.type = 'button';
+        b.addEventListener('click', fn);
+        return b;
+      };
+      list.append(...keyed.map(([label, fn], i) => row(label, fn, i + 2)));
+      if (ctx.api.screen && ctx.api.screen.canControl()) list.append(row('Screen control', () => ctx.menu.push('screen')));
+      list.append(row('Report a problem', () => ctx.api.report()), row('Back to main menu', () => confirmLeave(), 0, 'danger quiet'));
       const sure = h('div', 'confirm'); sure.hidden = true;
       function confirmLeave() {
         list.hidden = true; resume.hidden = true; sure.hidden = false;

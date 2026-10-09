@@ -167,6 +167,7 @@ function createTouch(actions) {
   addEventListener('touchcancel', () => { t.lastTouch = clock(); }, { passive: true });
 
   zone.addEventListener('pointerdown', e => {
+    const b = body(); if (b) b.classList.add('steered');   // the "Drag to steer" hint fades out after the first steer touch
     steerId = e.pointerId; steerX = e.clientX;
     zone.setPointerCapture(e.pointerId);
     knob.style.left = e.clientX + 'px'; knob.style.top = e.clientY + 'px';
