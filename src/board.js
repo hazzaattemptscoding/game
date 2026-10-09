@@ -115,7 +115,7 @@ export function createBoard(root, ctx) {
 
     const rows = lapRows(t.history, HISTORY_N, personal);
     html += `<section><h3>Laps</h3>${rows.length ? `<table><thead><tr><th>Lap</th><th>Time</th><th>S1</th><th>S2</th><th>S3</th><th>Track limits</th></tr></thead><tbody>${rows.map(r =>
-      `<tr class="${r.valid ? '' : 'invalid'}${r.best ? ' pb' : ''}"><td>${r.lap}</td><td>${fmtTime(r.time)}</td>${r.sectors.map(cell).join('')}<td class="amber">${r.valid ? '' : r.warnings ? `${r.warnings} invalid` : 'reset'}</td></tr>`).join('')}</tbody></table>` : '<p class="bd-none">No finished laps yet.</p>'}</section>`;
+      `<tr class="${r.valid ? '' : 'invalid'}${r.best ? ' pb' : ''}"><td>${r.lap}</td><td>${fmtTime(r.time)}</td>${r.sectors.map(cell).join('')}<td class="tag${r.valid || r.warnings ? '' : ' reset'}">${r.valid ? '' : r.warnings ? `${r.warnings} invalid` : 'reset'}</td></tr>`).join('')}</tbody></table>` : '<p class="bd-none">No finished laps yet.</p>'}</section>`;
 
     if (ctx.lobby && ctx.lobby.active) {
       const players = ctx.lobby.board({ name: ctx.lobby.name(), laps: t.lap, best: t.best, last: t.last });
@@ -123,7 +123,7 @@ export function createBoard(root, ctx) {
         `<tr class="${p.me ? 'me' : ''}"><td>${i + 1}</td><td class="name">${esc(p.name)}${p.me ? ' <em>you</em>' : ''}</td><td>${p.laps}</td><td>${p.best ? fmtTime(p.best) : '-'}</td><td>${p.last ? fmtTime(p.last) : '-'}</td><td>${p.gap ? '+' + p.gap.toFixed(3) : ''}</td></tr>`).join('')}</tbody></table></section>`;
     } else {
       html += `<section><h3>Your best laps${key === BEST_KEY ? '' : ', reverse'}</h3>${best.length ? `<table><thead><tr><th></th><th>Time</th><th>S1</th><th>S2</th><th>S3</th><th>Date</th></tr></thead><tbody>${best.map((e, i) =>
-        `<tr class="${e === fresh ? 'me' : ''}"><td>${i + 1}</td><td>${fmtTime(e.time)}</td>${[0, 1, 2].map(k => `<td>${sec(e.sectors[k])}</td>`).join('')}<td>${esc(e.date)}${e.warn ? ' <b class="amber">invalid</b>' : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="bd-none">Finish a lap to start your list. It is kept in this browser.</p>'}</section>`;
+        `<tr class="${e === fresh ? 'me' : ''}"><td>${i + 1}</td><td>${fmtTime(e.time)}</td>${[0, 1, 2].map(k => `<td>${sec(e.sectors[k])}</td>`).join('')}<td>${esc(e.date)}${e.warn ? ' <em>invalid</em>' : ''}</td></tr>`).join('')}</tbody></table>` : '<p class="bd-none">Finish a lap to start your list. It is kept in this browser.</p>'}</section>`;
     }
     root.innerHTML = html;
   };

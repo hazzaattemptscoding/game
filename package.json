@@ -18,6 +18,7 @@
     "limits": "node tools/limits.js",
     "assists": "node tools/assists.js",
     "cursor": "node tools/cursor.js",
+    "touchinput": "node tools/touchinput.js",
     "board": "node tools/board.js",
     "multiplayer": "node tools/multiplayer.js",
     "netsim": "node tools/netsim.js",

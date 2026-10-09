@@ -32,7 +32,7 @@ import { loadSettings, saveSettings } from './settings.js';
 import { ReportTool } from './report.js';
 import { createLobby } from './lobby.js';
 import { ownLivery, localPlayerId } from './livery.js';
-import { createBoard } from './board.js';
+import { createBoard, loadBest, bestKey, personalSectors } from './board.js';
 import { CarAudio } from './audio.js';
 import { createRacingLine } from './racingLine.js';
 import { createDirector, HOLD } from './director.js';
@@ -168,6 +168,7 @@ const input = createInput(settings, { boardAllowed: () => !dir.menuOpen && !repo
 const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthesised sound, starts at the first key press or touch
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
+hud.personalOf = reverse => personalSectors(loadBest(undefined, bestKey(reverse)));   // the sector bests of the saved list (src/board.js)
 const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search, getLivery: myLivery, poseTime: () => poseAt });   // multiplayer: idle until a room is opened
 hud.pingOf = () => lobby.rtt;     // the relay round trip for the HUD readout (null when not online)
 // global times (src/globalTimes.js): valid, clean laps go to the relay's boards; the relay's address comes from multiplayer.json
@@ -274,12 +275,12 @@ function frame(now) {
     if (a === 'board') board.toggle();      // the Times button on a touch screen
     if (a === 'line') {
       // a reverse practice or a race does not allow the line (src/session.js): say so instead of flashing a state that is not shown
-      if (!dir.api.racingLineAllowed()) hud.flash('Racing line not available in this session', simTime, 'force');
+      if (!dir.api.racingLineAllowed()) hud.flash('Racing line not available in this session', simTime, 'warn force');
       else { settings.racingLine = !settings.racingLine; saveSettings(settings); hud.flash(settings.racingLine ? 'Racing line on' : 'Racing line off', simTime); }
     }
-    if (a === 'map') { settings.trackMap.on = !settings.trackMap.on; saveSettings(settings); hud.flash(settings.trackMap.on ? 'Track map on' : 'Track map off', simTime, 'force'); }
-    if (a === 'hud') { const name = cyclePreset(settings); saveSettings(settings); hud.flash('HUD ' + PRESET_NAMES[name].toLowerCase(), simTime, 'force'); }
-    if (a === 'fps') { settings.hud.fps = !settings.hud.fps; saveSettings(settings); hud.flash(settings.hud.fps ? 'FPS readout on' : 'FPS readout off', simTime, 'force'); }
+    if (a === 'map') { settings.trackMap.on = !settings.trackMap.on; saveSettings(settings); hud.flash(settings.trackMap.on ? 'Track map on' : 'Track map off', simTime, 'info force'); }
+    if (a === 'hud') { const name = cyclePreset(settings); saveSettings(settings); hud.flash('HUD ' + PRESET_NAMES[name].toLowerCase(), simTime, 'info force'); }
+    if (a === 'fps') { settings.hud.fps = !settings.hud.fps; saveSettings(settings); hud.flash(settings.hud.fps ? 'FPS readout on' : 'FPS readout off', simTime, 'info force'); }
     if (a === 'debug') { settings.debug = !settings.debug; saveSettings(settings); }
     if (a === 'report' && !reportTool.opened && dir.phase !== 'menu') openReport();
   }

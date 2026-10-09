@@ -448,11 +448,11 @@ console.log('FINISH MESSAGES AND THE RESULTS TABLE');
   check(cleanFinish({ ...good, sec: undefined, best: undefined, warn: undefined, pen: undefined }).sec.join() === '0,0,0', 'optional parts default');
   check(cleanFinish(null) === null && cleanFinish('fin') === null, 'not an object: rejected');
 
-  // the book: a repeat changes nothing; players who left are dropped; a new race clears it
+  // the book: a repeat changes nothing; a player who leaves keeps their finish; a new race clears it
   const book = new FinishBook();
   check(book.set('r1', good) === true && book.set('r1', { ...good }) === false && book.set('r1', { ...good, time: 481 }) === true, 'a repeated finish is idempotent, a changed one is stored');
   book.set('r2', good);
-  check(book.keep(new Set(['r2'])) === true && !book.has('r1') && book.has('r2') && book.keep(new Set(['r2'])) === false, 'a player who left loses their finish');
+  check(book.has('r1') && book.has('r2') && book.size === 2, 'a finish stays in the book when its player leaves (nothing removes it)');
   check(book.clear() === true && book.size === 0 && book.clear() === false, 'a new race clears the book');
 
   // the results table: a finished car ranks by its time, penalties included; the local car is not first unless it is

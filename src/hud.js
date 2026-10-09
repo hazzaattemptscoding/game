@@ -1,6 +1,6 @@
-// Phase 1 HUD: speed, gear, revs, lap and sector times with deltas, DRS and
-// assist lights, plus a handling readout (I or F3) for tuning. The full HUD
-// with position, minimap and weather comes in phase 4.
+// The HUD: the lap block (current, last and best, live delta, sector bars, minisector ribbon, track limits, standings), the dash
+// (speed, gear, revs, assist lights), the messages (flashes and the track limits warning), the optional readouts (pedals, keys,
+// FPS, ping, handling) and the layout that the settings (src/hudSettings.js) switch. Colours come from the tokens in src/style.css.
 
 import { SURF, SURF_NAMES } from './track.js';
 import { hudClasses, HUD_KEYS, pingTone } from './hudSettings.js';
@@ -20,13 +20,19 @@ const cls = (el, v) => { if (el._c !== v) { el._c = v; el.className = v; } };
 const style = (el, v) => { if (el._s !== v) { el._s = v; el.style.transform = v; } };
 
 const fmtDelta = d => (d < 0 ? '-' : '+') + Math.abs(d).toFixed(3);
-const PING_COLOUR = { good: 'var(--green)', mid: 'var(--amber)', bad: 'var(--red)' };
+
+// Development only: `?hud=sample` shows fixed sample values (lap times, sectors, minisectors, a flash and the track limits warning)
+// for checking the look by eye. The production build never reads it (import.meta.env.DEV is false there).
+const SAMPLE = typeof location !== 'undefined' && !!import.meta.env?.DEV && new URLSearchParams(location.search).get('hud') === 'sample';
+const SAMPLE_SECTORS = [[26.112, 'best', -0.214], [31.004, 'pb', 0.021], [26.34, 'slow', 0.31]];
+const SAMPLE_MINIS = Array.from({ length: MINISECTORS }, (_, i) => (i < 6 ? 'purple' : i < 15 ? 'green' : i < 19 ? 'yellow' : ''));
 
 export class Hud {
   constructor(root, settings) {
     this.settings = settings;
     root.innerHTML = `
       <div class="hud-times">
+        <span class="hud-cap">Lap</span>
         <div class="hud-lap" id="h-lap">-:--.---</div>
         <div class="hud-rows">
           <div><span>Last</span><b id="h-last">-:--.---</b></div>
@@ -38,7 +44,7 @@ export class Hud {
         <div class="hud-limits" id="h-limits" hidden></div>
         <div class="hud-stand" id="h-stand" hidden></div>
         <div class="hud-fps" id="h-fps">FPS 0</div>
-        <div id="h-ping" style="margin-top:4px;font-size:13px;opacity:.8" hidden></div>
+        <div class="hud-ping" id="h-ping" hidden></div>
       </div>
       <div class="hud-flash" id="h-flash"></div>
       <div class="hud-warn" id="h-warn"></div>
@@ -64,6 +70,10 @@ export class Hud {
     this._layout = '';
     this.perf = 'FPS';    // the FPS readout text, set from the loop (src/main.js)
     this.pingOf = null;   // () => the relay round trip in ms or null, set by src/main.js
+    // the personal best of each sector from the saved list (src/board.js), set by src/main.js: personalOf(reverse) -> [s1, s2, s3]
+    this.personalOf = null;
+    this.personal = [null, null, null];
+    this._pbKey = null;
     this.flashUntil = 0;
     this.warnUntil = 0;
     this.warnLap = -1;   // the lap the counter was last drawn for
@@ -76,13 +86,15 @@ export class Hud {
     setTimeout(() => this.el.help.classList.add('fade'), 9000);
   }
 
-  flash(text, now, cls = '') {
+  // kind: the colour of the bar by meaning: info (default, lake), best (timing-best), pb (timing-pb), bad (flag-red), warn (yellow);
+  // 'force' keeps it up when the event messages are switched off (the toggles)
+  flash(text, now, kind = 'info') {
     this.el.flash.textContent = text;
-    this.el.flash.className = 'hud-flash show ' + cls;
+    this.el.flash.className = 'hud-flash show ' + kind;
     this.flashUntil = now + 2.5;
   }
 
-  // track limits banner: amber on the dark HUD, 2.5 s
+  // track limits banner: a yellow bar, 2.5 s
   warn(corner, now) {
     this.el.warn.textContent = 'Track limits: ' + corner;
     this.el.warn.className = 'hud-warn show';
@@ -111,8 +123,8 @@ export class Hud {
     else {
       if (e.ping.hidden) e.ping.hidden = false;
       text(e.ping, `${rtt} ms`);
-      const col = PING_COLOUR[pingTone(rtt)];
-      if (e.ping.dataset.c !== col) { e.ping.dataset.c = col; e.ping.style.color = col; }
+      const tone = pingTone(rtt);
+      if (e.ping.dataset.tone !== tone) e.ping.dataset.tone = tone;
     }
     if (input && (s.hud.pedals || s.hud.inputOverlay)) {
       style(e.thr, `scaleY(${Math.max(0, Math.min(1, input.throttle)).toFixed(2)})`);
@@ -152,19 +164,27 @@ export class Hud {
       if (e.liveBar.getAttribute('style') !== style) e.liveBar.setAttribute('style', style);
     }
 
-    // sector splits for the current lap, coloured against your best
+    // sector splits for the current lap: best (the session's fastest, timing-best), pb (your personal best from the saved list,
+    // timing-pb) or slow (timing-slow), decided when the sector ended (src/timing.js)
+    this.refreshPersonal(timer);
     const cells = [];
     for (let i = 0; i < 3; i++) {
       const t = timer.current[i];
-      if (t == null) { cells.push(`<i>S${i + 1}</i>`); continue; }
-      const cls = timer.sectorPB[i] ? 'pb' : 'slow';   // purple, decided when the sector ended (src/timing.js)
-      const d = s.hud.delta && timer.lastSectors && timer.lastSectors[i] != null ? ' ' + fmtDelta(t - timer.lastSectors[i]) : '';
-      cells.push(`<i class="${cls}">S${i + 1} ${t.toFixed(2)}${d}</i>`);
+      if (t == null) { cells.push(`<i><b>S${i + 1}</b></i>`); continue; }
+      const p = this.personal[i];
+      const k = timer.sectorPB[i] ? 'best' : p != null && t <= p + 1e-6 ? 'pb' : 'slow';
+      let d = '';
+      if (s.hud.delta && timer.lastSectors && timer.lastSectors[i] != null) {
+        const v = t - timer.lastSectors[i];
+        d = `<em class="${v < 0 ? 'neg' : 'pos'}">${fmtDelta(v)}</em>`;
+      }
+      cells.push(`<i class="${k}"><b>S${i + 1}</b><span>${t.toFixed(2)}</span>${d}</i>`);
     }
     const html = cells.join('');
     if (html !== this._secHtml) { e.sec.innerHTML = html; this._secHtml = html; }
 
-    // minisectors: one segment each, purple / green / yellow like the sector times, the one being driven outlined; redrawn only on a change
+    // minisectors: one segment each, timing-best / timing-pb / timing-slow like the sector times, the one being driven outlined;
+    // redrawn only on a change
     if (s.hud.minisectors) {
       const m = timer.minis, shown = m.display(), cur = m.on ? m.index : -1, key = shown.join() + '|' + cur;
       if (key !== this._miniKey) {
@@ -174,8 +194,8 @@ export class Hud {
     }
 
     for (const ev of timer.takeEvents()) {
-      if (ev.type === 'lap') this.flash((ev.best ? 'Best lap ' : 'Lap ') + fmtTime(ev.time) + (ev.valid ? '' : ' invalid'), simTime, ev.best ? 'pb' : '');
-      else if (ev.index < 2) this.flash(`S${ev.index + 1}  ${ev.time.toFixed(3)}`, simTime, ev.best ? 'pb' : '');
+      if (ev.type === 'lap') this.flash((ev.best ? 'Best lap ' : 'Lap ') + fmtTime(ev.time) + (ev.valid ? '' : ' invalid'), simTime, ev.valid ? (ev.best ? 'best' : 'info') : 'bad');
+      else if (ev.index < 2) this.flash(`S${ev.index + 1}  ${ev.time.toFixed(3)}`, simTime, ev.best ? 'best' : 'info');
     }
     if (this.flashUntil && simTime > this.flashUntil) { e.flash.className = 'hud-flash'; this.flashUntil = 0; }
 
@@ -190,6 +210,8 @@ export class Hud {
       e.limits.textContent = `Track limits ${n}`;
     }
 
+    if (SAMPLE) this.sample(e);
+
     if (s.debug) {
       e.debug.style.display = 'block';
       e.debug.textContent =
@@ -200,5 +222,30 @@ export class Hud {
         `wheels ${car.wheelSurf.map(w => SURF_NAME[w]).join(' ')}\n` +
         `s ${car.loc.s.toFixed(0)} m  d ${car.loc.d.toFixed(1)} m  h ${car.y.toFixed(1)} m`;
     } else e.debug.style.display = 'none';
+  }
+
+  // the personal best of each sector, read when a session starts (the history is empty) and when the direction changes
+  refreshPersonal(timer) {
+    const empty = timer.history.length === 0, rev = !!timer.reverse;
+    if (!empty) { this._fresh = false; return; }
+    if (this._fresh && this._pbKey === rev) return;
+    this._fresh = true; this._pbKey = rev;
+    this.personal = this.personalOf ? this.personalOf(rev) : [null, null, null];
+  }
+
+  // SAMPLE only: the fixed values of the look check (see SAMPLE above)
+  sample(e) {
+    text(e.lap, '1:23.456'); text(e.last, '1:24.102'); text(e.best, '1:23.210');
+    if (e.live.hidden) e.live.hidden = false;
+    if (e.live.dataset.s !== 'ahead') e.live.dataset.s = 'ahead';
+    text(e.liveT, '-0.412');
+    if (e.liveBar.getAttribute('style') !== 'left:37.9%;width:20.6%') e.liveBar.setAttribute('style', 'left:37.9%;width:20.6%');
+    const cells = SAMPLE_SECTORS.map(([t, k, d], i) => `<i class="${k}"><b>S${i + 1}</b><span>${t.toFixed(2)}</span><em class="${d < 0 ? 'neg' : 'pos'}">${fmtDelta(d)}</em></i>`).join('');
+    if (cells !== this._secHtml) { e.sec.innerHTML = cells; this._secHtml = cells; }
+    const key = 'sample';
+    if (this._miniKey !== key) { this._miniKey = key; this.miniCells.forEach((c, i) => { c.className = SAMPLE_MINIS[i] || ''; }); }
+    if (!this.sampleFlashed) { this.sampleFlashed = true; this.flash('Best lap 1:23.210', 0, 'best'); this.flashUntil = Infinity; }
+    if (!this.sampleWarned) { this.sampleWarned = true; this.el.warn.textContent = 'Track limits: Windsock Hairpin'; this.el.warn.className = 'hud-warn show'; }
+    if (e.limits.hidden) { e.limits.hidden = false; e.limits.textContent = 'Track limits 2'; }
   }
 }

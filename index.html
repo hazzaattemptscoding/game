@@ -65,8 +65,10 @@
     <div class="mp-row" id="mp-start"><button id="mp-host" type="button" class="btn primary">Host a room</button></div>
     <div class="mp-row" id="mp-joinrow"><input id="mp-code" type="text" maxlength="5" placeholder="Room code" aria-label="Room code" autocomplete="off" autocapitalize="characters" spellcheck="false"><button id="mp-join" type="button">Join</button></div>
     <div id="mp-room" hidden>
+      <div class="mp-roomhead"><span class="mp-live" aria-hidden="true"></span><span class="mp-caption">Room code</span></div>
       <div class="mp-big" id="mp-big" aria-label="Room code"></div>
       <div class="mp-row"><button id="mp-copy" type="button">Copy code</button><button id="mp-leave" type="button">Leave</button></div>
+      <div class="mp-roster" id="mp-roster"></div>
       <p class="mp-status mp-via" id="mp-via"></p>
       <p class="mp-status" id="mp-hint" hidden>Keep this tab in the foreground while friends join. Browsers slow down background tabs.</p>
     </div>

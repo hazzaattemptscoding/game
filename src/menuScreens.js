@@ -179,6 +179,7 @@ function railNodes(ctx, top) {
     const active = top.id === 'setup' ? ((top.params && top.params.mode) || 'race') : top.id;
     out.push(navList(ctx, active));
   }
+  if (top.id === 'pause') out.push(pauseRail(ctx));
   out.push(driverChip(ctx));
   return out;
 }
@@ -198,12 +199,49 @@ function homeScreen() {
 
 // --- pause ------------------------------------------------------------------------------------------------------------
 
+// the session as the pause screen shows it: the mode, the laps driven, the best lap and the lap in progress (frozen while paused)
+const MODE_LABEL = { practice: 'Free practice', timetrial: 'Time trial', race: 'Race', online: 'Online race' };
+function sessionCard(ctx) {
+  const st = ctx.api.sessionStats ? ctx.api.sessionStats() : null;
+  if (!st || !st.mode) return null;
+  const race = st.mode === 'race' || st.mode === 'online';
+  const name = MODE_LABEL[st.mode] + (race && st.laps ? `, ${st.laps} laps` : '') + (st.reverse ? ', reverse' : '');
+  const laps = race && st.laps ? `${Math.min(st.done, st.laps)} of ${st.laps}` : String(st.done);
+  return h('div', 'session-card',
+    h('p', 'gtitle', 'Session'),
+    h('b', 'session-mode', name),
+    h('div', 'facts',
+      h('span', '', race ? 'Laps' : 'Laps driven'), h('b', '', laps),
+      h('span', '', 'Best lap'), h('b', '', st.best ? fmtTime(st.best) : '-:--.---'),
+      h('span', '', 'Lap now'), h('b', '', st.current != null ? fmtTime(st.current) : '-:--.---')));
+}
+
+// the pause rail's shortcuts: the same actions as the pane, numbered 1 to 4
+function pauseActions(ctx) {
+  return [
+    ['Resume', () => ctx.api.resume()],
+    ['Restart session', () => ctx.api.restart()],
+    ['Settings', () => ctx.menu.push('settings')],
+    ['Global times', () => ctx.menu.push('times')],
+  ];
+}
+function pauseRail(ctx) {
+  const nav = h('nav', 'nav');
+  nav.setAttribute('aria-label', 'Pause menu');
+  pauseActions(ctx).forEach(([label, fn], i) => {
+    const b = h('button', 'nav-item', h('span', '', label), h('kbd', '', String(i + 1)));
+    b.type = 'button';
+    b.addEventListener('click', fn);
+    nav.append(b);
+  });
+  return h('div', 'rail-pause', sessionCard(ctx), nav);
+}
+
 function pauseScreen() {
   return {
     title: 'Paused', backable: false, rail: true,
+    onDigit: (n, mounted, ctx) => { const a = pauseActions(ctx)[n - 1]; if (a) a[1](); },
     mount(c, ctx) {
-      const s = ctx.api.session && ctx.api.session();
-      const info = s ? h('p', 'm-sub', ({ practice: 'Free practice', timetrial: 'Time trial', race: s.laps ? `Race, ${s.laps} laps` : 'Race', online: s.laps ? `Online race, ${s.laps} laps` : 'Online' })[s.mode]) : null;
       const resume = btn('Resume', 'btn primary', () => ctx.api.resume());
       resume.dataset.first = '1';
       const list = h('div', 'rows');
@@ -213,7 +251,7 @@ function pauseScreen() {
         ['Global times', '', () => ctx.menu.push('times')],
         ...(ctx.api.screen && ctx.api.screen.canControl() ? [['Screen control', '', () => ctx.menu.push('screen')]] : []),
         ['Report a problem', '', () => ctx.api.report()],
-        ['Back to main menu', 'danger', () => confirmLeave()],
+        ['Back to main menu', 'danger quiet', () => confirmLeave()],
       ];
       for (const [label, cls, fn] of items) list.append(btn(label, 'btn-row ' + cls, fn));
       const sure = h('div', 'confirm'); sure.hidden = true;
@@ -224,7 +262,6 @@ function pauseScreen() {
         sure.querySelector('button').dataset.first = '1';
         ctx.menu.focusFirst();
       }
-      if (info) c.append(info);
       c.append(resume, list, sure);
       return null;
     },
@@ -445,7 +482,7 @@ function settingsScreen() {
 // the Start button are with it. Guests see the line about waiting for the host.
 
 function onlineScreen() {
-  let timer = 0, holder = null;
+  let timer = 0, holder = null, room = null;
   return {
     rail: true,
     title: 'Online',
@@ -453,10 +490,14 @@ function onlineScreen() {
       const { settings, save, api } = ctx;
       const mp = document.querySelector('#online-src .mp, .mp');
       holder = mp;
+      room = mp ? mp.querySelector('#mp-room') : null;
       const lobby = api.lobby;
       c.append(h('p', 'm-sub', 'Race up to eight people. One person hosts a room and shares the five letter code.'));
       const grid = h('div', 'setup online');
-      const box = h('div', 'setup-groups');   // the host's race setup; hidden until in a room
+      // left: the connect form (name, host, join, the status lines); under it the host's race setup, shown only in a room
+      const form = h('div', 'online-form');
+      if (mp) form.append(mp);
+      const hostBox = h('div', 'online-host');
       const cur = raceSetup(settings);
       const store = () => { settings.raceSetup = { ...cur }; save(settings); };
       const hostSetup = [
@@ -465,22 +506,30 @@ function onlineScreen() {
       ];
       if (api.hasRacingLine && api.hasRacingLine()) hostSetup.push(segRow('Racing line', [[true, 'Allowed'], [false, 'Not allowed']], () => cur.racingLine, v => { cur.racingLine = v; store(); }));
       const wait = h('p', 'm-note', 'Waiting for the host to start the race.');
-      box.append(group('Race setup', ...hostSetup), ...weatherRows(ctx, segRow, h, 'Conditions'), wait);
+      hostBox.append(group('Race setup', ...hostSetup), ...weatherRows(ctx, segRow, h, 'Conditions'), wait);
+      form.append(hostBox);
+      // right: the summary card. Outside a room it says how it works; in a room it is the room card (code, copy, the table of
+      // players) with the host's Start button under it
+      const how = h('div', 'how', h('p', 'gtitle', 'How it works'),
+        h('ol', 'how-steps', h('li', '', 'Host a room. You get a five letter code to share.'), h('li', '', 'Friends type the code and press Join. Up to eight players.'), h('li', '', 'The host picks the laps and conditions, then starts the race.')));
+      const roomSlot = h('div', 'room-slot');
+      if (room) roomSlot.append(room);
       const startBtn = btn('Start race', 'btn primary', () => api.hostStartRace({ laps: cur.laps, assists: cur.assists, racingLine: api.hasRacingLine && api.hasRacingLine() ? cur.racingLine : true }));
       const card = h('div', 'summary online-card');
-      if (mp) card.append(mp);
-      card.append(startBtn);
-      grid.append(box, card);
+      card.append(how, roomSlot, startBtn);
+      grid.append(form, card);
       c.append(grid);
       const drive = btn('Drive around while you wait', 'btn', () => api.startPractice({ start: 'pit' }));
       c.append(h('div', 'm-actions', drive));
       const upd = () => {
         const m = lobby && lobby.mp;
         const inRoom = !!(m && (m.phase === 'hosting' || m.phase === 'joined'));
-        box.hidden = !inRoom;
-        grid.dataset.room = inRoom ? '1' : '0';
+        hostBox.hidden = !inRoom;
+        how.hidden = inRoom;
+        roomSlot.hidden = !inRoom;
         wait.hidden = !(inRoom && !m.isHost);
-        for (const g of box.querySelectorAll('.group')) g.hidden = !(inRoom && m.isHost);   // the host's setup only
+        for (const g of hostBox.querySelectorAll('.group')) g.hidden = !(inRoom && m.isHost);   // the host's setup only
+        startBtn.hidden = !inRoom;   // the Start button is in the room card only
         startBtn.disabled = !(inRoom && m.isHost);
       };
       upd();
@@ -489,10 +538,11 @@ function onlineScreen() {
     },
     unmount() {
       clearInterval(timer);
-      // give the lobby block back to its hidden home so lobby.js keeps its elements
+      // give the lobby block back to its hidden home, the room card to its place inside it, so lobby.js keeps its elements
       const src = document.getElementById('online-src');
+      if (holder && room && !holder.contains(room)) holder.insertBefore(room, holder.querySelector('#mp-status'));
       if (holder && src && !src.contains(holder)) src.append(holder);
-      holder = null;
+      holder = null; room = null;
     },
   };
 }

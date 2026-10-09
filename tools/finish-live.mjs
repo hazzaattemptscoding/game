@@ -1,6 +1,6 @@
 // Finish messages between real browser pages through the relay (worker/dev-relay.mjs): a guest's finish reaches the host, the
 // finish is kept once (a repeat changes nothing), a bad message is refused, a player who joins after the finish gets it from the
-// one who finished, and a player who leaves takes their finish with them. Run with `npm run finish-live`. Needs Chromium and
+// one who finished, and a player who leaves keeps their finish until the next race. Run with `npm run finish-live`. Needs Chromium and
 // Playwright like tools/smoke.mjs; skips if they are missing. Not part of `npm run check` (slow). The rows and the screen are tested
 // in tools/session.js and tools/results.mjs.
 import { createRequire } from 'node:module';
@@ -59,9 +59,12 @@ try {
   await fillEl(C, '#mp-name', 'Cy'); await fillEl(C, '#mp-code', code); await clickEl(C, '#mp-join');
   check(await until(C, () => /Joined/.test(document.getElementById('mp-status').textContent)), 'a late joiner is in the room');
   check(await until(C, () => lakeside.lobby.finishes.size === 1, null, 15000), 'the late joiner gets the finish from the guest who finished');
-  // the guest leaves: its finish goes with it
+  // the guest leaves: it finished, so its finish stays in the host's book until the next race
   await clickEl(B, '#mp-leave');
-  check(await until(A, () => lakeside.lobby.finishes.size === 0, null, 15000), 'a player who leaves takes their finish with them');
+  await A.waitForTimeout(1500);
+  check(await A.evaluate(id => lakeside.lobby.finishes.size === 1 && lakeside.lobby.finishes.has(id), bId), 'a player who leaves keeps their finish until the next race');
+  await A.evaluate(() => lakeside.lobby.resetFinishes());
+  check(await A.evaluate(() => lakeside.lobby.finishes.size === 0), 'the next race clears the finishes');
   await clickEl(A, '#mp-leave'); await clickEl(C, '#mp-leave');
   await A.close(); await B.close(); await C.close();
 } catch (e) {

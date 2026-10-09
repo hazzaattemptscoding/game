@@ -123,7 +123,7 @@ function buildView(c, ctx) {
   const back = h('button', 'm-btn res-back', 'Back to menu'); back.type = 'button';
   back.addEventListener('click', () => ctx.api.toMainMenu());
   const card = h('aside', 'res-card', h('div', 'res-pos', cardPos, cardOf), h('div', 'res-sectors', ...secBar), kvEl, again, back);
-  const legend = h('p', 'm-note res-legend', 'Pink is the fastest of the race in that sector, green is within 0.3 s of it. Gaps and times include penalties.');
+  const legend = h('p', 'm-note res-legend', 'Pink: fastest in the sector. Green: within 0.3 s of it.');
   const body = h('div', 'res', h('div', 'res-main', wrap, legend), card);
   c.append(sub, body);
   setTimeout(() => tbody.classList.remove('res-enter'), 900);

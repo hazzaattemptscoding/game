@@ -154,6 +154,8 @@ export function createDirector(g) {
   // --- what the buttons do ---
   Object.assign(api, {
     session: () => session,
+    // what the pause screen shows about the session: the mode, the laps driven, the best lap and the lap in progress (if any)
+    sessionStats: () => ({ mode: session ? session.mode : null, laps: session ? session.laps || 0 : 0, done: timer.history.length, best: timer.best, current: timer.running(g.simTime()), reverse: !!(session && session.reverse) }),
     environment,
     envLocked: () => online() && !mp.isHost,     // a guest cannot change the room's weather
     inRoom: online,
@@ -316,11 +318,11 @@ export function createDirector(g) {
     if (!s || ph === PHASE.MENU) return { show: false };
     const v = { show: true, chip: null, lights: null, lightsOut: false, banner: null, laps: null };
     const lap = timer.currentLap();
-    if (s.mode === 'practice') v.chip = s.reverse ? 'Free practice, reverse' : 'Free practice';
-    else if (s.mode === 'timetrial') { v.chip = `Time trial${lap ? `  Lap ${lap}` : ''}`; v.laps = timeTrialRows(timer.history, 6); }
+    if (s.mode === 'practice') v.chip = { title: s.reverse ? 'Free practice, reverse' : 'Free practice' };
+    else if (s.mode === 'timetrial') { v.chip = { title: 'Time trial', lap: lap ? `LAP ${lap}` : null }; v.laps = timeTrialRows(timer.history, 6); }
     else {
       const total = pos ? pos.total : 1;
-      v.chip = `${s.mode === 'online' ? 'Online race' : 'Race'}  Lap ${Math.min(s.laps, Math.max(1, lap))}/${s.laps}${total > 1 ? `  P${pos ? pos.pos : 1}/${total}` : ''}`;
+      v.chip = { title: s.mode === 'online' ? 'Online race' : 'Race', lap: `LAP ${Math.min(s.laps, Math.max(1, lap))} / ${s.laps}`, pos: total > 1 ? `P${pos ? pos.pos : 1}` : null, of: total > 1 ? `/${total}` : null };
     }
     if (flow.seq && (ph === PHASE.START || ph === PHASE.RUN || ph === PHASE.PAUSED)) {
       const st = flow.seq.state(now);

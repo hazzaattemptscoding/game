@@ -48,8 +48,12 @@ export function cornerMarks(track, corners = CORNERS, reverse = false) {
   }));
 }
 
-// minisector colours on the outline (src/minisectors.js)
-export const MINI_COLOURS = { purple: '#b36bff', green: '#3ddc84', yellow: '#ffd21f' };
+// The colours of the map come from the tokens in src/style.css, read when the outline is drawn (so a theme change reaches it).
+// minisector colours on the outline (src/minisectors.js): purple = timing-best, green = timing-pb, yellow = timing-slow
+const TOKEN_OF_MINI = { purple: '--timing-best', green: '--timing-pb', yellow: '--timing-slow' };
+const tokenColour = (name, fallback) => (typeof document !== 'undefined' && getComputedStyle(document.documentElement).getPropertyValue(name).trim()) || fallback;
+// the car's lean: the same 19 % as the menus (system.md), applied to the wedge's back edge
+const LEAN = 0.19;
 
 export function createMiniMap(root, { track, car, lobby, settings, ownColour, timer }) {
   const bounds = trackBounds(track), marks = cornerMarks(track), marksBack = cornerMarks(track, CORNERS, true);
@@ -78,8 +82,8 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour, ti
     for (let i = 0; i < track.N; i += step) (i ? bg.lineTo : bg.moveTo).call(bg, px(track.x[i]), pz(track.z[i]));
     bg.closePath();
     const wide = mode === 'local';
-    bg.strokeStyle = 'rgba(242,239,230,.9)'; bg.lineWidth = (wide ? 7 : 5.5) * per; bg.stroke();
-    bg.strokeStyle = 'rgba(20,24,29,.95)'; bg.lineWidth = (wide ? 4.5 : 3) * per; bg.stroke();
+    bg.strokeStyle = tokenColour('--text-faint', '#8f84a8'); bg.lineWidth = (wide ? 7 : 5.5) * per; bg.stroke();
+    bg.strokeStyle = tokenColour('--pit-0', '#0a0612'); bg.lineWidth = (wide ? 4.5 : 3) * per; bg.stroke();
     // minisectors of this lap (the last lap's colours for the ones not reached yet) over the dark centre of the outline;
     // the timer counts in lap order, which is mirrored in reverse
     if (colours) {
@@ -92,7 +96,7 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour, ti
         bg.beginPath();
         for (let i = i0; i <= i1; i += step) (i === i0 ? bg.moveTo : bg.lineTo).call(bg, px(track.x[i % track.N]), pz(track.z[i % track.N]));
         bg.lineTo(px(track.x[i1 % track.N]), pz(track.z[i1 % track.N]));
-        bg.strokeStyle = MINI_COLOURS[c]; bg.stroke();
+        bg.strokeStyle = tokenColour(TOKEN_OF_MINI[c], '#ffffff'); bg.stroke();
       });
       bg.lineCap = 'round';
     }
@@ -102,8 +106,8 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour, ti
       bg.beginPath(); bg.moveTo(px(x - nx), pz(z - nz)); bg.lineTo(px(x + nx), pz(z + nz));
       bg.strokeStyle = col; bg.lineWidth = w * per; bg.lineCap = 'butt'; bg.stroke();
     };
-    for (const s of track.sectors.slice(1)) tick(Math.round(s / track.ds) % track.N, wide ? 13 : 10, '#ffd21f', 2);
-    tick(0, wide ? 15 : 12, '#ffffff', 3.5);
+    for (const s of track.sectors.slice(1)) tick(Math.round(s / track.ds) % track.N, wide ? 13 : 10, tokenColour('--text-dim', '#b7accf'), 2);
+    tick(0, wide ? 15 : 12, tokenColour('--text', '#f4f0ff'), 3.5);
     baseInfo = { kc, margin };
   }
 
@@ -141,7 +145,6 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour, ti
     g.clearRect(0, 0, size, size);
     g.save();
     g.beginPath(); g.rect(0, 0, size, size); g.clip();
-    g.fillStyle = 'rgba(20,24,29,.5)'; g.fillRect(0, 0, size, size);
     // the cached outline, moved to the view in one call
     const { kc, margin } = baseInfo;
     g.translate(size / 2, size / 2); g.rotate(t.angle); g.scale(t.k / kc, t.k / kc);
@@ -155,7 +158,7 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour, ti
         const off = 11 / t.k * m.side;   // 11 px out from the road, on the outside of the bend
         project(t, size, track.x[m.i] + track.nx[m.i] * off, track.z[m.i] + track.nz[m.i] * off, pt);
         if (pt.x < 4 || pt.y < 4 || pt.x > size - 4 || pt.y > size - 4) continue;
-        g.fillStyle = 'rgba(242,239,230,.92)'; g.fillText(m.n, pt.x, pt.y);
+        g.fillStyle = tokenColour('--text', '#f4f0ff'); g.fillText(m.n, pt.x, pt.y);
       }
     }
 
@@ -167,22 +170,19 @@ export function createMiniMap(root, { track, car, lobby, settings, ownColour, ti
         project(t, size, pose.x, pose.z, pt);
         if (pt.x < -6 || pt.y < -6 || pt.x > size + 6 || pt.y > size + 6) continue;
         g.globalAlpha = gh.opacity == null ? 1 : gh.opacity;
-        dot(pt.x, pt.y, 3.6, (gh.livery && gh.livery.body) || '#ccc', 'rgba(0,0,0,.8)', 1.4);
+        dot(pt.x, pt.y, 3.6, (gh.livery && gh.livery.body) || tokenColour('--text-dim', '#b7accf'), tokenColour('--pit-0', '#0a0612'), 1.4);
         g.globalAlpha = 1;
       }
     }
 
-    // your car: a wedge pointing the way it faces, in your livery colour with a white ring
+    // your car: a leaning wedge pointing the way it faces, in your livery colour with a white ring
     project(t, size, car.x, car.z, pt);
     const a = car.heading + t.angle;
+    const wedge = [[10, 0], [-6, 5.4], [-2.6, 0], [-6, -5.4]].map(([x, y]) => [x + LEAN * y, y]);   // the back edges lean
     g.save(); g.translate(pt.x, pt.y); g.rotate(a);
-    g.beginPath(); g.moveTo(9, 0); g.lineTo(-5.5, 5.5); g.lineTo(-2.5, 0); g.lineTo(-5.5, -5.5); g.closePath();
-    g.fillStyle = 'rgba(0,0,0,.45)'; g.fill();
-    g.restore();
-    dot(pt.x, pt.y, 5.2, ownColour ? ownColour() : '#ffd21f', '#fff', 2);
-    g.save(); g.translate(pt.x, pt.y); g.rotate(a);
-    g.beginPath(); g.moveTo(11, 0); g.lineTo(5, 4.2); g.lineTo(5, -4.2); g.closePath();
-    g.fillStyle = '#fff'; g.fill();
+    g.beginPath(); wedge.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath();
+    g.fillStyle = ownColour ? ownColour() : tokenColour('--gantry', '#ffd400'); g.fill();
+    g.lineWidth = 2; g.lineJoin = 'round'; g.strokeStyle = tokenColour('--text', '#f4f0ff'); g.stroke();
     g.restore();
   }
 

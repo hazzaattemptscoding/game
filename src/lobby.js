@@ -3,7 +3,7 @@
 // this file only joins them to the page. The game calls `solids()` in its step loop and `update()` once a frame.
 // With no room open every call is a no-op.
 
-import { Multiplayer, brokerFromSearch, loadConfig, cleanCode } from './multiplayer.js';
+import { Multiplayer, brokerFromSearch, loadConfig, cleanCode, hostId } from './multiplayer.js';
 import { encodeLivery } from './livery.js';
 import { Ghosts, threeFactory, makeProjector, stateFromCar, encodeState } from './ghosts.js';
 import { encodeTelemetry, telemetryFromCar, TELEMETRY_HZ } from './shared/telemetry.js';
@@ -35,7 +35,7 @@ export function createLobby(ctx) {
   const finishes = new FinishBook();
   let localFin = null, finSent = new Set(), finTimer = null, changeHook = null;
   const el = { name: $('mp-name'), code: $('mp-code'), host: $('mp-host'), join: $('mp-join'), leave: $('mp-leave'), copy: $('mp-copy'), big: $('mp-big'),
-    start: $('mp-start'), joinrow: $('mp-joinrow'), room: $('mp-room'), status: $('mp-status'), who: $('mp-who'), hint: $('mp-hint'), via: $('mp-via'), diag: $('mp-diag'), details: $('mp-details'), stand: $('h-stand') };
+    start: $('mp-start'), joinrow: $('mp-joinrow'), room: $('mp-room'), status: $('mp-status'), who: $('mp-who'), hint: $('mp-hint'), via: $('mp-via'), diag: $('mp-diag'), details: $('mp-details'), stand: $('h-stand'), roster: $('mp-roster') };
   const search = ctx.search || '';
   const q = new URLSearchParams(search);
 
@@ -60,11 +60,11 @@ export function createLobby(ctx) {
 
   // --- finishes (src/finish.js) ---
   const changed = () => { if (changeHook) changeHook(); };
-  // the room's players changed: a finish of someone who left is dropped, our finish goes to a newcomer, and a room we left forgets all
+  // the room's players changed: our finish goes to a newcomer, and a room we left forgets all. A finish stays when its player
+  // leaves (they finished the race); only the next race clears the book (resetFinishes, src/director.js).
   function playersChanged() {
     if (!mp.active) { resetFinishes(); return; }
     const here = new Set([...mp.peers.values()].filter(p => p.hello).map(p => p.id));
-    if (finishes.keep(here)) changed();
     if (localFin) for (const id of here) if (!finSent.has(id)) { finSent.add(id); mp.sendControl(localFin, id); }
   }
   function resetFinishes() {
@@ -132,6 +132,38 @@ export function createLobby(ctx) {
   function renderWho() {
     const names = [...mp.peers.values()].filter(p => p.hello).map(p => p.name);
     el.who.textContent = mp.active ? `${mp.players} of 8 in the room: ${[name(), ...names].join(', ')}` : '';
+    renderRoster();
+  }
+  // the room as a table (src/menuScreens.js Online): livery number, name, ping, host tag and state. The ping is the relay round trip
+  // for our own row only: the relay does not time the others. Rebuilt only when a row changes.
+  let rosterKey = '';
+  function renderRoster() {
+    if (!el.roster) return;
+    if (!mp.active) { if (rosterKey) { el.roster.replaceChildren(); rosterKey = ''; } return; }
+    const hostPid = mp.relayRoom && mp.relayRoom.hostPeer ? mp.relayRoom.hostPeer : hostId(mp.code);
+    const rows = ghosts.standings({ name: name(), livery: liveryNow(), lap: ctx.timer.currentLap(), s: ctx.car.loc.s, speed: ctx.car.speed }, ctx.track.length)
+      .map(r => ({ name: r.name, num: r.num, colour: r.colour, me: !!r.me, host: r.me ? !!mp.isHost : r.id === hostPid, lap: r.lap }));
+    const ping = mp.transport === 'relay' && mp.rtt != null ? `${mp.rtt} ms` : '-';
+    const key = JSON.stringify(rows) + ping;
+    if (key === rosterKey) return;
+    rosterKey = key;
+    const table = document.createElement('table'); table.className = 'mp-table';
+    const head = document.createElement('thead'); head.innerHTML = '<tr><th>No</th><th>Driver</th><th>Ping</th><th>Host</th><th>State</th></tr>';
+    const body = document.createElement('tbody');
+    for (const r of rows) {
+      const tr = document.createElement('tr'); if (r.me) tr.className = 'me';
+      const no = document.createElement('td'); const chip = document.createElement('i'); chip.className = 'mp-no';
+      chip.textContent = r.num >= 0 ? String(r.num) : '-'; if (r.colour) chip.style.background = r.colour; no.append(chip);
+      const nm = document.createElement('td'); nm.className = 'mp-name'; nm.textContent = r.name || 'Driver';
+      if (r.me) { const you = document.createElement('em'); you.textContent = 'you'; nm.append(' ', you); }
+      const pg = document.createElement('td'); pg.textContent = r.me ? ping : '-';
+      const ho = document.createElement('td'); if (r.host) { const t = document.createElement('span'); t.className = 'mp-hosttag'; t.textContent = 'Host'; ho.append(t); }
+      const st = document.createElement('td'); st.textContent = r.lap ? `Driving, lap ${r.lap}` : 'Waiting';
+      tr.append(no, nm, pg, ho, st);
+      body.append(tr);
+    }
+    table.append(head, body);
+    el.roster.replaceChildren(table);
   }
 
   // --- standings (collapsible, under the timing block) ---
@@ -192,7 +224,7 @@ export function createLobby(ctx) {
     const key = JSON.stringify(meta), now = performance.now();
     if (key !== metaSent || now - metaAt > 5000) { if (mp.sendMeta(meta)) { metaSent = key; metaAt = now; } }
   };
-  setInterval(sendMeta, 1000);
+  setInterval(() => { sendMeta(); renderRoster(); }, 1000);   // the roster's state (driving or waiting) follows the laps every second
   sendLivery();
   let size = { w: innerWidth, h: innerHeight }, project = null;
   return {

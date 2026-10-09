@@ -57,8 +57,9 @@ export function cleanFinish(m) {
   return { t: FIN, time, laps: Math.round(laps), best, sec, pen, warn: Math.round(warn) };
 }
 
-// The finished cars of the room, by player id. set() says whether anything changed (so a repeat does not redraw); remove() when a
-// player leaves; clear() when a new race starts. Pure, so the results screen can read it through the lobby.
+// The finished cars of the room, by player id. set() says whether anything changed (so a repeat does not redraw); clear() when a
+// new race starts. A player who leaves keeps their finish: the book is only cleared by a new race. Pure, so the results screen
+// can read it through the lobby.
 export class FinishBook {
   constructor() { this.map = new Map(); }
   get size() { return this.map.size; }
@@ -71,8 +72,5 @@ export class FinishBook {
     this.map.set(id, fin);
     return true;
   }
-  remove(id) { return this.map.delete(id); }
-  // keep only the ids in the set (the players still in the room)
-  keep(ids) { let changed = false; for (const id of [...this.map.keys()]) if (!ids.has(id)) { this.map.delete(id); changed = true; } return changed; }
   clear() { const had = this.map.size > 0; this.map.clear(); return had; }
 }

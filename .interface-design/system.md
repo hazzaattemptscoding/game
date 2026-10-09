@@ -41,8 +41,8 @@ Names come from the venue. Define all of these once, in `src/style.css`, and use
 
 --gantry:     #ffd400;  /* the ONE primary-action colour (Start, Drive, Join). Dark text on it. */
 
---timing-best:  #e879f9; /* fastest of everyone. NOT the brand purple, so it stays readable */
---timing-pb:    #2fd673; /* your own best */
+--timing-best:  #e879f9; /* fastest overall: the fastest of the session (HUD, board) or of the race in that sector (results) */
+--timing-pb:    #2fd673; /* personal best, or within 0.3 s of the fastest (results) */
 --timing-slow:  #f5c542; /* slower */
 --flag-red:     #ff4b3e; /* penalties, warnings, destructive */
 ```
