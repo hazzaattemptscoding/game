@@ -75,8 +75,8 @@ const near = (a, b, tol, msg) => check(Math.abs(a - b) <= tol, `${msg}: got ${a}
 
 // ---- boards ----
 {
-  eq(boardFor({ weather: 'heavyrain', online: true, reverse: false, assists: { tc: false, abs: true, esc: false } }), { weather: 'wet', mode: 'online', dir: 'fwd', assists: 'on' }, 'rain, online, one assist');
-  eq(boardFor({ weather: 'fog', online: false, reverse: true, assists: { tc: false, abs: false, esc: false } }), { weather: 'dry', mode: 'solo', dir: 'rev', assists: 'off' }, 'fog is dry, reverse, assists off');
+  eq(boardFor({ weather: 'heavyrain', online: true, reverse: false, assists: { tc: false, abs: true, esc: false } }), { weather: 'wet', mode: 'online', dir: 'fwd', assists: 'on', car: 'GT' }, 'rain, online, one assist');
+  eq(boardFor({ weather: 'fog', online: false, reverse: true, assists: { tc: false, abs: false, esc: false } }), { weather: 'dry', mode: 'solo', dir: 'rev', assists: 'off', car: 'GT' }, 'fog is dry, reverse, assists off');
   eq(boardKey({ weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'on' }), 'dry-solo-fwd-on', 'board key');
   eq(boardLabel({ weather: 'wet', mode: 'online', dir: 'rev', assists: 'off' }), 'Wet · Online · Reverse · Assists off', 'board label');
   check(!validBoard({ weather: 'damp', mode: 'solo', dir: 'fwd', assists: 'on' }), 'an unknown weather is not a board');
@@ -230,14 +230,14 @@ function watchTests() {
   };
   drive(0, 100.5);   // out lap, then lap 1 ends at 100
   eq(posts.length, 1, 'the out lap is not posted, lap 1 is');
-  eq(posts[0].board, { weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'on' }, 'lap 1 on dry solo normal assists');
+  eq(posts[0].board, { weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'on', car: 'GT' }, 'lap 1 on dry solo normal assists');
   check(!!posts[0].ghost && decodeTrace(posts[0].ghost).length / 4 >= 900, 'lap 1 carries its ghost line');
   eq(posts[0].sectors, [35, 32, 23], 'with its sectors');
 
   // lap 2: rain starts half way: a wet lap; the assists go off half way: still an assisted lap
   drive(100.5, 190.5, { onTick: t => { if (t > 140) { cond.weather = 'lightrain'; cond.assists = { tc: false, abs: false, esc: false }; } } });
   eq(posts.length, 2, 'lap 2 posted');
-  eq(posts[1].board, { weather: 'wet', mode: 'solo', dir: 'fwd', assists: 'on' }, 'partly wet is wet, partly assisted is assisted');
+  eq(posts[1].board, { weather: 'wet', mode: 'solo', dir: 'fwd', assists: 'on', car: 'GT' }, 'partly wet is wet, partly assisted is assisted');
 
   // lap 3: dry again, all off: the autopilot drives for a moment: not posted
   cond.weather = 'clear';
@@ -250,7 +250,7 @@ function watchTests() {
   // lap 6: clean, dry, all assists off
   drive(460.5, 550.5);
   eq(posts.length, 3, 'lap 6 posted');
-  eq(posts[2].board, { weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'off' }, 'dry, assists all off');
+  eq(posts[2].board, { weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'off', car: 'GT' }, 'dry, assists all off');
 
   // the session restarts: no stale lap is posted
   timer.lapStart = null; timer.history = [];
@@ -295,7 +295,7 @@ function autopilotPost({ skill = 0.9, assists = { tc: true, abs: true, esc: true
   const TOK = '0123456789abcdef0123456789abcdef';
   const verdict = validateLap({ ...real, token: TOK });
   check(!verdict.error, 'the relay accepts the real lap' + (verdict.error ? `: ${verdict.error}` : ''));
-  eq(real.board, { weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'on' }, 'real lap on dry solo normal assists');
+  eq(real.board, { weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'on', car: 'GT' }, 'real lap on dry solo normal assists');
 }
 
 await queueTests();
