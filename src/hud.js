@@ -86,7 +86,7 @@ export class Hud {
     setTimeout(() => this.el.help.classList.add('fade'), 9000);
   }
 
-  // kind: the colour of the bar by meaning: info (default, lake), best (timing-best), pb (timing-pb), bad (flag-red), warn (yellow);
+  // kind: the colour of the bar by meaning: info (default, lake), best (timing-best), pb (timing-pb), bad, warn (warn);
   // 'force' keeps it up when the event messages are switched off (the toggles)
   flash(text, now, kind = 'info') {
     this.el.flash.textContent = text;

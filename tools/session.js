@@ -499,7 +499,7 @@ console.log('RESULTS SCREEN MODEL');
   const solo = resultsModel({ rows: [{ id: 'me', me: true, status: 'finished', rank: 1, time: 300, best: 90, sec: [30, 30, 30], secCls: ['best', 'best', 'best'], penalty: 0, pen: [], warn: 0, name: 'You', colour: '#1c6dd0', num: -1 }], laps: 1, canAgain: false });
   check(solo.card.of === '' && solo.card.pos === 'P1' && solo.rows[0].num === '' && solo.card.canAgain === false && solo.card.penalty === 'None' && solo.rows[0].pen === '', 'a solo race: no "of", no number, no penalty, Race again off');
   check(solo.sub === 'Lakeside Circuit, 1 lap', `one lap is singular (got "${solo.sub}")`);
-  check(chipInk('#ffd400') === 'var(--on-gantry)' && chipInk('#1c6dd0') === 'var(--text)' && chipInk('nope') === 'var(--text)', 'race number text is dark on light liveries and light on dark ones (tokens)');
+  check(chipInk('#ffd400') === 'var(--pit-0)' && chipInk('#1c6dd0') === 'var(--text)' && chipInk('nope') === 'var(--text)', 'race number text is dark on light liveries and light on dark ones (tokens)');
   check(resultsModel({}).rows.length === 0 && resultsModel({}).card.pos === 'P-', 'no data: an empty card');
 }
 

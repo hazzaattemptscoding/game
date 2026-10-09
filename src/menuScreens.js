@@ -74,7 +74,7 @@ const fieldRow = (label, control) => h('div', 'row', h('div', 'row-l', h('b', ''
 
 // A titled group of rows: the title is a small uppercase label, the rows sit in one card
 export function group(title, ...kids) { return h('section', 'group', h('div', 'gtitle', title), h('div', 'rows', ...kids)); }
-// the first group of a screen gets the leaning chip for its title
+// the first group of a screen is marked with the chip class on its title (no chip is drawn for it)
 const primary = g => { const t = g.querySelector('.gtitle'); if (t) t.classList.add('chip'); return g; };
 
 const setupDefaults = { laps: 5, custom: false, assists: 'any', racingLine: true, trackLimits: 'penalty' };
@@ -124,7 +124,7 @@ function openEntry(ctx, id) {
   return m.jump(id);
 }
 
-// The yellow button at the top of the main menu: resumes the last mode used (settings.lastMode, saved on each start)
+// The primary button at the top of the main menu: resumes the last mode used (settings.lastMode, saved on each start)
 function resumeButton(ctx) {
   const { settings, api } = ctx;
   const mode = settings.lastMode || 'practice';

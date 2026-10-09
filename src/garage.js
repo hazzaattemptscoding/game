@@ -30,15 +30,15 @@ const CSS = `
 .gar-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .gar-flat { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
 .gar-flat div { width: 62%; height: 38%; position: relative; border-radius: 18px 40px 10px 10px; }
-.gar-flat b { position: absolute; right: 14%; top: 28%; width: 34%; aspect-ratio: 1; border-radius: 50%; background: var(--text); color: var(--pit-0); display: flex; align-items: center; justify-content: center; font-family: var(--f-display); font-size: 28px; font-style: italic; }
-.gar-name { margin-top: var(--s-2); padding: 0 var(--s-2); font-family: var(--f-display); font-size: 24px; font-weight: 800; font-style: italic; min-height: 28px; }
-.gar-name em { font-style: normal; color: var(--gantry); margin-right: var(--s-2); }
+.gar-flat b { position: absolute; right: 14%; top: 28%; width: 34%; aspect-ratio: 1; border-radius: 50%; background: var(--text); color: var(--pit-0); display: flex; align-items: center; justify-content: center; font-family: var(--f-display); font-size: 28px; }
+.gar-name { margin-top: var(--s-2); padding: 0 var(--s-2); font-family: var(--f-display); font-size: 22px; font-weight: 600; min-height: 28px; }
+.gar-name em { font-style: normal; color: var(--text-faint); margin-right: var(--s-2); }
 /* swatches: 36px circles in a wrapping grid, 10px apart */
 .gar-sw { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .gar-sw button { width: 36px; height: 36px; padding: 0; flex: none; border: 2px solid var(--line-strong); border-radius: 50%; cursor: pointer; font: inherit; transition: transform 120ms var(--ease-out); }
 .gar-sw button:hover { transform: scale(1.06); }
 .gar-sw button:active { transform: scale(.98); }
-.gar-sw button.sel { border-color: var(--text); box-shadow: 0 0 0 2px var(--pit-1), 0 0 0 4px var(--purple-soft); }
+.gar-sw button.sel { border-color: var(--text); box-shadow: 0 0 0 2px var(--pit-1), 0 0 0 4px var(--accent-soft); }
 .gar-sw .gar-custom { display: flex; align-items: center; gap: var(--s-2); margin-left: var(--s-2); font-size: 13px; color: var(--text-dim); cursor: pointer; }
 .gar-sw input[type=color] { width: 36px; height: 36px; flex: none; padding: 0; border: 2px solid var(--line-strong); border-radius: 50%; background: var(--pit-0); cursor: pointer; overflow: hidden; }
 .gar-sw input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
@@ -47,16 +47,16 @@ const CSS = `
 .gar button.opt { flex: 1 1 110px; min-height: 44px; padding: 0 var(--s-3); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); background: transparent; color: var(--text-dim); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 120ms var(--ease-out), transform 120ms var(--ease-out); }
 .gar button.opt:hover { background: var(--pit-3); color: var(--text); }
 .gar button.opt:active { transform: scale(.98); }
-.gar button.opt.sel { background: var(--purple); border-color: var(--purple); color: var(--text); }
+.gar button.opt.sel { background: var(--accent-tint); border-color: var(--accent); color: var(--text); }
 .gar input[type=text] { font: inherit; font-size: 15px; height: 44px; padding: 0 var(--s-3); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); background: var(--pit-0); color: var(--text); user-select: text; -webkit-user-select: text; touch-action: auto; min-width: 0; }
-.gar input.num { width: 90px; flex: none; text-align: center; font-family: var(--f-display); font-weight: 800; font-style: italic; font-size: 22px; }
+.gar input.num { width: 90px; flex: none; text-align: center; font-family: var(--f-display); font-weight: 600; font-size: 22px; }
 .gar input.nm { flex: 1 1 180px; }
 /* sponsors: three tiles across, the board picture as wide as the tile */
 .gar-spons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .gar-spons button { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 6px; min-width: 0; border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--pit-2); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; text-align: left; transition: transform 120ms var(--ease-out), background-color 120ms var(--ease-out); }
 .gar-spons button:hover { background: var(--pit-3); }
 .gar-spons button:active { transform: scale(.98); }
-.gar-spons button.sel { border-color: var(--purple-soft); box-shadow: inset 0 0 0 1px var(--purple-soft); }
+.gar-spons button.sel { border-color: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-soft); }
 .gar-spons canvas { width: 100%; height: auto; display: block; background: var(--pit-0); border-radius: 4px; }
 .gar-spons span { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* the footer stays at the bottom of the pane while the sections scroll above it */
@@ -64,7 +64,7 @@ const CSS = `
 .gar-foot p { margin: 0; font-size: 13px; color: var(--text-dim); }
 .gar button.reset { min-height: 44px; padding: 0 var(--s-4); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); background: transparent; color: var(--text); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
 .gar button.reset:hover { background: var(--pit-3); }
-.gar button:focus-visible, .gar input:focus-visible { outline: 2px solid var(--gantry); outline-offset: 2px; }
+.gar button:focus-visible, .gar input:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
 `;
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };

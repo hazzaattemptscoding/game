@@ -19,12 +19,12 @@ const penText = s => `+${Number.isInteger(s) ? s : s.toFixed(1)} s`;
 const warnText = n => (n === 0 ? 'None' : n === 1 ? '1 warning' : `${n} warnings`);
 const CLS = { best: 'best', near: 'near', slow: 'slow' };
 
-// the text colour for a race number on a livery colour: the dark on-gantry token on the light colours, the text token on the dark ones
+// the text colour for a race number on a livery colour: the dark pit token on the light colours, the text token on the dark ones
 export function chipInk(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
   if (!m) return 'var(--text)';
   const n = parseInt(m[1], 16), lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
-  return lum > 150 ? 'var(--on-gantry)' : 'var(--text)';
+  return lum > 150 ? 'var(--pit-0)' : 'var(--text)';
 }
 
 // The view model: every string and class the screen shows, from the rows. Pure.

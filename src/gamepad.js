@@ -318,26 +318,26 @@ const CSS = `
 .ctl .bar span:last-child { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
 .ctl .bar div { height: 8px; border-radius: 4px; background: var(--pit-3); position: relative; overflow: hidden; }
 .ctl .bar i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--lake); }
-.ctl .bar.steer i { background: var(--purple-soft); }
+.ctl .bar.steer i { background: var(--accent-soft); }
 .ctl .bar.brake i { background: var(--text-dim); }
 .ctl .btns { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
 .ctl .btns b { min-width: 30px; padding: 2px 6px; border-radius: 4px; background: var(--pit-3); color: var(--text-faint); font-size: 12px; font-weight: 600; text-align: center; }
-.ctl .btns b.on { background: var(--lake); color: var(--lake-deep); }
+.ctl .btns b.on { background: var(--lake); color: var(--pit-0); }
 .ctl .map { display: flex; flex-direction: column; }
 .ctl .map button { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); width: 100%; min-height: var(--row-h); padding: 0 var(--s-5); border: 0; border-radius: 0; background: none; color: var(--text); font-size: 15px; font-weight: 500; text-align: left; cursor: pointer; }
 .ctl .map button + button { border-top: 1px solid var(--line); }
 .ctl .map button:hover { background: var(--pit-2); }
 .ctl .map button:active { transform: scale(.98); }
 .ctl .map button em { font-style: normal; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.ctl .map button.listen { background: var(--purple); color: var(--text); }
+.ctl .map button.listen { background: var(--accent-tint); color: var(--text); border-left: 3px solid var(--accent); }
 .ctl .map button.listen em { color: var(--text); font-weight: 600; }
 .ctl .keys { margin: 0; padding: 0; list-style: none; }
 .ctl .keys b { font-weight: 500; color: var(--text); }
 .ctl .keys span { color: var(--text-dim); }
-.ctl button:focus-visible, .ctl button.pad-focus { outline: 2px solid var(--gantry); outline-offset: 2px; }
+.ctl button:focus-visible, .ctl button.pad-focus { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
 .ctl-overlay { position: fixed; inset: 0; z-index: 50; overflow-y: auto; background: color-mix(in srgb, var(--pit-0) 92%, transparent); padding: var(--s-4); display: flex; justify-content: center; align-items: flex-start; }
 .ctl-overlay .ctl { width: min(440px, 100%); }
-.ctl-overlay h2 { font-family: var(--f-display); font-size: 40px; font-style: italic; margin: 0 0 var(--s-2); }
+.ctl-overlay h2 { font-family: var(--f-display); font-weight: 600; font-size: 28px; margin: 0 0 var(--s-2); }
 `;
 
 const KEYS = [['Arrows or W A S D', 'steer, throttle, brake'], ['Space or Shift', 'DRS'], ['R', 'back on track'], ['C', 'camera'], ['Tab (hold)', 'times board'], ['Esc or P', 'pause and settings'], ['I or F3', 'handling readout'], ['F2', 'report a problem']];
