@@ -194,11 +194,12 @@ function profileBarrier(corner, s, length) {
   }
   return points.at(-1)[1];
 }
-// 2. no barrier within 4 m of the track edge, except the street section, the pit wall, the bridge and the low wall
-// between the pit exit road and the track (the owner asked for it, behind the kerb and raised kerb)
+// 2. no barrier within 4 m of the track edge, except the street section, the pit wall, the bridge (its parapet and the row of
+// tyres just inside it, on the 2.5 m deck margin) and the low wall between the pit exit road and the track (the owner asked
+// for it, behind the kerb and raised kerb)
 let closest = Infinity, pitClosest = Infinity;
 for (const b of track.barriers) {
-  if (b.type === BARRIER.CONCRETE || b.type === BARRIER.PARAPET || b.type === BARRIER.PITSEP) continue;
+  if (b.type === BARRIER.CONCRETE || b.type === BARRIER.PARAPET || b.type === BARRIER.PITSEP || b.deckRow) continue;
   for (const [x, y, z] of b.pts) {
     const gap = edgeGap(x, z, y);
     if (b.type === BARRIER.PITWALL) pitClosest = Math.min(pitClosest, gap);

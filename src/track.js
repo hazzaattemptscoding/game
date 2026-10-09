@@ -53,7 +53,9 @@ const LINE_WIDTH = 0.15;   // painted edge line, metres
 const PLAIN_RUNOFF = 22;   // flat grass beside the track where no corner needs more, metres
 const GRAVEL_APRON = 3;    // a gravel trap always has at least this much paved apron in front of it
 const STREET_GAP = 0.8;    // clear space between the kerb and a street-section wall, metres
-const BRIDGE_RUNOFF = 2.0;   // the deck is this much wider than the track on each side, and the parapet stands on its edge
+const BRIDGE_RUNOFF = 2.5;   // the deck is this much wider than the track on each side (a 2.5 m margin), and the parapet stands on its edge
+const BRIDGE_TAPER = 20;     // metres after the deck over which the run-off on the far side tapers from the deck margin to the plain width
+const DECK_TYRE_TAPER = 8;   // metres at each end of the deck over which the tyre row runs into the parapet
 const BOARD_BEHIND = 0.5;    // a distance board stands this far behind the barrier face (never more than 1 m in front of it)
 const FILL_GAP = 120;        // no stretch on one side may go longer than this without trackside furniture
 const CLUSTER_BEHIND = 1.5;  // fill objects stand this far behind the outer barrier line (out of the run-off, within reach of the barrier)
@@ -586,6 +588,10 @@ function buildSides(T, corners) {
       // (at the mouth it is the shared asphalt where the road splits off; the bands draw it as road)
       if (sd === 0 && T.pitEntryEdge[i]) { T.runoff[sd][i] = Math.max(0, T.pitEntryEdge[i] - HW[i] - T.kerb[sd][i] - T.sausage[sd][i]); T.concrete[sd][i] = 0; }
       if (gravelW[sd][i] > 0.5) T.runoff[sd][i] = Math.max(T.runoff[sd][i], GRAVEL_APRON * Math.min(1, gravelW[sd][i] / 5));
+      // just past the deck the run-off eases from the deck margin to its plain width (a square end here is a step in the apron)
+      const pastDeck = ((T.s[i] - T.bridge[1]) % T.length + T.length) % T.length;
+      const tapering = pastDeck < BRIDGE_TAPER;
+      if (tapering) T.runoff[sd][i] = Math.max(T.runoff[sd][i], BRIDGE_RUNOFF * (1 - pastDeck / BRIDGE_TAPER));
       const edge = HW[i] + T.kerb[sd][i] + T.sausage[sd][i] + T.runoff[sd][i];
       if (gravelW[sd][i] > 0.5) { T.gravelIn[sd][i] = edge; T.gravelOut[sd][i] = edge + gravelW[sd][i]; }
       let flat = Math.max(HW[i] + PLAIN_RUNOFF, HW[i] + reach[sd][i], T.gravelOut[sd][i] + 3);
@@ -594,6 +600,7 @@ function buildSides(T, corners) {
       // never inside what a departure from the corner needs (reach), nor inside the pit road
       const cap = Math.max(insideCap[sd][i], HW[i] + reach[sd][i], sd === 0 && T.pitOut[i] ? T.pitOut[i] + PIT_APRON : 0);
       T.wall[sd][i] = Math.min(flat, Math.max(HW[i] + 2, T.room[sd][i]), cap);
+      if (tapering) T.wall[sd][i] = Math.max(T.wall[sd][i], edge);   // the wall stays outside the tapering apron
       if (T.gravelOut[sd][i] > T.wall[sd][i] - 1) T.gravelOut[sd][i] = Math.max(0, T.wall[sd][i] - 1);
       if (gravelGrass[sd][i] > 0 && T.gravelOut[sd][i] > 0) T.gravelIn[sd][i] = edge + (T.gravelOut[sd][i] - edge) * gravelGrass[sd][i];
       if (T.gravelOut[sd][i] <= T.gravelIn[sd][i] + 0.5) T.gravelOut[sd][i] = 0;
@@ -1114,6 +1121,16 @@ function buildBarriers(T, corners) {
     for (const run of runsOf(N, i => T.isBridge[i] || nearBridge[i])) {
       follow(BARRIER.PARAPET, sd, run, i => g * T.wall[sd][i], 1, { why: 'bridge parapet over the main straight and its approach' });
       for (const ends of [run.slice(0, 5), run.slice(-5)]) follow(BARRIER.TYRES, sd, ends, i => g * (T.wall[sd][i] + 0.05), 1, { impact: true, bridgeEnd: true, why: 'tyre stack at the end of the bridge parapet', spec: { length: 4, offset: T.wall[sd][ends[0]], angle: 0 } });
+    }
+    // the deck: a row of tyre stacks just inside each parapet, over the deck margin. At each end it tapers in to the parapet
+    // over DECK_TYRE_TAPER metres, so it never meets the approach square
+    for (const deck of runsOf(N, i => T.isBridge[i])) {
+      const first = T.s[deck[0]], last = T.s[deck[deck.length - 1]], len = T.length;
+      const inward = i => {
+        const fromStart = ((T.s[i] - first) % len + len) % len, toEnd = ((last - T.s[i]) % len + len) % len;
+        return 0.5 - 0.45 * Math.min(1, Math.min(fromStart, toEnd) / DECK_TYRE_TAPER);   // 0.5 m inside the parapet, 0.05 m at the ends
+      };
+      follow(BARRIER.TYRES, sd, deck, i => g * (T.wall[sd][i] - inward(i)), 1, { deckRow: true, why: 'tyre stacks just inside the bridge parapet, along the deck margin' });
     }
     // 4. the containment wall: ONE line that keeps a car on the flat ground. A 1.2 m plain sponsored tyre wall, except along
     // the tall stretches above (same line, taller, tapering over TALL_RAMP m), so the eye sees one line of barrier.

@@ -47,6 +47,8 @@ for (const b of T.barriers) {
     if (b.type === BARRIER.CONCRETE) {
       closestStreet = Math.min(closestStreet, gap);
       if (gap < 0.3) errors.push(`street wall ${gap.toFixed(2)} m from edge at (${x.toFixed(1)}, ${z.toFixed(1)})`);
+    } else if (b.deckRow) {
+      // the row of tyres on the bridge deck margin, like the parapet it stands against (the deck is 2.5 m wide either side)
     } else {
       closest = Math.min(closest, gap);
       if (gap < 4) errors.push(`barrier ${gap.toFixed(2)} m from edge at (${x.toFixed(1)}, ${z.toFixed(1)})`);
