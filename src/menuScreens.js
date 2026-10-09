@@ -651,7 +651,7 @@ function garageScreen() {
       import('./garage.js').then(m => {
         if (dead) return;
         box.replaceChildren();
-        inst = m.mountGarage(box, { settings: ctx.settings, save: ctx.save, onChange: () => { ctx.api.livery && ctx.api.livery(); }, onCar: id => { ctx.api.car && ctx.api.car(id); } });
+        inst = m.mountGarage(box, { settings: ctx.settings, save: ctx.save, onChange: () => { ctx.api.livery && ctx.api.livery(); ctx.menu.refreshRail(); }, onCar: id => { ctx.api.car && ctx.api.car(id); ctx.menu.refreshRail(); } });
       }).catch(() => { if (!dead) box.replaceChildren(h('p', 'm-sub', 'Coming soon.'), h('p', 'm-note', 'The garage is not ready yet.')); });
       return { dispose() { dead = true; if (inst && inst.dispose) inst.dispose(); } };
     },

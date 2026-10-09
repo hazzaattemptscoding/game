@@ -163,6 +163,8 @@ export function createMenu({ root, settings, save, api = {}, params = {}, build 
     if (document.activeElement && root.contains(document.activeElement)) document.activeElement.blur();
     menu.onClose && menu.onClose();
   };
+  // rebuild only the rail (the driver chip shows the car and the paint), leaving the screen as it is
+  menu.refreshRail = () => { const top = menu.current(); if (menu.isOpen && top && !rail.hidden && typeof menu.buildRail === 'function') rail.replaceChildren(...menu.buildRail(ctx, top)); };
   menu.refresh = () => { if (menu.isOpen) { unmountTop(); mountTop({ keepFocus: true }); } };
 
   backBtn.addEventListener('click', () => menu.pop());
