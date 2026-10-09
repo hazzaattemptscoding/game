@@ -336,15 +336,12 @@ function instancedPosts(list, material, radius, cat) {
   return tag(mesh, cat);
 }
 
-// a sloped, chevron-painted crash attenuator at the start of the pit wall
+// a crash attenuator at the start of the pit wall: a flat-faced block from the road up to the top of the wall (1.1 m), its face
+// chevron-painted. Closed on every side, so it reads as a solid object and not a ramp.
 function attenuator(pts, nrm, material) {
   const [x0, y0, z0] = pts[0], [x1, , z1] = pts[1];
   const dir = Math.atan2(z1 - z0, x1 - x0);
   const geo = new THREE.BoxGeometry(4, 1.1, 0.8);
-  // slope the nose down to the ground
-  const p = geo.attributes.position;
-  for (let k = 0; k < p.count; k++) if (p.getX(k) < 0 && p.getY(k) > 0) p.setY(k, -0.3);
-  geo.computeVertexNormals();
   const m = new THREE.Mesh(geo, material);
   m.position.set(x0 - Math.cos(dir) * 2 - nrm[0][0] * 0.3, y0 + 0.55, z0 - Math.sin(dir) * 2 - nrm[0][1] * 0.3);
   m.rotation.y = -dir;
