@@ -38,6 +38,7 @@ import { createRacingLine } from './racingLine.js';
 import { createDirector, HOLD } from './director.js';
 import { createEnvironment } from './environment.js';
 import { envFromParams } from './weather.js';
+import { isRace } from './session.js';
 import { createGantryScreen } from './gantryScreen.js';
 import powermediaLogo from './assets/powermedia-white.png';
 import deltadashLogo from './assets/deltadash.png';
@@ -382,7 +383,8 @@ function frame(now) {
   for (const ev of timer.events) {
     if (ev.type !== 'lap' || lapsShown.has(ev)) continue;
     lapsShown.add(ev);
-    gantryScreen.lap({ lap: timer.lap, time: ev.time, kind: ev.best ? 'pb' : null, delta: ev.best || timer.best == null ? null : ev.time - timer.best });
+    const raceLaps = dir.session && isRace(dir.session) ? dir.session.laps : null;   // a race shows "LAP 2 / 5"
+    gantryScreen.lap({ lap: timer.lap, of: raceLaps, time: ev.time, kind: ev.best ? 'pb' : null, delta: ev.best || timer.best == null ? null : ev.time - timer.best });
   }
   if (now - gantryDrawn > 33 && rig.camera.position.distanceTo(trackScene.userData.gantryPosition) < 900) {
     gantryScreen.draw(now / 1000);
