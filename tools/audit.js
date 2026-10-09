@@ -281,7 +281,7 @@ let bridgeSlope = 0;
   const lost = f => Math.min(Math.cos(Math.PI / 9), f.friction * (1 + f.bounce) * Math.sin(Math.PI / 9));
   if (lost(tyre) >= lost(hard)) errors.push(`a 20 degree rub costs ${lost(tyre).toFixed(3)} of the speed against tyres, ${lost(hard).toFixed(3)} against concrete`);
   // tyre stacks stand on the track side of the pit wall where the exit run-off is (layout.tyreWall), 4 m or more from the edge
-  const L = T.length, a = T.sAtPoint(59), span = ((T.sAtPoint(61.8) - a) % L + L) % L;
+  const L = T.length, [tyreFrom, tyreTo] = T.layout.tyreWall[0], a = T.sAtPoint(tyreFrom), span = ((T.sAtPoint(tyreTo) - a) % L + L) % L;
   // the nearest barrier point to sample i (within 3 samples: the lines are laid every few samples)
   const nearPt = (list, i) => { let best = null, bd = 4; for (const p of list) { const k = Math.abs(((p[3] - i) % T.N + T.N + 1) % T.N - 1); if (k < bd) { bd = k; best = p; } } return best; };
   const tyrePts = [], wallPts = [];

@@ -87,6 +87,7 @@ const LIMIT_LEAD = 25;      // the pit limiter starts this far before the first 
 const ENTRY_TANGENT = 0.5; // the entry road's curve: tangent length as a share of its chord (bigger = straighter in the middle)
 const ENTRY_FOCAL = 0.8;   // beside the entry road the run-off reaches at most this share of the way to where the normals cross
 const ENTRY_FOLD = 0.96;    // on the inside of a bend the entry road's far edge stays within this share of the radius (the offsets fold at 1)
+const APRON_TAPER = 50;    // a paved apron that ends is eased out over this many metres before its end
 const EXIT_CLOSE = 60;      // metres after the merge over which the merged exit lane's outer edge eases in to the track edge
 
 export function buildTrack(layout = LAYOUT, corners = CORNERS) {
@@ -611,6 +612,14 @@ function buildSides(T, corners) {
     for (let i = 0; i < N; i++) {
       const room = Math.max(0, T.wall[sd][i] - HW[i] - T.kerb[sd][i] - T.sausage[sd][i]);
       T.runoff[sd][i] = Math.min(T.runoff[sd][i], room);
+    }
+    // an apron that ends in one metre (no taper) is eased out over APRON_TAPER metres back from its end (Final Approach, s 3668)
+    for (let i = 0; i < N; i++) {
+      if (T.isBridge[i] || T.runoff[sd][i] < 1.8 || T.runoff[sd][wrap(i + 1, N)] > 0.01) continue;
+      for (let k = 0; k <= APRON_TAPER; k++) {
+        const f = Math.min(1, k / APRON_TAPER), w = f * f * (3 - 2 * f);
+        T.runoff[sd][wrap(i - k, N)] *= w;
+      }
     }
   }
 }

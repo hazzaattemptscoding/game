@@ -142,13 +142,13 @@ export const LAYOUT = {
   // Rumble strips: [from point, to point, side]. A grooved band across the apron (two bands, a third of the way in from the kerb and
   // two thirds) wherever the apron is paved. Where a car runs wide on a straight exit, not in the corners themselves.
   rumble: [
-    [59, 61.8, 'L'],           // Guardroom Chicane and Final Approach exit, along the pit entry road's pit wall (s 3538 to 3707)
+    [59, 61.4, 'L'],           // Guardroom Chicane and Final Approach exit, along the pit entry road's pit wall (s 3538 to 3668, where the apron ends)
   ],
 
   // Tyre barriers stacked on the track side of the pit wall where the car can reach it: [from point, to point, side, gap m].
   // The pit wall stays (the pit entry road is behind it); the tyres stand `gap` metres in front of its track face.
   tyreWall: [
-    [59, 61.8, 'L', 1.2],      // the same stretch: the pit entry road's wall stands about 12 m from the track edge
+    [59, 61.4, 'L', 1.2],      // the same stretch, to where the apron ends (s 3668): the pit entry road's wall stands about 12 m from the track edge
   ],
 
   // Raised sausage kerbs on the inside of the chicane, to stop cars cutting it.
