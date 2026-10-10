@@ -12,7 +12,7 @@
 // High is how the game looked before this setting existed.
 
 export const TIERS = {
-  high: { pixelCap: 2, scale: 1, shadowSize: 2048, shadowHz: 0, aniso: 8, propDist: Infinity, hudHz: 60 },
+  high: { pixelCap: 2, scale: 1, shadowSize: 2048, shadowHz: 0, aniso: 16, propDist: Infinity, hudHz: 60 },
   medium: { pixelCap: 1.5, scale: 1, shadowSize: 1024, shadowHz: 60, aniso: 4, propDist: 1400, hudHz: 30 },
   low: { pixelCap: 1, scale: 0.85, shadowSize: 1024, shadowHz: 30, aniso: 2, propDist: 800, hudHz: 20 },
 };

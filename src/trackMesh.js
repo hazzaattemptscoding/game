@@ -136,13 +136,20 @@ export function buildTrackScene(T, ground) {
         strips('gravelEdge').strip(run, i => P(i, g * e(i), DECAL), i => P(i, g * (e(i) + 0.35), DECAL), () => 0, 0, 1);
       }
     }
+    // a 0.3 m strip of dark soil where the grass meets the tarmac or the run-off (same material as the gravel edge, so no extra draw)
+    const edge = i => HW[i] + T.kerb[sd][i] + T.sausage[sd][i] + T.runoff[sd][i];
+    const grassy = i => !T.isBridge[i] && !(sd === 0 && (T.pitOut[i] > 0 || T.pitEntryZone[i])) && T.wall[sd][i] - edge(i) > 0.5 && (!(T.gravelOut[sd][i] > 0) || T.gravelIn[sd][i] - edge(i) > 0.5);
+    for (const full of runs(T.N, grassy)) {
+      const run = full.filter((q, k) => k % 2 === 0 || k === full.length - 1);   // every second sample is plenty for a strip this narrow
+      strips('gravelEdge').strip(run, i => P(i, g * edge(i), DECAL), i => P(i, g * (edge(i) + 0.3), DECAL), () => 0, 0, 1);
+    }
   }
 
   // a short grass skirt at the edge of the flat ground, down into the terrain
   for (const sd of [0, 1]) {
     const g = sd ? 1 : -1;
     for (const run of runs(T.N, i => !T.isBridge[i] && !(sd === 0 && T.pitEntryZone[i]))) {   // beside the entry road its own run-off carries on
-      strips('meadow').strip(run, i => P(i, g * T.wall[sd][i], -1.5), i => P(i, g * T.wall[sd][i]), (i, j) => sOf(i, j, run) / 24, 0, 0.1);
+      strips('meadow').strip(run, i => P(i, g * T.wall[sd][i], -1.5), i => P(i, g * T.wall[sd][i]), (i, j) => sOf(i, j, run) / 12, 0, 0.1);
     }
   }
 
