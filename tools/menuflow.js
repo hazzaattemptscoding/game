@@ -70,7 +70,7 @@ try {
   for (const [k, id] of [['Digit1', 'timetrial'], ['Digit2', 'practice'], ['Digit3', 'race'], ['Digit4', 'online']]) {
     await press(k);
     const w = await where();
-    if (id === 'timetrial') { eq(await session(), { mode: 'timetrial', laps: 0, start: 'pit', reverse: false }, 'key 1 starts a hot lap'); check(w.screen === null, 'the menu closes for a hot lap'); await toMain(); await click(entry('race')); }
+    if (id === 'timetrial') { eq(await session(), { mode: 'timetrial', laps: 0, start: 'track', reverse: false }, 'key 1 starts a hot lap'); check(w.screen === null, 'the menu closes for a hot lap'); await toMain(); await click(entry('race')); }
     else if (id === 'online') { eq(w.screen, 'online', 'key 4 opens the online race screen'); await press('Escape'); eq((await where()).screen, 'race', 'Escape from the lobby goes up to the Race screen'); }
     else { eq(w.screen, 'setup', `key ${k.slice(-1)} opens the setup`); await press('Escape'); eq((await where()).screen, 'race', 'Escape from a setup goes up to the Race screen'); }
   }
@@ -85,7 +85,7 @@ try {
   await toMain();
 
   console.log('CONTINUE');
-  for (const [mode, label, want] of [['timetrial', 'Hot lap', { mode: 'timetrial', laps: 0, start: 'pit', reverse: false }], ['practice', 'Free drive', { mode: 'practice', laps: 0, start: 'pit', reverse: false }], ['race', 'Solo race', { mode: 'race', laps: 5, start: 'standing', reverse: false }]]) {
+  for (const [mode, label, want] of [['timetrial', 'Hot lap', { mode: 'timetrial', laps: 0, start: 'track', reverse: false }], ['practice', 'Free drive', { mode: 'practice', laps: 0, start: 'pit', reverse: false }], ['race', 'Solo race', { mode: 'race', laps: 5, start: 'standing', reverse: false }]]) {
     await page.evaluate(m => { window.lakeside.settings.lastMode = m; window.lakeside.dir.menu.open('main', 'main'); }, mode); await pause(500);
     eq(await page.evaluate(() => document.querySelector('#menu .nav-continue').textContent), `Continue: ${label}`, `Continue is labelled with the last mode (${mode})`);
     check(await page.evaluate(() => document.activeElement && document.activeElement.classList.contains('nav-continue')), 'the focus starts on Continue');
