@@ -169,6 +169,17 @@ console.log('SETTING AND RULE');
   rc.hostStart({ laps: 3, slipstream: false });
   check(sent[0] && sent[0].t === 'race' && sent[0].slipstream === false, 'the host puts its slipstream rule in the race message');
   check(cleanRaceMessage(sent[0]).slipstream === false, 'a guest reads it');
+  // wakeFor fills the object it is given and returns it (the game's physics loop allocates none)
+  {
+    const out = { strength: -1, distance: -1, leaderIndex: -9 };
+    const none = wakeFor({ x: 0, z: 0, heading: 0 }, [], { out });
+    check(none === out && out.strength === 0 && out.distance === 0 && out.leaderIndex === -1, 'wakeFor with nobody ahead fills the given object with none');
+    const lead = { x: 12, z: 0, heading: 0, vx: 60, vz: 0, length: 4.6, age: 99, silent: 0 };
+    const hit = wakeFor({ x: 0, z: 0, heading: 0, length: 4.6 }, [lead], { out });
+    check(hit === out && out.strength > 0.9 && out.leaderIndex === 0, 'and with a leader close ahead, the same object with the wake');
+    const plain = wakeFor({ x: 0, z: 0, heading: 0, length: 4.6 }, [lead]);
+    check(plain !== out && plain.strength === out.strength && plain.distance === out.distance, 'without out it still returns a fresh object with the same numbers');
+  }
   const old = { ...sent[0], slipstream: true }; delete old.slipstream;
   check(cleanRaceMessage(old).slipstream === false, 'a message from an older host (no field, no drafting there) means the draft is off');
   check(cleanRaceMessage({ ...sent[0], slipstream: 'x' }).slipstream === false, 'junk in the field counts as off');

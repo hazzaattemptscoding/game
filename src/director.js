@@ -144,8 +144,11 @@ export function createDirector(g) {
 
   // The other cars for the race. Position uses the pose each car is drawn at (lap and s go together, from the same sample), so
   // the order matches the picture; laps completed and the best lap are the sender's own, from its newest packet.
-  function otherCars() {
+  let othersAt = NaN, othersVal = [];     // one list per frame: after() and the gantry feed both ask
+  function otherCars(now) {
+    if (now === othersAt) return othersVal;
     const out = [];
+    othersAt = now; othersVal = out;
     if (!lobby.active) return out;
     for (const o of lobby.ghosts.map.values()) {
       if (!o.info) continue;
@@ -289,7 +292,7 @@ export function createDirector(g) {
     // after the physics: laps, position, the flag, the overlay
     after(now, simTime) {
       if (flow.phase === PHASE.RUN && flow.race) {
-        const others = otherCars();
+        const others = otherCars(now);
         const r = flow.race.update(simTime, { laps: timer.lap, lap: timer.currentLap(), s: car.loc.s }, others, timer);   // the timer gives the track limit excursions to judge
         pos = r;
         if (flow.race.finished && finishedAt === null) { finishedAt = now; if (online()) lobby.announceFinish(finishMessage()); }
@@ -332,7 +335,7 @@ export function createDirector(g) {
   function gantryFeed(now) {
     const s = session, race = flow.race;
     let leadLap = timer.currentLap();
-    if (s && online()) for (const o of otherCars()) leadLap = Math.max(leadLap, o.laps + 1);   // the leader's lap, from the room's packets
+    if (s && online()) for (const o of otherCars(now)) leadLap = Math.max(leadLap, o.laps + 1);   // the leader's lap, from the room's packets
     gantry.update({
       session: s, phase: flow.phase, lap: timer.currentLap(), leadLap, best: timer.best,
       lights: flow.phase === PHASE.START && flow.seq && flow.seq.kind === 'lights' ? flow.seq.state(now) : null,

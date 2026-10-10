@@ -8,7 +8,8 @@ const G = 9.81, AIR = 1.225;
 // A racing line, as a sideways offset from the centreline at every sample.
 // Bends the line within the track edges to make the curvature as low and as
 // even as possible, which gives the classic outside-apex-outside shape.
-export function computeRacingLine(T, edgeMargin = 1.4) {
+export const EDGE_MARGIN = 1.4;   // m: how far inside the track edge the racing line stays (the learning code keeps to it too)
+export function computeRacingLine(T, edgeMargin = EDGE_MARGIN) {
   const { N, x, z, nx, nz } = T;
   const off = new Float64Array(N);
   const lim = i => (T.hw ? T.hw[i] : T.halfWidth) - edgeMargin;
@@ -149,6 +150,7 @@ export class Autopilot {
     const n = this.assistPlan.length / 3, seg = Math.min(n - 1, Math.floor(car.loc.s / this.track.length * n));
     const pick = (k, base) => { const v = this.assistPlan[seg * 3 + k]; return v === 0 ? base : v === 2; };
     const b = this.baseAssists;
-    car.setAssists({ tc: pick(0, b.tc), abs: pick(1, b.abs), esc: pick(2, b.esc) });
+    const tc = pick(0, b.tc), abs = pick(1, b.abs), esc = pick(2, b.esc);
+    if (car.assistTc !== tc || car.assistAbs !== abs || car.assistEsc !== esc) car.setAssists({ tc, abs, esc });     // only when it changes
   }
 }

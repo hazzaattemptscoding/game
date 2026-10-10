@@ -23,11 +23,13 @@ const smooth = (a, b, v) => { const t = clamp01((v - a) / (b - a)); return t * t
 
 // me: { x, z, heading, length?, vx?, vz?, speed? }. others: [{ x, z, heading, vx, vz, length?, id?, ghost?, silent?, age? }], poses
 // as they are drawn. A car marked ghost, silent for over half a second or younger than 1.5 s (just joined or reset) is skipped,
-// as collisions skip them. opts: { enabled = true, length (my length when me has none) }.
+// as collisions skip them. opts: { enabled = true, length (my length when me has none), out (an object to fill and return, so the
+// game's physics loop allocates none) }.
 // Returns { strength 0..1, distance (m between my nose and the leader's tail, 0 when none), leaderIndex (-1 when none) }.
-const NONE = Object.freeze({ strength: 0, distance: 0, leaderIndex: -1 });
+const give = (out, strength, distance, leaderIndex) => { out.strength = strength; out.distance = distance; out.leaderIndex = leaderIndex; return out; };
 export function wakeFor(me, others, opts = {}) {
-  if (opts.enabled === false || !others || !others.length) return { ...NONE };
+  const out = opts.out || {};
+  if (opts.enabled === false || !others || !others.length) return give(out, 0, 0, -1);
   const fmx = Math.cos(me.heading), fmz = Math.sin(me.heading);
   const myLen = me.length ?? opts.length ?? 4.6;
   let best = 0, bestGap = 0, bestI = -1;
@@ -58,7 +60,7 @@ export function wakeFor(me, others, opts = {}) {
     const s = df * lf * hf * vs;
     if (s > best) { best = s; bestGap = g; bestI = i; }
   }
-  return best > 0 ? { strength: best, distance: bestGap, leaderIndex: bestI } : { ...NONE };
+  return best > 0 ? give(out, best, bestGap, bestI) : give(out, 0, 0, -1);
 }
 
 // Move the eased strength towards the target by at most the attack or release rate for this time step.

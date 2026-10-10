@@ -11,14 +11,13 @@
 // Online, every player's screen is driven by the same synced start (src/raceControl.js) and the same finishes (src/lobby.js):
 // the leader's laps come from the room's packets, and the first finish message (the room's) puts the flag out for everyone.
 import { fmtLap } from './gantryScreen.js';
-
-const isRace = m => m === 'race' || m === 'online';
+import { isRace } from './session.js';
 
 // the resting board. s: { mode, laps, reverse, lap (the lap being driven, 0 on the out lap), leadLap (the race's lead lap), best (s) }
 export function statusOf(s) {
   if (!s) return null;
   const best = s.best > 0 ? `BEST ${fmtLap(s.best)}` : null;
-  if (isRace(s.mode)) {
+  if (isRace(s)) {
     const lap = Math.max(1, Math.min(s.laps, s.leadLap || s.lap || 1));
     return { eyebrow: s.mode === 'online' ? 'ONLINE RACE' : 'RACE', value: `LAP ${lap} / ${s.laps}`, sub: null };
   }
@@ -51,7 +50,7 @@ export class GantryFeed {
       this.reset(live ? s : null);
       if (!live) { this.screen.status(null); return null; }
     }
-    const race = isRace(s.mode);
+    const race = isRace(s);
     if (race && i.phase === 'start' && i.lights && (i.lights.phase === 'lights' || i.lights.phase === 'hold')) {
       if (i.lights.lit !== this.lights) { this.lights = i.lights.lit; this.screen.lights(i.lights.lit); }
     }

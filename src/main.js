@@ -213,9 +213,18 @@ const globalTimes = createGlobalTimes({
 });
 const timesReady = loadConfig({ fetchFn: (...a) => fetch(...a), search: location.search, build: BUILD }).then(cfg => { timesUrl = timesBase(cfg && cfg.relayUrl); globalTimes.flush(); }).catch(() => {});
 setInterval(() => globalTimes.flush(), 30000);
+let condFrame = -1;
+const cond = { weather: 'clear', online: false, reverse: false, car: 'GT', assists: { tc: true, abs: true, esc: true } };   // the lap watch's conditions, refilled each frame
 const lapWatch = new LapWatch({
   timer, build: BUILD, getName: driverName, isAutopilot: () => !!autopilot,
-  getConditions: () => ({ weather: (urlEnv || dir.api.environment()).weather, online: !!lobby.active, reverse: timer.reverse, car: car.cfg.id, assists: { tc: car.assistTc, abs: car.assistAbs, esc: car.assistEsc } }),
+  getConditions: () => {     // read once per frame, not once per physics step: the weather, the room and the class do not change inside a frame
+    if (condFrame !== frameNo) {
+      condFrame = frameNo;
+      cond.weather = (urlEnv || dir.api.environment()).weather; cond.online = !!lobby.active; cond.reverse = timer.reverse; cond.car = car.cfg.id;
+      cond.assists.tc = car.assistTc; cond.assists.abs = car.assistAbs; cond.assists.esc = car.assistEsc;
+    }
+    return cond;
+  },
 });
 const boardGhost = createBoardGhost({ scene, tagRoot: document.getElementById('mp-tags') || document.getElementById('hud'), track });
 let ghostProject = null, ghostSize = null;
@@ -322,6 +331,7 @@ const dir = createDirector({
 const loop = new FixedStep(STEP);
 const stats = new FrameStats();
 let linePrimed = false;
+const wakeOut = { strength: 0, distance: 0, leaderIndex: -1 };   // wakeFor fills this each physics step (no allocation)
 let simTime = 0, last = performance.now(), hudDue = Infinity, audioDue = 0, frameNo = 0;
 let poseAt = performance.now();   // the clock time the car's pose is for: the last physics step, less the time not yet simulated (sent by src/lobby.js)
 document.addEventListener('visibilitychange', () => { last = performance.now(); });   // no frame time spans the time the tab was hidden
@@ -386,7 +396,7 @@ function frame(now) {
         const solids = lobby.solids(now - loop.acc * 1000);   // the other players where they are drawn now, the same poses the collisions use
         car.collideCars(solids);
         // slipstream: only live cars count (never the ghost lap), and only when the session allows it (not in a time trial)
-        const w = wakeFor(car, solids, { enabled: dir.api.slipstreamOn(), length: car.cfg.length });
+        const w = wakeFor(car, solids, { enabled: dir.api.slipstreamOn(), length: car.cfg.length, out: wakeOut });
         car.setWake(w.strength, w.distance);
       }
       if (autopilot && autopilot.assistPlan && autopilot.planOn && !dir.hold) assistsTaken = true;

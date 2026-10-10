@@ -18,7 +18,7 @@ import { carById } from './cars.js';
 import { Car, STEP } from './physics.js';
 import { LapTimer } from './timing.js';
 import { TrackLimits, limitZones } from './trackLimits.js';
-import { Autopilot, sharedRacingLine, lineFromOffsets, speedProfile } from './autopilot.js';
+import { Autopilot, sharedRacingLine, lineFromOffsets, speedProfile, EDGE_MARGIN } from './autopilot.js';
 
 export const NCTRL = 80;          // line offset control points round the lap
 export const NSEG = 24;           // assist segments round the lap
@@ -178,7 +178,7 @@ export function decode(ctx, x, base) {
     for (let k = 0; k < NCTRL; k++) ctrl[k] = clamp1(x[L.off + k]) * OFFSET_RANGE;
     const delta = interpolate(ctrl, N), off = new Float64Array(N);
     for (let i = 0; i < N; i++) {
-      const lim = (T.hw ? T.hw[i] : T.halfWidth) - 1.4;   // the same edge margin as computeRacingLine
+      const lim = (T.hw ? T.hw[i] : T.halfWidth) - EDGE_MARGIN;   // the same edge margin as computeRacingLine
       off[i] = Math.max(-lim, Math.min(lim, baseLine.off[i] + delta[i]));
     }
     line = lineFromOffsets(T, off);

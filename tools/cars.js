@@ -36,6 +36,7 @@ console.log('CLASSES');
   }
   check(CITY.drive === 'front' && GT.drive === 'rear' && GT1.drive === 'rear', 'the 108 is front drive, the GT and GT1 rear drive');
   check(GT.hasDRS === true && GT1.hasDRS === true && CITY.hasDRS === false, 'DRS: GT and GT1 yes, the 108 no');
+  check(carById('constructor') === GT && carById('toString') === GT && carById('__proto__') === GT && carById(undefined) === GT && carById('CITY') === CITY, 'carById: only a real class id gives a class, anything else is the GT');
   check(JSON.stringify(CAR_IDS) === '["GT","GT1","CITY"]' && CAR_LIST.length === 3 && CARS.CITY === CITY, 'CARS, CAR_LIST and CAR_IDS list the three classes');
   check(carById('GT1') === GT1 && carById('CITY') === CITY && carById('nope') === GT && carById(undefined) === GT, 'carById: known ids, and unknown or missing is the GT');
   check(GT.id === 'GT' && GT1.id === 'GT1' && CITY.id === 'CITY', 'every class has its id');

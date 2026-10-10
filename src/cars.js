@@ -246,4 +246,4 @@ export const CARS = { GT, GT1, CITY };
 export const CAR_LIST = [GT, GT1, CITY];
 export const CAR_IDS = CAR_LIST.map(c => c.id);
 // The class with this id. An unknown or missing id is the GT, the car everyone had before there were classes.
-export const carById = id => CARS[id] || GT;
+export const carById = id => (typeof id === 'string' && Object.hasOwn(CARS, id) ? CARS[id] : GT);     // hasOwn: 'constructor' or 'toString' is not a class
