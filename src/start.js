@@ -6,6 +6,8 @@
 //   cinematic (3 s)  ->  lights: one red light every 0.9 s, 5 of them  ->  hold: all five lit for a random 0.6 to 2.8 s
 //   ->  lights out and GO.  Throttle or movement (above 3 km/h) from the first light until lights out is a jump start: 5 s penalty.
 
+import racingLineData from './racingLineData.js';
+
 export const START = {
   CINEMATIC_MS: 3000,
   LIGHT_MS: 900,
@@ -105,6 +107,17 @@ export function pitSlot(track, reverse = false) {
   s += 6 * g;
   const i = Math.floor((((s) % L) + L) % L / track.ds) % track.N;
   return { s: ((s % L) + L) % L, d: -(track.pitIn[i] + track.pitOut[i]) / 2 };
+}
+
+// The time trial start: on the circuit, standing, on the racing line, about 175 m before the turn-in of the Final Approach (the last
+// corner before the line; the Guardroom Chicane is on the way). The out lap runs through that corner and over the line; the lap
+// timer starts at the first crossing, so the first timed lap is a flying lap that begins at the line.
+export const TT_START = { S: 3350 };   // metres along the lap
+// the time trial's place for Car.placeAt: { s, d }; d is the racing line's offset at that point (src/racingLineData.js), 0 if the data does not match the track
+export function ttSlot(track) {
+  const s = TT_START.S, i = Math.floor(s / track.ds) % track.N;
+  const matches = racingLineData.d.length === track.N && Math.abs(racingLineData.length - track.length) < 0.05;
+  return { s, d: matches ? racingLineData.d[i] : 0 };
 }
 
 // --- cameras (poses only: the caller turns them into a THREE camera) ---

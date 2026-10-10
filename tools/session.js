@@ -30,7 +30,7 @@ console.log('SESSIONS');
 {
   const p = makeSession('practice'), t = makeSession('timetrial'), r = makeSession('race', { laps: 10, assists: 'off', racingLine: false });
   check(p.mode === 'practice' && p.laps === 0 && p.start === 'pit' && p.assists === 'any' && p.ai === 0, 'practice defaults');
-  check(t.mode === 'timetrial' && t.start === 'pit' && t.trackLimits === 'warn', 'time trial defaults');
+  check(t.mode === 'timetrial' && t.start === 'track' && t.trackLimits === 'warn', 'time trial defaults (it starts on the track, see tools/ttstart.js)');
   check(r.laps === 10 && r.assists === 'off' && r.racingLine === false && r.start === 'standing', 'race options are kept');
   check(makeSession('race').laps === 5, 'race defaults to 5 laps');
   check(makeSession('race', { laps: 500 }).laps === 99 && makeSession('race', { laps: 0 }).laps === 1, 'custom laps are clamped to 1 to 99');

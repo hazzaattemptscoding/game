@@ -11,7 +11,7 @@ import { resultsScreen, sampleResults } from './results.js';
 import { createSessionHud, limitBanner } from './sessionHud.js';
 import { Flow, PHASE, RACE, makeSession, timeTrialRows, raceDistance, raceRows, MODE_NAMES } from './session.js';
 import { FIN } from './finish.js';
-import { START, gridSlot, pitSlot, orbitPose, cinematicPose } from './start.js';
+import { START, gridSlot, pitSlot, ttSlot, orbitPose, cinematicPose } from './start.js';
 import { createScreenControl } from './screenControl.js';
 import { GantryFeed } from './gantryState.js';
 import { createRaceControl } from './raceControl.js';
@@ -67,7 +67,7 @@ export function createDirector(g) {
     const now = performance.now();
     session = s;
     if (settings.lastMode !== s.mode && ['practice', 'timetrial', 'race', 'online'].includes(s.mode)) { settings.lastMode = s.mode; g.save(settings); }   // the main menu's Resume button
-    if (!o.keepPlacement) { const spot = s.start === 'standing' ? gridSlot(track, s.slot, s.reverse) : pitSlot(track, s.reverse); car.placeAt(spot.s, spot.d, !!s.reverse); }
+    if (!o.keepPlacement) { const spot = s.start === 'standing' ? gridSlot(track, s.slot, s.reverse) : s.start === 'track' ? ttSlot(track) : pitSlot(track, s.reverse); car.placeAt(spot.s, spot.d, !!s.reverse); }
     car.contactGrace = 1.5;
     timer.reverse = !!s.reverse;
     timer.reset();
