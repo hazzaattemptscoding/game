@@ -432,7 +432,7 @@ export class Ghosts {
       const o = out[n] || (out[n] = {});
       o.id = g.id; o.x = p.x; o.z = p.z; o.heading = p.h; o.vx = p.vx; o.vz = p.vz; o.yawRate = p.yr;
       o.age = (nowMs - g.buf.born) / 1000; o.silent = (nowMs - g.buf.lastRecv) / 1000;
-      const size = carById(g.carId); o.length = size.length; o.width = size.width;   // this car's size, for the contact shape
+      const size = carById(g.carId); o.length = size.length; o.width = size.width; o.mass = size.mass; o.yawInertia = size.yawInertia;   // this car's size, for the contact shape, and its mass and spin inertia, for the impulse (by class, nothing extra on the wire)
       n++;
     }
     out.length = n;

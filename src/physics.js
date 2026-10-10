@@ -393,8 +393,9 @@ export class Car {
   // the other cars where they are now (solids() in src/ghosts.js gives the present pose, not the delayed picture). `others` is a
   // list of { id, x, z, heading, vx, vz, yawRate, age, silent }. Call it before step(). With no other cars it does nothing.
   //
-  // The two cars have equal masses and each client applies its own half of one exchange: the pair's relative speed at the
-  // contact comes back at CAR_BOUNCE, and our share of that change is our impulse (the other game applies theirs to their car).
+  // Each client applies its own half of one exchange: the pair's relative speed at the contact comes back at CAR_BOUNCE, and our
+  // share of that change is our impulse (the other game applies theirs to their car). The other car's mass and spin inertia come
+  // with it (o.mass, o.yawInertia, looked up from its class); a car without them counts as the same as ours.
   // Nobody is a wall. Overlap is taken out gradually, at most CAR_PUSH a step, never in one jump.
   collideCars(others, dt = STEP) {
     this.clock = (this.clock || 0) + dt;
@@ -403,6 +404,7 @@ export class Car {
     const c = this.cfg, m = c.mass, I = c.yawInertia;
     const cross = (ax, az, bx, bz) => ax * bz - az * bx;
     for (const o of others) {
+      const mo = o.mass > 0 ? o.mass : m, Io = o.yawInertia > 0 ? o.yawInertia : I;
       if (o.silent > 0.5 || o.age < 1.5) continue;
       const k = carContact(this, o, c.length, c.width, o.length ?? c.length, o.width ?? c.width);   // each car's own size
       if (!k) continue;
@@ -424,22 +426,22 @@ export class Car {
       const fresh = !ep || this.clock - ep.t > 0.25;
       if (ep) ep.t = this.clock;
       if (vn >= 0 || (!fresh && vn >= ep.vn - 2)) continue;
-      // equal masses, both bodies' spin in the pair's effective mass: the impulse that takes the relative speed to -CAR_BOUNCE * vn
-      // is split between the two cars, so our share is half of the pair's change in relative speed
-      const kn = 2 / m + (cross(cx, cz, k.nx, k.nz) ** 2 + cross(rx, rz, k.nx, k.nz) ** 2) / I;
+      // both bodies' mass and spin in the pair's effective mass: the impulse that takes the relative speed to -CAR_BOUNCE * vn, equal
+      // and opposite on the two cars (we apply ours, the other game applies theirs)
+      const kn = 1 / m + 1 / mo + cross(cx, cz, k.nx, k.nz) ** 2 / I + cross(rx, rz, k.nx, k.nz) ** 2 / Io;
       const jn = (1 + CAR_BOUNCE) * -vn / kn;
       let tx = rvx - vn * k.nx, tz = rvz - vn * k.nz;
       const vt = Math.hypot(tx, tz);
       let jt = 0;
       if (vt > 1e-3) {
         tx /= vt; tz /= vt;
-        const kt = 2 / m + (cross(cx, cz, tx, tz) ** 2 + cross(rx, rz, tx, tz) ** 2) / I;
+        const kt = 1 / m + 1 / mo + cross(cx, cz, tx, tz) ** 2 / I + cross(rx, rz, tx, tz) ** 2 / Io;
         jt = -Math.min(0.5 * vt / kt, CAR_FRICTION * jn);
       }
       const Jx = jn * k.nx + jt * tx, Jz = jn * k.nz + jt * tz;
       this.vx += Jx / m; this.vz += Jz / m;
       this.yawRate += cross(cx, cz, Jx, Jz) / I;
-      eps.set(o.id, { vn: vn + jn / m, t: this.clock });
+      eps.set(o.id, { vn: vn + jn / m, t: this.clock });   // our own closing speed after our impulse
     }
   }
 

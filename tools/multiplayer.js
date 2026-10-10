@@ -7,7 +7,7 @@
 //   5. adaptive delay, the catch-up after a stall, the present pose, standings on the drawn pose (see tools/netsim.js for the numbers)
 import { buildTrack } from '../src/track.js';
 import { Car, STEP } from '../src/physics.js';
-import { GT } from '../src/cars.js';
+import { GT, CITY } from '../src/cars.js';
 import { carContact } from '../src/carContact.js';
 import { encodeState, decodeState, stateFromCar, StateBuffer, Ghosts, cleanName, FIELDS, DELAY, MIN_DELAY, MAX_DELAY, LEGACY_DELAY, RELAY_EXTRA_DELAY, MAX_EXTRAP, TIMEOUT, raceDistance } from '../src/ghosts.js';
 import { defaultLivery, liveryEquals } from '../src/livery.js';
@@ -586,6 +586,28 @@ function run(cars, seconds, onStep) {
   const before = A.x; A.collideCars([asOther(B, 'b')]);
   const push = A.x - before;
   check(push < 0 && Math.abs(push) <= 0.3 + 1e-9, `contact: one step pushes at most 0.3 m (${push.toFixed(3)} m)`);
+}
+
+{
+  // unequal masses: the other car's mass and inertia come with it (a Ghosts solid carries them from its class)
+  const gs = new Ghosts(null);
+  gs.receive('c', { ...mkState(0), col: 0, name: 'C' }, 0);
+  gs.receive('c', { ...mkState(50), col: 0, name: 'C' }, 50);
+  const solid = gs.solids(60)[0];
+  check(solid && solid.mass === GT.mass && solid.yawInertia === GT.yawInertia, 'a solid carries the mass and spin inertia of its class');
+  // GT against GT: giving the mass explicitly is exactly the old equal-mass result
+  const one = (extra) => { const A = mk(0, 0, 0, 20), B = mk(4.5, 0, Math.PI, 20); A.collideCars([{ ...asOther(B, 'b'), ...extra }]); return [A.vx, A.vz, A.yawRate]; };
+  check(JSON.stringify(one({})) === JSON.stringify(one({ mass: GT.mass, yawInertia: GT.yawInertia })), 'GT against GT is the same with the mass given');
+  // a heavy car into a light one head-on: the light car changes speed more, in proportion; both sides' impulses are equal and opposite
+  const lightFirst = new Car(CITY, track), heavy = mk(3.9, 0, Math.PI, 20);
+  lightFirst.x = 0; lightFirst.z = 0; lightFirst.heading = 0; lightFirst.vx = 20; lightFirst.vz = 0; lightFirst.yawRate = 0; lightFirst.contactGrace = 0;
+  const lightOther = { ...asOther(lightFirst, 'l'), mass: CITY.mass, yawInertia: CITY.yawInertia, length: CITY.length, width: CITY.width };
+  const heavyOther = { ...asOther(heavy, 'h'), mass: GT.mass, yawInertia: GT.yawInertia, length: GT.length, width: GT.width };
+  const lv0 = lightFirst.vx, hv0 = heavy.vx;
+  lightFirst.collideCars([heavyOther]); heavy.collideCars([lightOther]);
+  const dvL = lightFirst.vx - lv0, dvH = heavy.vx - hv0;
+  check(dvL < 0 && dvH > 0 && Math.abs(dvL) > Math.abs(dvH), `the lighter car changes speed more (light ${dvL.toFixed(2)}, heavy ${dvH.toFixed(2)} m/s)`);
+  check(Math.abs(CITY.mass * dvL + GT.mass * dvH) < 0.02 * GT.mass, `the two impulses are equal and opposite (${(CITY.mass * dvL).toFixed(0)} and ${(GT.mass * dvH).toFixed(0)} N s)`);
 }
 
 console.log('ADAPTIVE DELAY, STALLS, PRESENT POSE');
