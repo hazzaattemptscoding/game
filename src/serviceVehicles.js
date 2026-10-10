@@ -395,7 +395,7 @@ const PAINT = {
 // One vehicle placed: position, heading and the ground's slope under it, applied to the part's vertices.
 function placeMatrix(v, ground) {
   const d = VEHICLES[v.type], c = Math.cos(v.yaw), s = Math.sin(v.yaw), l = d.len * 0.36, w = d.wid * 0.42;
-  const h = (u, z) => ground.meshHeight(v.x + u * c - z * s, v.z + u * s + z * c);
+  const h = (u, z) => ground.surfaceHeight(v.x + u * c - z * s, v.z + u * s + z * c);
   const hf = h(l, 0), hr = h(-l, 0), hl = h(0, -w), hrt = h(0, w);
   const gf = (hf - hr) / (2 * l), gr = (hrt - hl) / (2 * w);
   const gx = gf * c + gr * -s, gz = gf * s + gr * c;
@@ -497,7 +497,7 @@ function paintBrands(ctx, texture) {
 }
 
 // ---- the meshes ---------------------------------------------------------------------------------------------------------------
-// The planned vehicles as a group of merged meshes (one per 450 m cell of ground), standing on `ground` (its meshHeight).
+// The planned vehicles as a group of merged meshes (one per 450 m cell of ground), standing on `ground` (its surfaceHeight).
 // the mesh a vehicle is merged into: a 450 m cell of ground, so a view only draws the cells it can see
 export const cellKey = v => Math.floor(v.x / 450) + ',' + Math.floor(v.z / 450);
 

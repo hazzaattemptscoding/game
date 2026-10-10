@@ -51,7 +51,7 @@ export function buildProps(T, ground, blockers, stands) {
     for (const b of blockers) if (Math.hypot(x - b.x, z - b.z) < b.r + pad) return false;
     return !inStand(stands, x, z, 6 + pad);
   };
-  const yAt = (x, z) => ground.meshHeight(x, z);
+  const yAt = (x, z) => ground.surfaceHeight(x, z);
 
   // ---- marshal posts ------------------------------------------------------------------------------------------------
   {

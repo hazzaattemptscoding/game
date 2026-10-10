@@ -182,7 +182,11 @@ export function createGround(T) {
     return hd + (hc - hd) * (1 - u) + (hb - hd) * (1 - v);
   }
 
-  return { height, drawn, meshHeight, clearance, mesh };
+  // the level of whatever the viewer sees at a point: the grass strip beside the circuit sits at height(), about a metre above the
+  // sunk terrain mesh, and on a rise where the mesh is higher the mesh is what shows. Things that stand on the ground use this.
+  function surfaceHeight(x, z) { return Math.max(meshHeight(x, z), height(x, z)); }
+
+  return { height, drawn, meshHeight, surfaceHeight, clearance, mesh };
 }
 
 // A foundation under a building: a block from the building's base down to the lowest terrain drawn under

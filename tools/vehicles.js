@@ -92,7 +92,7 @@ for (const v of placed) {
     if (near && placed.indexOf(o) > placed.indexOf(v)) fail(`${tag} is within ${VEHICLE_GAP} m of the ${o.type} at s ${o.s.toFixed(0)}`);
   }
   // the ground under it: not steep, and the model sits on the drawn terrain
-  const c = Math.cos(v.yaw), sn = Math.sin(v.yaw), h = (u, w) => ground.meshHeight(v.x + u * c - w * sn, v.z + u * sn + w * c);
+  const c = Math.cos(v.yaw), sn = Math.sin(v.yaw), h = (u, w) => ground.surfaceHeight(v.x + u * c - w * sn, v.z + u * sn + w * c);
   const slopeL = Math.abs(h(d.len / 2, 0) - h(-d.len / 2, 0)) / d.len, slopeW = Math.abs(h(0, d.wid / 2) - h(0, -d.wid / 2)) / d.wid;
   if (slopeL > 0.14 || slopeW > 0.16) fail(`${tag}: stands on a slope of ${(slopeL * 100).toFixed(0)}% along and ${(slopeW * 100).toFixed(0)}% across`);
   // the paddock: behind the garage fronts

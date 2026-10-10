@@ -80,7 +80,7 @@ export function createMarshalLights(T, ground, plan = planMarshal(T, ground)) {
   const leds = new THREE.InstancedMesh(led, new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), N);
   const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1), C = new THREE.Color();
   posts.forEach((p, i) => {
-    M.compose(new THREE.Vector3(p.x, (ground ? ground.meshHeight(p.x, p.z) : 0) - 0.05, p.z), Q.setFromAxisAngle(UP, p.yaw), ONE);
+    M.compose(new THREE.Vector3(p.x, (ground ? ground.surfaceHeight(p.x, p.z) : 0) - 0.05, p.z), Q.setFromAxisAngle(UP, p.yaw), ONE);
     frames.setMatrixAt(i, M); leds.setMatrixAt(i, M); leds.setColorAt(i, C.setHex(COLOUR.off));
   });
   frames.castShadow = leds.castShadow = false;
@@ -88,7 +88,7 @@ export function createMarshalLights(T, ground, plan = planMarshal(T, ground)) {
   frames.userData.debug = leds.userData.debug = 'sign';
   group.add(frames, leds);
   // a marshal in orange overalls standing just behind each post, along the track (one crowd mesh, one draw call)
-  const marshals = crowdMesh(posts.map((p, i) => { const x = p.x - Math.sin(p.yaw) * 0.8, z = p.z - Math.cos(p.yaw) * 0.8; return [x, (ground ? ground.meshHeight(x, z) : 0) - 0.05, z, i % 3 ? 0xff6a13 : 0xf2f2ee, (i * 0.37) % 1, true]; }));
+  const marshals = crowdMesh(posts.map((p, i) => { const x = p.x - Math.sin(p.yaw) * 0.8, z = p.z - Math.cos(p.yaw) * 0.8; return [x, (ground ? ground.surfaceHeight(x, z) : 0) - 0.05, z, i % 3 ? 0xff6a13 : 0xf2f2ee, (i * 0.37) % 1, true]; }));
   if (marshals) group.add(marshals);
 
   const states = new Array(N).fill('off');

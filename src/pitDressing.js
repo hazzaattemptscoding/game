@@ -194,7 +194,7 @@ export function buildPitDressing(T, ground) {
   // ---- the service area before the garages
   for (const it of plan.items) {
     const i = F(it.s, 0).i, po = T.pitOut[i], dm = po + (it.d0 + it.d1) / 2, dw = it.d1 - it.d0;
-    const pts = itemPoints(T, it), y = Math.min(...pts.map(p => ground.meshHeight(p.x, p.z))) - 0.05;
+    const pts = itemPoints(T, it), y = Math.min(...pts.map(p => ground.surfaceHeight(p.x, p.z))) - 0.05;
     const B = (key, du, dd, len, w, y0, y1) => box(key, it.s + du, po + dd, len, w, y, y0, y1);
     if (it.kind === 'hut') {
       B('concrete', 0, (it.d0 + it.d1) / 2, it.len + 0.4, dw + 0.4, -0.5, 0.15);
