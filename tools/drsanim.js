@@ -98,7 +98,9 @@ console.log('CAR VIEW');
   for (let i = 0; i < 14; i++) frame(false, 0.016);
   check(near(angle(), REST_ANGLE, 0.01 * REST_ANGLE), 'the flap angles back up to its rest position after DRS goes off');
   const wing = view.flapPivot.children[0];
-  check(wing.material[0] === view.wingMat && wing.material[3] !== view.wingMat, 'the flap is in the livery wing colour, its underside dark');
+  // one material (the wing colour) with the underside's vertex colours darkening that face to the slot colour
+  const col = wing.geometry.attributes.color, under = new THREE.Color(col.getX(12) * view.wingFaceMat.color.r, col.getY(12) * view.wingFaceMat.color.g, col.getZ(12) * view.wingFaceMat.color.b);
+  check(!Array.isArray(wing.material) && wing.material.color.equals(view.wingMat.color) && col.getX(0) === 1 && near(under.r, new THREE.Color(0x060708).r, 1e-6) && near(under.b, new THREE.Color(0x060708).b, 1e-6), 'the flap is in the livery wing colour, its underside dark');
   view.dispose();
 }
 
