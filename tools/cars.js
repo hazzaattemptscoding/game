@@ -8,7 +8,7 @@ import { Car, STEP } from '../src/physics.js';
 import { GT, GT1, CITY, CARS, CAR_LIST, CAR_IDS, carById } from '../src/cars.js';
 import { LapTimer } from '../src/timing.js';
 import { Autopilot, computeRacingLine } from '../src/autopilot.js';
-import { encodeState, decodeState, packState, unpackState, stateFromCar, FIELDS, FLAG_DRS } from '../src/ghosts.js';
+import { encodeState, decodeState, packState, unpackState, stateFromCar, FIELDS, FLAG_DRS, Ghosts, PROTO } from '../src/ghosts.js';
 import { migrateSettings } from '../src/settings.js';
 import { bestKey } from '../src/board.js';
 import { boardKey as gameBoardKey, boardFor, LABELS } from '../src/globalTimes.js';
@@ -126,6 +126,30 @@ console.log('CAR ID ON THE STATE PACKET');
   check(old && old.car === 'GT', 'a packet with no class reads as a GT');
   check(decodeState(encodeState({ ...stateFromCar(fakeCar(GT), 2, 'Ann', 1000), col: 6 })).car === 'GT', 'class index 3 (not a class) reads as a GT');
   check(decodeState(encodeState({ ...stateFromCar(fakeCar(GT), 2, 'Ann', 1000), col: 9 })).car === 'GT', 'a flags value out of range reads as a GT');
+
+  // a peer that never announced protocol 2 (an old build) sends a random colour 1..7 in col: that must not read as a class or DRS
+  const seen = (proto, col) => {
+    const g = new Ghosts(null);
+    if (proto) g.setProto('p', proto);
+    g.receive('p', decodeState(encodeState({ ...stateFromCar(fakeCar(GT), 2, 'Ann', 1000), col })), 0);
+    return g.map.get('p');
+  };
+  for (let col = 1; col <= 7; col++) {
+    const legacy = seen(0, col);
+    check(legacy.carId === 'GT' && legacy.info.car === 'GT' && legacy.info.drs === false, `an old peer's colour ${col} reads as a GT with the DRS shut`);
+  }
+  // the same values from a peer that announced protocol 2 are flags
+  const v2 = seen(PROTO, FLAG_DRS | (CAR_LIST.findIndex(c => c.id === 'GT1') << 1));
+  check(v2.carId === 'GT1' && v2.info.drs === true, 'a v2 peer\'s col is class and DRS flags');
+  check(seen(PROTO, CAR_LIST.findIndex(c => c.id === 'CITY') << 1).carId === 'CITY', 'a v2 peer can be a CITY');
+  // an announcement made after the first state (the livery repeat) takes over from then on
+  const late = new Ghosts(null);
+  late.receive('p', decodeState(encodeState({ ...stateFromCar(fakeCar(GT), 2, 'Ann', 1000), col: 3 })), 0);
+  late.setProto('p', PROTO);
+  late.receive('p', decodeState(encodeState({ ...stateFromCar(fakeCar(GT), 2, 'Ann', 1033), col: 3 })), 33);
+  check(late.map.get('p').info.drs === true, 'an announcement after the first state switches that peer to flags');
+  late.remove('p');
+  check(!late.hasFlags('p'), 'a peer that left forgets its announcement (the id may come back as an old client)');
 }
 
 // ---- per class: settings, personal bests, boards, lap limits ----

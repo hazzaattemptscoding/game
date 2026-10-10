@@ -93,7 +93,7 @@ export class SpectatorRoom {
       case 'peer': if (id) this.model.addDriver(id, cleanName(m.name)); break;
       case 'bye': if (id) { this.model.removeDriver(id); this.ghosts.remove(id); } break;
       case 'name': if (typeof m.n === 'string' && this.model.drivers.has(id)) { this.ghosts.setName(id, m.n); this.model.setName(id, cleanName(m.n)); } break;
-      case 'lv': if (typeof m.l === 'string' && this.model.drivers.has(id)) { this.ghosts.setLivery(id, m.l); } break;
+      case 'lv': if (typeof m.l === 'string' && this.model.drivers.has(id)) { this.ghosts.setLivery(id, m.l); this.ghosts.setProto(id, m.v); } break;
       case 'meta': this.model.setMeta(m); break;
       case 'spec': this.setSpectators(m.n); break;
       default: /* events from the game and anything else: the page works out its own */

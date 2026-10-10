@@ -119,7 +119,7 @@ const toBytes = d => d instanceof Uint8Array ? d : ArrayBuffer.isView(d) ? new U
 // What the room remembers for new spectators. Memory only: if the Durable Object is evicted it starts empty and fills again from
 // the live traffic (players repeat their livery every 2 s, a state arrives 30 times a second).
 // room.store is created here on first use; room.cfg is { maxSpectators, specDivider } (optional).
-function store(room) { return room.store || (room.store = { lv: {}, name: {}, state: {}, tele: {}, count: {}, events: [], meta: {} }); }
+function store(room) { const s = room.store || (room.store = { lv: {}, name: {}, state: {}, tele: {}, count: {}, events: [], meta: {} }); if (!s.pv) s.pv = {}; return s; }
 const cfgOf = room => ({ maxSpectators: MAX_SPECTATORS, specDivider: SPECTATOR_DIVIDER, ...(room.cfg || {}) });
 const notify = (room, urgent, now) => { if (typeof room.notify === 'function') { try { room.notify(urgent, now); } catch { /* the directory is a nicety */ } } };
 
@@ -170,7 +170,7 @@ export function onMessage(room, conn, data, now) {
   if ((m.t === 'scr' || m.t === 'scrs' || m.t === 'scrg') && !conn.att.host) return 'ignored';   // the gantry screen is the host's too (a guest with access sends scrc)
   if (RESERVED.has(m.t)) return 'ignored';
   const st = store(room), from = conn.att.id;
-  if (m.t === 'lv' && typeof m.l === 'string') st.lv[from] = m.l.slice(0, 80);
+  if (m.t === 'lv' && typeof m.l === 'string') { st.lv[from] = m.l.slice(0, 80); if (typeof m.v === 'number' && Number.isFinite(m.v)) st.pv[from] = Math.max(0, Math.min(255, Math.round(m.v))); else delete st.pv[from]; }
   else if (m.t === 'name' && typeof m.n === 'string') st.name[from] = m.n.slice(0, 40);
   else if (m.t === 'ev') { st.events.push({ ...m, from }); if (st.events.length > EVENT_RING) st.events.shift(); }
   const out = JSON.stringify({ ...m, from });
@@ -242,7 +242,7 @@ function join(room, conn, m, now) {
   const name = cleanName(m.name) || 'Player';
   conn.setAtt({ id, name, tok, host, last: now });
   const st = store(room);
-  if (!old && !all.length) { st.lv = {}; st.name = {}; st.state = {}; st.tele = {}; st.count = {}; st.events = []; st.meta = {}; }    // a new room: nothing of an earlier one
+  if (!old && !all.length) { st.lv = {}; st.pv = {}; st.name = {}; st.state = {}; st.tele = {}; st.count = {}; st.events = []; st.meta = {}; }    // a new room: nothing of an earlier one
   if (host && m.meta) st.meta = cleanMeta(m.meta, st.meta);
   const others = all.filter(c => c !== old);
   const hostNow = host ? id : (hostConn ? hostConn.att.id : null);
@@ -273,7 +273,7 @@ function joinSpectator(room, conn, m, now) {
   for (const c of players) {
     const id = c.att.id;
     if (st.name[id]) sendJSON(conn, { t: 'name', n: st.name[id], from: id });
-    if (st.lv[id]) sendJSON(conn, { t: 'lv', l: st.lv[id], from: id });
+    if (st.lv[id]) sendJSON(conn, st.pv[id] ? { t: 'lv', l: st.lv[id], v: st.pv[id], from: id } : { t: 'lv', l: st.lv[id], from: id });
   }
   for (const e of st.events) sendJSON(conn, e);
   for (const c of players) { const id = c.att.id; if (st.state[id]) conn.send(st.state[id]); if (st.tele[id]) conn.send(st.tele[id]); }
@@ -298,7 +298,7 @@ export function onClose(room, conn, now = Date.now()) {
   conn.setAtt({});
   const rest = joined(room).filter(c => c.att.id !== id);
   const st = store(room);
-  delete st.state[id]; delete st.tele[id]; delete st.count[id]; delete st.lv[id]; delete st.name[id];
+  delete st.state[id]; delete st.tele[id]; delete st.count[id]; delete st.lv[id]; delete st.pv[id]; delete st.name[id];
   for (const c of rest) sendJSON(c, { t: 'bye', id });
   for (const c of spectators(room)) sendJSON(c, { t: 'bye', id });
   notify(room, true, now);

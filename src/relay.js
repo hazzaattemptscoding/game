@@ -9,7 +9,7 @@
 // Framing: JSON control messages as text frames; car state as ONE binary frame (ghosts.js packState). The relay prefixes the
 // sender's player id (one byte, 0 to 7) to binary frames it forwards, and adds `from` to JSON ones.
 
-import { decodeState, packState, unpackState, cleanName, MAX_PLAYERS, DELAY } from './ghosts.js';
+import { decodeState, packState, unpackState, cleanName, MAX_PLAYERS, DELAY, PROTO } from './ghosts.js';
 
 export const RELAY = {
   CONNECT_MS: 6000,                         // no welcome within this long: the relay is unreachable
@@ -161,7 +161,7 @@ export class RelayRoom {
     this.connectMs = opts.connectMs || RELAY.CONNECT_MS;
     this.transport = 'relay';
     this.name = 'Driver';
-    this.livery = '';          // our livery string, set by Multiplayer; sent as {t:'lv', l} (the relay forwards unknown JSON as it is)
+    this.livery = '';          // our livery string, set by Multiplayer; sent as {t:'lv', l, v} (the relay forwards unknown JSON as it is; v is the protocol, see PROTO in ghosts.js)
     this.gen = 0;
     this.reset();
   }
@@ -278,7 +278,7 @@ export class RelayRoom {
     } else if (m.t === 'bye' && typeof m.id === 'number') {
       this.dropPeer(peerId(m.id), true);
     } else if (m.t === 'lv' && typeof m.from === 'number' && typeof m.l === 'string') {
-      if (this.peers.has(peerId(m.from)) && this.ghosts) this.ghosts.setLivery(peerId(m.from), m.l);
+      if (this.peers.has(peerId(m.from)) && this.ghosts) { this.ghosts.setLivery(peerId(m.from), m.l); this.ghosts.setProto(peerId(m.from), m.v); }
     } else if (CONTROL.has(m.t) && typeof m.from === 'number') {
       if (this.peers.has(peerId(m.from)) && this.onControl) this.onControl(m, peerId(m.from));     // clock samples and race starts (src/raceControl.js)
     } else if (m.t === 'name' && typeof m.from === 'number') {
@@ -323,7 +323,7 @@ export class RelayRoom {
     return Number.isInteger(n) ? this.client.send({ ...obj, to: n }) : false;
   }
 
-  sendLivery() { if (this.client && this.livery && (this.peers.size || this.spectators)) this.client.send({ t: 'lv', l: this.livery }); }
+  sendLivery() { if (this.client && this.livery && (this.peers.size || this.spectators)) this.client.send({ t: 'lv', l: this.livery, v: PROTO }); }
 
   // the host's room details for the lobby directory (the relay ignores them from anybody else); m is { mode, laps, started }
   sendMeta(m) { return !!this.client && this.isHost && this.client.send({ t: 'meta', mode: m.mode, laps: m.laps, started: m.started }); }

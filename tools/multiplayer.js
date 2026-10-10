@@ -223,6 +223,14 @@ const player = (Peer, name, statuses = []) => {
   const kp = h.mp.peers.values().next().value;
   h.mp.receive(kp.id, 'ctl', { t: 'peers', ids: ['evil'] }); h.mp.receive(kp.id, 'ctl', 'junk'); h.mp.receive(kp.id, 'st', [1, 2, 3]); h.mp.receive('nobody', 'st', encodeState(mkState(0)));
   check(h.ghosts.size === 0, 'junk messages create no cars');
+  // protocol 2 is announced in the hello: both sides know the other reads col as flags; an old hello (no v) leaves it a colour
+  check(h.ghosts.hasFlags(kp.id) && k.ghosts.hasFlags(hostId(h.mp.code)), 'the hello announces protocol 2 to the other player');
+  h.mp.receive(kp.id, 'ctl', { t: 'hi', n: 'Old', l: '' });
+  check(h.ghosts.hasFlags(kp.id), 'a hello without v does not take the announcement back');
+  h.mp.receive(kp.id, 'ctl', { t: 'lv', l: '', v: 1 });
+  check(!h.ghosts.hasFlags(kp.id), 'a peer that says it speaks protocol 1 reads as legacy');
+  h.mp.receive(kp.id, 'ctl', { t: 'lv', l: '', v: 2 });
+  check(h.ghosts.hasFlags(kp.id), 'and the livery repeat with v: 2 announces it again');
   h.mp.leave(); k.mp.leave(); await wait(300);
 }
 {

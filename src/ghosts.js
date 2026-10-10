@@ -30,6 +30,10 @@ export const MAX_PLAYERS = 8;
 
 // The car class is in col too, bits 1 and 2 (the index in CAR_IDS, src/cars.js). An old client reads only the DRS bit and
 // accepts the value (it is at most 7), so it keeps working and draws every car as a GT. A missing or unknown class reads as GT.
+// An OLD client puts a random colour 1..7 in col, which would read as a class and a DRS flag, so col means flags only for a peer
+// that announced protocol 2 (PROTO: `v` in its hello and livery messages, Ghosts.setProto). For any other peer col is a legacy
+// colour: the car is a GT with the DRS shut.
+export const PROTO = 2;
 //
 // Fields of one state, in wire order. t is the sender's clock in ms, h the heading, vx/vz the velocity,
 // yr the yaw rate, st the steering angle, w the wheel angle, thr/brk the pedals, pz/rx the slope pitch and roll
@@ -310,6 +314,7 @@ export class Ghosts {
     this.fixed = opts.fixed > 0 ? opts.fixed : 0;
     this.map = new Map();    // id -> { id, buf, ent, name, livery, info, opacity, shown }
     this.pending = new Map();   // id -> livery string that arrived before the first state of that player
+    this.proto = new Map();     // id -> the protocol version the player announced (PROTO); no entry = an old client, col is a colour
     this._pose = {};
     this._pres = {};
     this._solids = [];
@@ -328,6 +333,7 @@ export class Ghosts {
 
   // A state arrived from player `id` at local time nowMs. Returns false if it was ignored.
   receive(id, st, nowMs) {
+    if (!this.hasFlags(id) && (st.drs || (st.car && st.car !== 'GT'))) st = { ...st, drs: false, car: 'GT' };   // col of an old client is a colour
     let g = this.map.get(id);
     if (!g) {
       if (this.map.size >= this.max) return false;
@@ -344,6 +350,13 @@ export class Ghosts {
     g.info = st;
     return true;
   }
+
+  // The player `id` announced protocol `v` (hello, or the livery repeat). From 2 on, col in its states carries the class and DRS.
+  setProto(id, v) {
+    if (!Number.isFinite(v)) return;
+    if (v >= PROTO) { if (this.proto.size < 32 || this.proto.has(id)) this.proto.set(id, Math.min(v, 255)); } else this.proto.delete(id);
+  }
+  hasFlags(id) { return this.proto.has(id); }
 
   // A livery string arrived from player `id` (hello, or the repeat every 2 s). Repaints the car if it changed. If the car does
   // not exist yet the livery is kept for when it does. Anything that is not a valid livery string is ignored.
@@ -367,7 +380,9 @@ export class Ghosts {
 
   setName(id, name) { const g = this.map.get(id); if (g) g.name = cleanName(name) || g.name; }
 
-  remove(id) {
+  // keepProto: a car that went silent is removed but its player is still in the room, so what it announced stays
+  remove(id, keepProto = false) {
+    if (!keepProto) this.proto.delete(id);
     const g = this.map.get(id);
     if (!g) return;
     if (g.ent) g.ent.dispose();
@@ -375,7 +390,7 @@ export class Ghosts {
     this.pending.delete(id);
   }
 
-  clear() { for (const id of [...this.map.keys()]) this.remove(id); this.pending.clear(); this.fx.length = 0; }
+  clear() { for (const id of [...this.map.keys()]) this.remove(id); this.pending.clear(); this.proto.clear(); this.fx.length = 0; }
 
   // the name shown for a player: the one painted on the car, else the one they joined with
   nameOf(g) { return (g.livery && g.livery.name) || g.name || 'Player'; }
@@ -386,7 +401,7 @@ export class Ghosts {
     let nfx = 0;
     for (const g of [...this.map.values()]) {
       const silent = (nowMs - g.buf.lastRecv) / 1000;
-      if (silent >= TIMEOUT) { this.remove(g.id); continue; }
+      if (silent >= TIMEOUT) { this.remove(g.id, true); continue; }
       g.opacity = silent <= TIMEOUT - FADE ? 1 : (TIMEOUT - silent) / FADE;
       const pose = g.buf.sample(nowMs, this._pose);
       if (!pose || !g.ent) continue;

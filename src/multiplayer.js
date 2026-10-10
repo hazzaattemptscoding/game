@@ -20,7 +20,7 @@
 // A transport is anything with host(name), join(code, name), setName, sendState(arr), leave()/teardown(), and the callbacks
 // onStatus, onPlayers, onRtt; RelayRoom in relay.js is one, the methods below (hostPeer, joinPeer, ...) are the other.
 
-import { decodeState, cleanName, MAX_PLAYERS, DELAY } from './ghosts.js';
+import { decodeState, cleanName, MAX_PLAYERS, DELAY, PROTO } from './ghosts.js';
 import { RelayRoom, cleanRelayUrl } from './relay.js';
 
 // ICE servers: the helpers WebRTC uses to find a route between two browsers. We list them explicitly instead of relying on
@@ -205,7 +205,6 @@ export class Multiplayer {
     this.fallbackNote = '';    // set when the relay could not be reached and the room fell back to peer to peer
     this.preloaded = null;
     this.reset();
-    this.col = 1 + Math.floor(this.random() * 7);       // the colour we ask the others to use; they avoid clashes
     this.name = 'Driver';
     this.livery = '';          // our livery as the wire string (src/livery.js encodeLivery), sent in the hello and again by sendLivery()
   }
@@ -502,7 +501,7 @@ export class Multiplayer {
       if (gen !== this.gen) return;
       if (kind === 'ctl') {
         if (!outgoing && this.players >= MAX_PLAYERS && !p.hello) { this.sendTo(conn, { t: 'full' }); this.setT(() => { try { conn.close(); } catch (e) { /* closed */ } }, 300); this.peers.delete(id); return; }
-        this.sendTo(conn, { t: 'hi', n: this.name, l: this.livery });
+        this.sendTo(conn, { t: 'hi', n: this.name, l: this.livery, v: PROTO });
       }
     });
     conn.on('data', data => { if (gen === this.gen) this.receive(id, kind, data); });
@@ -535,9 +534,10 @@ export class Multiplayer {
       }
       this.ghosts && this.ghosts.setName(id, p.name);
       if (typeof data.l === 'string' && this.ghosts) this.ghosts.setLivery(id, data.l);
+      if (this.ghosts) this.ghosts.setProto(id, data.v);
       this.changed();
     } else if (data.t === 'lv') {
-      if (p.hello && typeof data.l === 'string' && this.ghosts) this.ghosts.setLivery(id, data.l);
+      if (p.hello && typeof data.l === 'string' && this.ghosts) { this.ghosts.setLivery(id, data.l); this.ghosts.setProto(id, data.v); }
     } else if (CONTROL_TYPES.has(data.t)) {
       if (p.hello && this.onControl) this.onControl(data, id);      // clock samples and race starts (src/raceControl.js), the gantry screen (src/screenControl.js)
     } else if (data.t === 'name') {
@@ -615,7 +615,7 @@ export class Multiplayer {
   sendLivery() {
     if (!this.livery) return;
     if (this.relayRoom) { this.relayRoom.livery = this.livery; this.relayRoom.sendLivery(); return; }
-    for (const p of this.peers.values()) if (p.hello) this.sendTo(p.ctl, { t: 'lv', l: this.livery });
+    for (const p of this.peers.values()) if (p.hello) this.sendTo(p.ctl, { t: 'lv', l: this.livery, v: PROTO });
   }
 
   // Spectators of the room (the live timing page): only over the relay. Telemetry and the room details go out only over the relay too.

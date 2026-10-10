@@ -38,6 +38,17 @@ const types = c => c.out.map(m => m.t || 'bin');
   eq(b.out[1], { t: 'peer', id: 2, name: 'Cy', host: false }, 'all others told');
   check(!c.out.some(m => m.t === 'peer'), 'joiner is not told about itself');
 
+  // the protocol version rides with the livery: forwarded as sent, kept for a spectator that joins later, dropped when the player leaves
+  r.say(b, { t: 'lv', l: 'abc', v: 2 });
+  eq(a.out.at(-1), { t: 'lv', l: 'abc', v: 2, from: 1 }, 'an lv frame keeps its v field when forwarded (old relay code passes unknown fields through)');
+  r.say(c, { t: 'lv', l: 'old' });
+  check(!('v' in a.out.at(-1)), 'an old client\'s lv frame has no v');
+  {
+    const w = r.connect(); r.say(w, { t: 'join', name: 'W', spectator: true });
+    check(w.out.some(m => m.t === 'lv' && m.from === 1 && m.v === 2 && m.l === 'abc'), 'a spectator joining later is told the version with the livery');
+    check(w.out.some(m => m.t === 'lv' && m.from === 2 && !('v' in m)), 'and gets no version for the player that never sent one');
+  }
+
   // forwarding
   r.say(b, { t: 'hello', x: 5 });
   eq(a.out.at(-1), { t: 'hello', x: 5, from: 1 }, 'forward to others tagged with the sender id');
