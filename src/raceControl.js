@@ -33,7 +33,7 @@ export function cleanRaceMessage(m) {
     laps: Math.round(num(m.laps, 1, 99, 5)),
     assists: m.assists === 'off' ? 'off' : 'any',
     racingLine: m.racingLine !== false,
-    slipstream: m.slipstream !== false,   // an old host sends none: drafting stays on, as it is by default
+    slipstream: m.slipstream === true,    // an old host sends none and has no drafting: a missing or odd value is off
     ...cleanEnv(m),
     grid,
     startAt: +m.startAt,

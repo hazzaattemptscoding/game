@@ -118,8 +118,8 @@ export class Car {
   resetToTrack() { this.placeAt(this.loc.s, 0, this.reversed); }
 
   // Slipstream (src/slipstream.js wakeFor): how deep in a leader's wake the car is, 0..1, and the gap to that car in metres. Call it before
-  // each step; a step that is not told gets 0, so the effect dies away when the caller stops. The strength is eased in step().
-  setWake(strength, gap = 0) { this.wakeIn = strength > 0 ? strength : 0; this.wakeGap = gap; }
+  // each step; a step that is not told gets 0, so the effect dies away when the caller stops (the gap stays as it was). The strength is eased in step().
+  setWake(strength, gap = 0) { this.wakeIn = strength > 0 ? strength : 0; if (strength > 0) this.wakeGap = gap; }   // no wake keeps the last gap, so the dirty air eases out from where it was (not a full pop at gap 0)
 
   savePrev() {
     const p = this.prev;

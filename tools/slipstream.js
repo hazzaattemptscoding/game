@@ -114,6 +114,7 @@ function topSpeed(cfg, wake, drs = false, seconds = 120) {
   check(dirtyAirLoss(1, 14) === 0 && dirtyAirLoss(1, 30) === 0 && dirtyAirLoss(0, 5) === 0, 'none from 14 m, none without a wake');
   check(dirtyAirLoss(0.5, 5) === 0.06, 'half strength takes 6 percent');
   // through the car: the same steady corner at 60 m/s, with and without a wake. The front has less grip: less lateral acceleration.
+  const grip0 = GT.grip;   // read before the runs: the class value must be the same after them
   const corner = w => {
     const car = flatCar(GT); car.setAssists(true); car.vx = 60;
     let ay = 0;
@@ -128,7 +129,14 @@ function topSpeed(cfg, wake, drs = false, seconds = 120) {
   console.log(`  steady corner at 60 m/s: ${g0.toFixed(3)} g alone, ${g1.toFixed(3)} g in dirty air`);
   check(g1 < g0, 'in dirty air the same steering gives less cornering force (understeer in traffic)');
   // tyre grip is untouched: the numbers on the class are the same, and a car with no wake corners as before
-  check(GT.grip === 1.7 && flatCar(GT).cfg.grip === 1.7, 'tyre grip itself is not changed');
+  check(GT.grip === grip0 && flatCar(GT).cfg.grip === grip0, 'tyre grip itself is not changed');
+  // leaving the wake keeps the last gap, so the front downforce loss eases out and does not jump to the 12 percent of a gap of 0
+  {
+    const car = flatCar(GT); car.vx = 60;
+    for (let k = 0; k < 120; k++) { car.setWake(1, 12); car.step({ steer: 0, throttle: 0.5, brake: 0, drs: false }); }
+    car.setWake(0, 0); car.step({ steer: 0, throttle: 0.5, brake: 0, drs: false });
+    check(car.wakeGap === 12, 'a step with no wake keeps the last gap');
+  }
 }
 {
   // class values
@@ -161,9 +169,10 @@ console.log('SETTING AND RULE');
   rc.hostStart({ laps: 3, slipstream: false });
   check(sent[0] && sent[0].t === 'race' && sent[0].slipstream === false, 'the host puts its slipstream rule in the race message');
   check(cleanRaceMessage(sent[0]).slipstream === false, 'a guest reads it');
-  const old = { ...sent[0] }; delete old.slipstream;
-  check(cleanRaceMessage(old).slipstream === true, 'a message from an older host leaves the draft on');
-  check(cleanRaceMessage({ ...sent[0], slipstream: 'x' }).slipstream === true, 'junk in the field counts as on');
+  const old = { ...sent[0], slipstream: true }; delete old.slipstream;
+  check(cleanRaceMessage(old).slipstream === false, 'a message from an older host (no field, no drafting there) means the draft is off');
+  check(cleanRaceMessage({ ...sent[0], slipstream: 'x' }).slipstream === false, 'junk in the field counts as off');
+  check(cleanRaceMessage({ ...sent[0], slipstream: true }).slipstream === true, 'true is on');
   rc.hostStart({ laps: 3 });
   check(sent[1].slipstream === true, 'the host default is on');
 }
