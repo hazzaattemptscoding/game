@@ -7,8 +7,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { wallClearance } from './grandstands.js';
 import { trackPoint } from './meshKit.js';
-import { standingCrowd, CROWD_FAR } from './crowd.js';
+import { standingCrowd } from './crowd.js';
 
+export const CREW_FAR = 260;   // metres: beyond this a marshal is a few pixels, so the crew is not drawn
 export const STATION_EVERY = 70, PAIR_GAP = 1.2;
 const BEHIND = 2.5, BARRIER = 2.5, FROM_POST = 3;
 const SLIDES = [0, 6, -6, 12, -12, 18, -18, 24, -24, 30, -30];
@@ -64,7 +65,7 @@ export function planStations(T, { obstacles = [], blockers = [] } = {}, posts = 
 // the people, the flags and the extinguishers as three instanced meshes
 // split into chunks of the lap, so a view only draws (and counts) the marshals near it: an instanced mesh draws every instance whenever
 // any of it is in view
-export const CHUNK = 650;
+export const CHUNK = 140;
 export function createCrew(T, ground, stations) {
   const chunks = new Map();
   stations.forEach((st, k) => { const c = Math.floor(st.s / CHUNK); if (!chunks.has(c)) chunks.set(c, []); chunks.get(c).push([st, k]); });
@@ -83,7 +84,7 @@ function crewChunk(T, ground, list) {
     }
   });
   const meshes = [], mesh = standingCrowd(people);
-  if (mesh) meshes.push(mesh);
+  if (mesh) { mesh.userData.maxDist = CREW_FAR; meshes.push(mesh); }
   const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1), P = new THREE.Vector3(), C = new THREE.Color();
   // flags: a 1.2 m stick held at the right hand with a 0.5 x 0.35 m flag at its top
   const flagged = gear.filter(g => g.flag), pos = [], col = [], idx = [];
@@ -105,7 +106,7 @@ function crewChunk(T, ground, list) {
       M.compose(P.set(g.x + P.x, g.y + P.y, g.z + P.z), Q, ONE);
       flags.setMatrixAt(k, M); flags.setColorAt(k, C.setHex(0xe6e6dc));
     });
-    flags.instanceMatrix.needsUpdate = true; flags.userData.debug = 'building'; flags.userData.maxDist = CROWD_FAR; flags.castShadow = false;
+    flags.instanceMatrix.needsUpdate = true; flags.userData.debug = 'building'; flags.userData.maxDist = CREW_FAR; flags.castShadow = false;
     meshes.push(flags);
   }
   // extinguishers: a red 0.1 x 0.35 x 0.1 m cylinder box with a dark head, carried at the left hand
@@ -123,7 +124,7 @@ function crewChunk(T, ground, list) {
       M.compose(P.set(g.x + P.x, g.y + P.y, g.z + P.z), Q, ONE);
       ext.setMatrixAt(k, M);
     });
-    ext.instanceMatrix.needsUpdate = true; ext.userData.debug = 'building'; ext.userData.maxDist = CROWD_FAR; ext.castShadow = false;
+    ext.instanceMatrix.needsUpdate = true; ext.userData.debug = 'building'; ext.userData.maxDist = CREW_FAR; ext.castShadow = false;
     meshes.push(ext);
   }
   for (const m of meshes) m.computeBoundingSphere();
