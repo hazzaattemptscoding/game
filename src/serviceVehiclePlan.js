@@ -88,7 +88,8 @@ export function planVehicles(T, keep = {}, slots = SLOTS) {
   // the banner flags that planSmall (src/venueExtras.js) puts along the start straight, right side, 8 m behind the wall
   const flags = [];
   for (let s = T.length - 120; s < T.length + 260; s += 16) { const i = Math.round(s / T.ds) % T.N; if (!T.isBridge[i]) { const q = trackPoint(T, s, T.wall[1][i] + 8); flags.push({ x: q.x, z: q.z }); } }
-  const posts = [...flags, ...planMarshal(T, null, { obstacles, blockers }).posts, ...planMasts(T, blockers, obstacles)];   // the flags, the marshal posts and the floodlight masts, planned the way the scenery plans them
+  const marshals = planMarshal(T, null, { obstacles, blockers });
+  const posts = [...flags, ...marshals.posts, ...marshals.stations, ...planMasts(T, blockers, obstacles)];   // the flags, the marshal posts, the marshal stations and the floodlight masts, planned the way the scenery plans them
   const { cell, map } = T.segGrid;
   const placed = [];
 

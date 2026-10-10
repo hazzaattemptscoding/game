@@ -168,10 +168,34 @@ for (const p of plan.posts) {
 }
 console.log(`  ${plan.posts.length} posts, nearest to a wall ${worstWall.toFixed(1)} m, to a barrier line ${worstSeg.toFixed(1)} m, ${slid} slid along the road off their boundary`);
 
+console.log('MARSHAL STATIONS');
+{
+  const st = plan.stations;
+  check(st.length >= 48 && st.length <= 56, `a station about every 70 m (${st.length})`);
+  let worstWall = Infinity, worstSeg = Infinity;
+  for (const q of st) {
+    for (const a of [-0.6, 0.6]) {
+      const x = q.x + q.tx * a, z = q.z + q.tz * a;
+      worstWall = Math.min(worstWall, wallClearance(T, x, z)); worstSeg = Math.min(worstSeg, ...T.segs.map(s => segDist(x, z, s)));
+      for (const p of plan.posts) check(Math.hypot(x - p.x, z - p.z) >= 3, `station at s ${q.s.toFixed(0)}: ${Math.hypot(x - p.x, z - p.z).toFixed(1)} m from a light post, need 3`);
+      for (const b of keepClear.blockers) check(Math.hypot(x - b.x, z - b.z) >= b.r + 1.5, `station at s ${q.s.toFixed(0)}: touches a building`);
+    }
+    const i = Math.round(q.s / T.ds) % T.N;
+    check(!T.isBridge[i], `station at s ${q.s.toFixed(0)}: on a bridge`);
+    if (q.side === 0) check(!T.pitOut[i] && !T.pitMouth[i], `station at s ${q.s.toFixed(0)}: on the pit lane side`);
+  }
+  check(worstWall >= 2.4 && worstSeg >= 2.4, `stations stand behind the wall and clear of barriers (${worstWall.toFixed(1)} m, ${worstSeg.toFixed(1)} m)`);
+  console.log(`  ${st.length} stations, nearest to a wall ${worstWall.toFixed(1)} m, to a barrier line ${worstSeg.toFixed(1)} m`);
+}
+
 console.log('LIGHT PANELS');
 {
   const m = createMarshalLights(T, ground, plan), col = k => { const c = m.group.children[1].instanceColor; return [c.getX(k), c.getY(k), c.getZ(k)]; };
-  check(m.group.children.length === 3 && m.group.children.every(o => o.isInstancedMesh && o.count === plan.posts.length), 'three instanced meshes (posts, panels, the marshals): three draw calls');
+  check(m.group.children.length === 5 && m.group.children.every(o => o.isInstancedMesh) && m.group.children[0].count === plan.posts.length && m.group.children[1].count === plan.posts.length, 'five instanced meshes (posts, panels, the marshals, their flags and extinguishers): five draw calls');
+  check(m.group.children[2].count === plan.stations.length * 2 && m.group.children[4].count === plan.stations.length, 'two marshals and one extinguisher at every station');
+  const flag = k => { const c = m.group.children[3].instanceColor; return [c.getX(k), c.getY(k), c.getZ(k)]; }, post = plan.stations[0].post;
+  m.set(plan.posts[post].k, 'red'); m.update(0);
+  check(flag(0)[0] > 0.9 && flag(0)[1] < 0.2, 'a flag takes the colour of its nearest panel (red)');
   check(STATES.join() === 'off,yellow,double,red,green,blue', 'the six states');
   const off = col(3);
   m.set(3, 'red'); m.update(0);
