@@ -53,6 +53,8 @@ console.log('SETTINGS');
   // damaged data gives no saved choices; the controller block, the Resume mode (lastMode, menuScreens.js) and the HUD keys (src/hudSettings.js, the ping readout too) are always filled in with their defaults
   const onlyController = o => Object.keys(o).every(k => ['controller', 'lastMode', 'hud', 'hudScale', 'trackMap', 'showPing'].includes(k));
   check(onlyController(migrateSettings(null)) && onlyController(migrateSettings('x')), 'damaged data gives nothing but the controller and HUD defaults');
+  // the main menu's Continue button: empty until a mode was started, then the mode; junk gives empty
+  check(migrateSettings({}).lastMode === '' && migrateSettings({ lastMode: 'timetrial' }).lastMode === 'timetrial' && migrateSettings({ lastMode: 'nonsense' }).lastMode === '', 'lastMode is empty by default, kept when valid, and empty for junk');
   const bad = migrateSettings({ steering: 'mouse', steerSens: 9 });
   check(!('steering' in bad) && !('steerSens' in bad), 'unknown steering and silly sensitivity are dropped');
   const ok = migrateSettings({ steering: 'cursor', steerSens: 1.5 });
