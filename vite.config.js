@@ -44,6 +44,7 @@ function localReportWriter() {
 
 export default {
   base: './',
+  resolve: { alias: { 'lakeside-learn-worker': path.join(root, 'src/learnWorker.js') + (process.env.ARTIFACT ? '?worker&inline' : '?worker') } },
   define: { __BUILD_COMMIT__: JSON.stringify(commit) },
   plugins: [localReportWriter()],
   // ARTIFACT=1 packs everything, PeerJS included, into one file (the claude.ai artifact is a single html page and has no live page).

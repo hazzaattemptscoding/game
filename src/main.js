@@ -469,7 +469,8 @@ function frame(now) {
 }
 requestAnimationFrame(now => { frame(now); bootDone(); });
 // for quick checks from the browser console
-window.lakeside = { THREE, optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen, marshal, globalTimes, boardGhost, simTime: () => simTime };
+window.lakeside = { optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen, marshal, globalTimes, boardGhost, simTime: () => simTime };
+if (import.meta.env.DEV && params.has('debug')) window.lakeside.THREE = THREE;   // dev server only (?debug): a reference to the whole THREE namespace in a production build would keep all of three in the bundle
 
 const shadowAt = { x: 0, y: 0, z: 0 };
 // the FPS readout: frame rate and time, the slowest frame, the render scale and what the last frame cost

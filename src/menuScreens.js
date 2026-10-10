@@ -13,6 +13,7 @@ import { CAR_LIST, carById } from './cars.js';
 import { ownLivery, localPlayerId, STRIPE_STYLES } from './livery.js';
 import { TIME_NAMES, WEATHER_NAMES } from './weather.js';
 import { learnGroup } from './learnUi.js';
+import { mountControls } from './gamepad.js';
 
 export const h = (tag, cls, ...kids) => {
   const e = document.createElement(tag);
@@ -481,15 +482,11 @@ function settingsScreen() {
             sliderRow('Volume', { min: 0, max: 100, step: 1, get: () => Math.round(settings.volume * 100), set: v => { settings.volume = Math.max(0, Math.min(1, v / 100)); persist(); }, fmt: v => `${Math.round(v)}%` })));
         },
         Controls(p) {
-          const box = h('div', 'ctl-box', h('p', 'm-note', 'Loading controls...'));
+          const box = h('div', 'ctl-box');
           p.append(box);
-          let dead = false, inst = null;
-          import('./gamepad.js').then(m => {
-            if (dead) return;
-            box.replaceChildren();
-            inst = m.mountControls(box, { settings, save });
-          }).catch(() => { if (!dead) box.replaceChildren(h('p', 'm-note', 'Controls: coming soon.')); });
-          return () => { dead = true; if (inst && inst.dispose) inst.dispose(); };
+          let inst = null;
+          try { inst = mountControls(box, { settings, save }); } catch (e) { box.replaceChildren(h('p', 'm-note', 'Controls: coming soon.')); }
+          return () => { if (inst && inst.dispose) inst.dispose(); };
         },
         Online(p) {
           const nameInput = h('input', 'field'); nameInput.type = 'text'; nameInput.maxLength = 16; nameInput.placeholder = 'Your name'; nameInput.setAttribute('aria-label', 'Your name');
