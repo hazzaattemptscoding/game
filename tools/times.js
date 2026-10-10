@@ -165,6 +165,14 @@ err(null, /object/, 'null body');
   check(/short/.test(p(ghost(100, { span: 0.8 }))), 'a path under 90% of the lap refused');
   check(/fast/.test(p(ghost(80, { span: 2 }), 80)), 'two laps in 80 s (96 m/s on average) refused');
   check(/fast/.test(p(ghost(72, { span: 1.2 }), 72)), 'a path of 1.2 laps in 72 s refused on average speed');
+  // the peak speed of a step, per class: a quick car's lap cannot be posted as a 108 whatever its (slow) average, since the class comes from the poster
+  const spike = m => ghost(135, { mutate: a => { a[50 * 4 + 1] += m; } });   // one step 10 samples a second: m metres extra is 10 m m/s extra
+  eq(T.ghostProblem(ghost(135), 135, 'CITY'), null, 'a slow even ghost passes as a 108');
+  check(/this car/.test(T.ghostProblem(spike(2), 135, 'CITY') || ''), 'a ghost with a 60 m/s step is refused as a 108');
+  eq(T.ghostProblem(spike(2), 135, 'GT'), null, 'the same ghost passes as a GT (its peak is far under the GT cap)');
+  eq(T.ghostProblem(spike(2), 135, 'GT1'), null, 'and as a GT1');
+  check(/this car/.test(T.ghostProblem(spike(7), 135, 'GT') || ''), 'a GT ghost with a 100 m/s step is refused');
+  check(T.carPeakSpeed('CITY') === 45 && T.carPeakSpeed('GT') > 68 && T.carPeakSpeed('GT1') > 74, 'the caps sit above the real peaks (GT 68, GT1 74, 108 about 40)');
   // a line that leaves the track for a stretch: 120 m out at the middle of a straight, back on the centreline either side
   const excursion = s => { const d = Math.abs(s - EXCURSION); return d < 75 ? 120 * (1 - d / 75) : 0; };
   check(/track/.test(p(ghost(100, { offset: excursion }))), 'a line 120 m off the track refused');

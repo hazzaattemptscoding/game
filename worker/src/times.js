@@ -24,6 +24,10 @@ export const GHOST_TOP = 10;
 export const GHOST_MIN_PER_S = 8, GHOST_MAX_PER_S = 12, GHOST_SLACK = 10;
 export const GHOST_START_TOL = 0.5, GHOST_END_TOL = 0.05;   // s: the first sample against 0, the last against the posted time
 export const GHOST_MAX_SPEED = 120;   // m/s, over any one step
+// The fastest any one step of a ghost may be, per class. The class is chosen by the poster, so a lap of a quick car must not pass as a
+// 108 (peak about 40 m/s; the GT peaks near 68 and the GT1 near 74). The margins are for a sample that catches the top of a straight.
+export const GHOST_PEAK_BY_CAR = { GT: 85, GT1: 90, CITY: 45 };
+export const carPeakSpeed = car => GHOST_PEAK_BY_CAR[car] || GHOST_MAX_SPEED;
 
 // The lap (TRACK, from src/layout.js: tools/globaltimes.js checks it stays in step). The fastest autopilot lap (tools/laptest.js,
 // quick driver, 1:30.1) averages 42.6 m/s. 53 m/s is 25 % above that, a margin for a better line or a better driver. So no lap of
@@ -108,14 +112,16 @@ export function ghostProblem(b64, time, car = 'GT') {
   for (let i = 0; i < g.length; i++) if (!Number.isFinite(g[i])) return 'ghost has a value that is not a number';
   if (Math.abs(g[0]) > GHOST_START_TOL) return 'ghost does not start at the start of the lap';
   if (Math.abs(g[(n - 1) * 4] - time) > GHOST_END_TOL) return 'ghost does not end at the lap time';
-  let path = 0;
+  let path = 0, peak = 0;
   for (let i = 1; i < n; i++) {
     const dt = g[i * 4] - g[(i - 1) * 4];
     if (!(dt > 0)) return 'ghost times must increase';
     const d = Math.hypot(g[i * 4 + 1] - g[(i - 1) * 4 + 1], g[i * 4 + 2] - g[(i - 1) * 4 + 2]);
     if (d / dt > GHOST_MAX_SPEED) return 'ghost moves too fast';
+    if (d / dt > peak) peak = d / dt;
     path += d;
   }
+  if (peak > carPeakSpeed(car)) return 'ghost moves too fast for this car';
   if (path < GHOST_MIN_PATH) return 'ghost is too short for a full lap';
   if (path > time * carMaxSpeed(car)) return 'ghost averages too fast for a lap of this length';
   for (let i = 0; i < n; i++) if (distToLine(g[i * 4 + 1], g[i * 4 + 2]) > OFF_TRACK_M) return 'ghost leaves the track';
