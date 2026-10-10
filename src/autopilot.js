@@ -28,6 +28,15 @@ export function computeRacingLine(T, edgeMargin = 1.4) {
   return lineFromOffsets(T, off);
 }
 
+// The racing line of a track, computed once and shared by every caller (the autopilot, the learning code in the game and its tests).
+// It takes about 600 ms, so nobody calls computeRacingLine(track) directly for the default margin any more. Read only: copy before changing.
+const lineCache = new WeakMap();
+export function sharedRacingLine(T) {
+  let line = lineCache.get(T);
+  if (!line) { line = computeRacingLine(T); lineCache.set(T, line); }
+  return line;
+}
+
 // The line points and curvature for a set of sideways offsets (the tail of computeRacingLine, shared with src/learn.js).
 export function lineFromOffsets(T, off) {
   const { N, x, z, nx, nz } = T;
@@ -76,7 +85,7 @@ export class Autopilot {
   constructor(track, cfg, { skill = 1, line, vmax, tune, assistPlan, baseAssists } = {}) {
     this.track = track;
     this.cfg = cfg;
-    this.line = line || computeRacingLine(track);
+    this.line = line || sharedRacingLine(track);
     this.skill = skill;
     this.vmax = vmax || speedProfile(track, this.line, cfg, skill);
     // the learning autopilot's knobs (src/learn.js); 1 everywhere is the plain autopilot, exactly

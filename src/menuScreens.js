@@ -449,7 +449,7 @@ function settingsScreen() {
             onOff('FPS readout', () => !!settings.hud.fps, v => { settings.hud.fps = v; }, 'Frame rate and frame time in the top corner. The F key switches it too.'),
             onOff('Handling readout', () => !!settings.debug, v => { settings.debug = v; }, 'Tyre and grip numbers for testing the car.'),
             ap));
-          if (api.learn && !reverseNow) p.append(learnGroup({ h, btn, group, segRow }, api.learn, settings, persist, api.autopilotStyleChanged));
+          if (api.learn && !reverseNow) { const lg = learnGroup({ h, btn, group, segRow }, api.learn, settings, persist, api.autopilotStyleChanged); p.append(lg.el); return lg.dispose; }
         },
         HUD(p) {
           // every switch writes into settings.hud / settings.trackMap; the HUD reads them each frame. `rows` are re-synced after any

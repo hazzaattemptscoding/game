@@ -14,10 +14,11 @@
 // and gets a large penalty that shrinks with how far the car got, so the search learns to stay legal.
 
 import { SURF } from './track.js';
+import { carById } from './cars.js';
 import { Car, STEP } from './physics.js';
 import { LapTimer } from './timing.js';
 import { TrackLimits, limitZones } from './trackLimits.js';
-import { Autopilot, computeRacingLine, lineFromOffsets, speedProfile } from './autopilot.js';
+import { Autopilot, sharedRacingLine, lineFromOffsets, speedProfile } from './autopilot.js';
 
 export const NCTRL = 80;          // line offset control points round the lap
 export const NSEG = 24;           // assist segments round the lap
@@ -42,6 +43,23 @@ export function trackSig(T) {
   let h = 0;
   for (let k = 0; k < 64; k++) { const i = Math.floor(k * T.N / 64); h = (Math.imul(h, 31) + Math.round(T.x[i] * 10) + Math.imul(Math.round(T.z[i] * 10), 7)) | 0; }
   return `${T.N}-${Math.round(T.length)}-${(h >>> 0).toString(36)}`;
+}
+
+// Bump this when a change to the physics, the tyres or the autopilot makes every saved genome stale (it was learned on other rules).
+export const PHYSICS_VERSION = 1;
+// A short signature of a car class: its numbers (mass, grip, power, gears, sizes, ...) and PHYSICS_VERSION. A genome is stored under it
+// and checked against it, so a tuned class or a physics change drops what was learned on the old numbers instead of driving it.
+export function carSig(cfg) {
+  const parts = [];
+  for (const k of Object.keys(cfg).sort()) {
+    const v = cfg[k];
+    if (k === 'id' || k === 'label' || k === 'name') continue;
+    if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string') parts.push(k + '=' + v);
+    else if (Array.isArray(v) && v.every(x => typeof x === 'number')) parts.push(k + '=' + v.join(','));
+  }
+  let h = PHYSICS_VERSION | 0;
+  for (const ch of parts.join(';')) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+  return `p${PHYSICS_VERSION}-${(h >>> 0).toString(36)}`;
 }
 
 // ---- corners, found in the plain autopilot's target speeds ----
@@ -111,11 +129,11 @@ const clamp1 = v => (v < -1 ? -1 : v > 1 ? 1 : v);
 
 // ---- a context: everything that depends on the track and the car class, built once ----
 export function makeContext(T, cfg, { skill = SKILL, light = false, baseLine: given } = {}) {
-  const baseLine = given || computeRacingLine(T);
+  const baseLine = given || sharedRacingLine(T);
   const baseVmax = speedProfile(T, baseLine, cfg, skill);
   const corners = findCorners(T, baseVmax);
   const layout = layoutFor(corners.length);
-  const ctx = { T, cfg, skill, baseLine, baseVmax, corners, layout, zones: limitZones(), sig: trackSig(T), carId: cfg.id };
+  const ctx = { T, cfg, skill, baseLine, baseVmax, corners, layout, zones: limitZones(), sig: trackSig(T), cs: carSig(cfg), carId: cfg.id };
   if (light) return ctx;   // enough to decode a genome into a driver (the game's main thread); no training state
   // drive the plain autopilot from the standing start to the start of lap 2 and keep the car there
   const car = new Car(cfg, T);
@@ -367,16 +385,19 @@ export class Learner {
 export const localEvaluator = ctx => async (xs, ref) => xs.map(x => evaluate(ctx, x, ref ? { ref } : {}));
 
 // ---- saving ----
-export const genomeKey = (T, carId) => `lakeside-learn-${carId}-${trackSig(T)}`;
+export const genomeKey = (T, carId) => `lakeside-learn-${carId}-${trackSig(T)}-${carSig(carById(carId))}`;     // track build, class and its numbers
 export function genomeToJSON(ctx, x, extra = {}) {
-  return JSON.stringify({ v: 1, car: ctx.carId, track: ctx.sig, corners: ctx.layout.nCorners, x: Array.from(x, v => Math.round(v * 1e6) / 1e6), ...extra });
+  return JSON.stringify({ v: 1, car: ctx.carId, track: ctx.sig, cs: ctx.cs, corners: ctx.layout.nCorners, x: Array.from(x, v => Math.round(v * 1e6) / 1e6), ...extra });
 }
 // Returns { x: Float64Array, ...extra } or null when the text is not a genome for this car and track.
 export function genomeFromJSON(ctx, text) {
   let o;
   try { o = typeof text === 'string' ? JSON.parse(text) : text; } catch { return null; }
-  if (!o || o.v !== 1 || o.car !== ctx.carId || o.track !== ctx.sig || o.corners !== ctx.layout.nCorners || !Array.isArray(o.x) || o.x.length !== ctx.layout.dim) return null;
+  if (!o || typeof o !== 'object' || o.v !== 1 || o.car !== ctx.carId || o.track !== ctx.sig || o.cs !== ctx.cs || o.corners !== ctx.layout.nCorners || !Array.isArray(o.x) || o.x.length !== ctx.layout.dim) return null;
   if (!o.x.every(v => Number.isFinite(v) && v >= -1 && v <= 1)) return null;
+  // the numbers the game shows and the worker starts from: a lap time, the generation, the evaluations and the line's time; any that is there must be sane
+  const num = (v, lo, hi) => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi);
+  if (!num(o.fit, 1, 3600) || !num(o.line, 1, 3600) || !num(o.gen, 0, 1e9) || !num(o.evals, 0, 1e12)) return null;
   return { ...o, x: Float64Array.from(o.x) };
 }
 

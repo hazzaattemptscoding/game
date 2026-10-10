@@ -14,7 +14,7 @@ import { createQuality, isPhone, snapShadowCentre, QUALITY_LABELS } from './qual
 import { optimiseWorld, freezeWorld, propCuller } from './cull.js';
 import { carById } from './cars.js';
 import { LapTimer } from './timing.js';
-import { Autopilot } from './autopilot.js';
+import { Autopilot, sharedRacingLine } from './autopilot.js';
 import { createLearning } from './learnClient.js';
 import { createLearnChip } from './learnUi.js';
 import { createGlobalTimes, LapWatch, timesBase, boardFor, boardLabel } from './globalTimes.js';
@@ -321,6 +321,7 @@ const dir = createDirector({
 // --- loop ---
 const loop = new FixedStep(STEP);
 const stats = new FrameStats();
+let linePrimed = false;
 let simTime = 0, last = performance.now(), hudDue = Infinity, audioDue = 0, frameNo = 0;
 let poseAt = performance.now();   // the clock time the car's pose is for: the last physics step, less the time not yet simulated (sent by src/lobby.js)
 document.addEventListener('visibilitychange', () => { last = performance.now(); });   // no frame time spans the time the tab was hidden
@@ -332,6 +333,9 @@ function frame(now) {
   if (raw < 0.25 && stats.push(raw) && settings.hud.fps) hud.perf = perfText();   // a longer one is a pause, not a slow frame
   if (raw < 0.25) quality.frame(raw * 1000);
   frameNo++;
+  // the autopilot's racing line takes about 600 ms to work out (sharedRacingLine, src/autopilot.js): once, with a menu open and the
+  // first picture long since drawn, so turning the autopilot on later does not stall the game
+  if (!linePrimed && frameNo > 120 && dir.menuOpen) { linePrimed = true; (window.requestIdleCallback || setTimeout)(() => sharedRacingLine(track)); }
 
   const actions = input.takeActions();
   const menuToggled = dir.menuToggledSinceLastFrame();   // Esc that just closed the menu is also in the list: ignore it

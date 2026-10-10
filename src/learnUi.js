@@ -34,6 +34,7 @@ export function createLearnChip(root, learn, { settings, autopilotOn }) {
 }
 
 // The settings group: the autopilot style, what it has learned, Train / Pause and Reset. h, btn, group, segRow come from menuScreens.js.
+// Returns { el, dispose }: call dispose when the tab is left, it removes the change listener.
 export function learnGroup({ h, btn, group, segRow }, learn, settings, persist, styleChanged) {
   const style = segRow('Autopilot style', [['line', 'Racing line'], ['learn', 'Learning (experimental)']], () => settings.autopilotMode || 'line', v => { settings.autopilotMode = v; persist(); styleChanged(); },
     { note: 'Learning drives a line and a pace it works out for itself, trying laps in the background and keeping the fastest clean one. It starts as the racing line. Laps with the autopilot never count for boards or global times.' });
@@ -51,5 +52,5 @@ export function learnGroup({ h, btn, group, segRow }, learn, settings, persist, 
   const off = learn.onChange(() => { if (!status.isConnected) off(); else paint(); });
   paint();
   const actions = h('div', 'row', status, h('div', 'row-c', train, reset));
-  return group('Experimental autopilot', style, actions);
+  return { el: group('Experimental autopilot', style, actions), dispose: off };     // dispose: the tab is left, so the listener goes
 }

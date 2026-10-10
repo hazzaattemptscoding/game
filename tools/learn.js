@@ -105,6 +105,15 @@ async function test() {
   const back = L.genomeFromJSON(ctx, text);
   check(back && back.x.length === lr.best.x.length && back.x.every((v, i) => Math.abs(v - lr.best.x[i]) < 1e-6), 'a genome round-trips through JSON');
   check(L.genomeFromJSON(ctx, text.replace('"GT"', '"GT1"')) === null && L.genomeFromJSON(ctx, '{"v":1}') === null && L.genomeFromJSON(ctx, 'nope') === null, 'a genome for another car, or garbage, is refused');
+  // a genome is tied to the numbers of the class and the physics version, and its numbers must be sane
+  const sig = JSON.parse(text);
+  check(typeof sig.cs === 'string' && sig.cs === L.carSig(CARS.GT) && L.carSig(CARS.GT) !== L.carSig(CARS.GT1), 'the record carries a signature of the class numbers, different for each class');
+  check(L.carSig({ ...CARS.GT, mass: CARS.GT.mass + 1 }) !== L.carSig(CARS.GT) && L.carSig({ ...CARS.GT, label: 'x' }) === L.carSig(CARS.GT), 'the signature follows the numbers, not the names');
+  check(L.genomeFromJSON(ctx, JSON.stringify({ ...sig, cs: 'p0-zzz' })) === null, 'a genome learned on other class numbers (or an older physics version) is refused');
+  const withNum = o => JSON.stringify({ ...sig, ...o });
+  check(L.genomeFromJSON(ctx, withNum({ fit: 'fast' })) === null && L.genomeFromJSON(ctx, withNum({ fit: -3 })) === null && L.genomeFromJSON(ctx, withNum({ gen: 1.5e12 })) === null && L.genomeFromJSON(ctx, withNum({ line: null })) === null, 'a record with a bad fit, line or generation is refused');
+  check(L.genomeFromJSON(ctx, withNum({})) !== null, 'and a good one is not');
+  check(L.genomeKey(T, 'GT') !== L.genomeKey(T, 'GT1') && L.genomeKey(T, 'GT').includes(L.carSig(CARS.GT)), 'the storage key holds the class signature');
   const again = L.evaluate(ctx, back.x).fitness, was = L.evaluate(ctx, lr.best.x).fitness;
   check(Math.abs(again - was) < 0.01, 'the reloaded genome drives the same lap');
   // assist genes
@@ -141,6 +150,37 @@ async function test() {
   check(!car.assistTc && !car.assistAbs && !car.assistEsc, 'the plain autopilot leaves the assists alone');
   const withAssists = L.evaluate(ctx, g);
   check(withAssists.valid || withAssists.reason, 'a genome with assist choices can be evaluated');
+
+  // the worker's reset: it wins over a run that arrives while it waits, and the generation in flight is dropped (session numbers)
+  console.log('WORKER RESET');
+  const guard = setTimeout(() => { console.log('  FAIL the worker reset test did not finish in 100 s'); process.exit(1); }, 100000);
+  const out = [];
+  globalThis.self = { postMessage: m => out.push(m) };
+  await import('../src/learnWorker.js');
+  const send = m => globalThis.self.onmessage({ data: m });
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const until = async (f, ms = 60000) => { const t = Date.now(); while (!f() && Date.now() - t < ms) await sleep(20); return f(); };
+  await send({ type: 'init', car: 'GT', saved: null, epoch: 0 });
+  check(out.some(m => m.type === 'ready' && m.epoch === 0), 'the worker is ready, in session 0');
+  await send({ type: 'run', duty: 1 });
+  await until(() => out.some(m => m.type === 'gen'));
+  check(out.filter(m => m.type === 'gen').every(m => m.epoch === 0), 'its generations are in session 0');
+  const mark = out.length;
+  const resetDone = send({ type: 'reset', epoch: 1 });      // the next generation is in flight
+  await send({ type: 'run', duty: 1 });                      // a run that arrives while the reset waits
+  await resetDone;
+  const between = out.slice(mark);
+  check(between.some(m => m.type === 'reset' && m.epoch === 1), 'the reset is answered, in session 1');
+  check(between.filter(m => m.type === 'gen').every(m => m.epoch === 0) && !between.some(m => m.type === 'gen' && m.record && m.epoch === 1), 'nothing of the old generation is posted as session 1');
+  const after = out.length;
+  await sleep(2500);
+  check(out.length === after, 'the run that came during the reset did not start it again: the worker is idle');
+  await send({ type: 'run', duty: 1 });
+  check(await until(() => out.slice(after).some(m => m.type === 'gen' && m.epoch === 1)), 'a run after the reset trains in session 1');
+  await send({ type: 'pause' });
+  await sleep(800);
+  clearTimeout(guard);
+
   console.log(bad ? `${bad} FAILED` : 'all passed');
   if (bad) process.exitCode = 1;
 }

@@ -3,7 +3,7 @@
 // boards or global times: a lap with the autopilot is flagged exactly as before (timer.noteAutopilot in main.js).
 
 import LearnWorker from './learnWorker.js?worker&inline';
-import { Autopilot } from './autopilot.js';
+import { sharedRacingLine } from './autopilot.js';
 import { makeContext, makeDriver, genomeFromJSON, genomeKey } from './learn.js';
 
 const read = key => { try { return localStorage.getItem(key); } catch (e) { return null; } };
@@ -12,7 +12,7 @@ const write = (key, v) => { try { if (v == null) localStorage.removeItem(key); e
 export function createLearning({ track, getCarId, phone = false }) {
   const st = { carId: null, running: false, ready: false, gen: 0, best: null, line: null, rate: 0, error: null };
   const listeners = new Set();
-  let worker = null, want = false, canRun = true, hidden = false, lineCache = null, ctxCache = {}, version = 0;
+  let worker = null, epoch = 0, want = false, canRun = true, hidden = false, ctxCache = {}, version = 0;
   const emit = () => listeners.forEach(f => f(st));
 
   function loadStored(carId) {
@@ -36,16 +36,17 @@ export function createLearning({ track, getCarId, phone = false }) {
     const w = worker;
     w.onmessage = ({ data: m }) => {
       if (w !== worker) return;
+      if (m.epoch !== epoch && m.type !== 'error') return;     // work from before a reset: its record must not come back after the clear
       if (m.type === 'ready') { st.ready = true; st.line = m.base; apply(); }
       else if (m.type === 'gen') {
         st.gen = m.gen; st.best = m.best; st.rate = m.rate;
         if (m.record) { write(genomeKey(track, st.carId), m.record); version++; }
         emit();
-      } else if (m.type === 'reset') { st.gen = 0; st.best = null; emit(); }
+      } else if (m.type === 'reset') { st.gen = 0; st.best = null; st.running = false; apply(); emit(); }     // the worker is idle after a reset: start it again if training is wanted
       else if (m.type === 'error') { st.error = m.message; st.running = false; emit(); }
     };
     w.onerror = e => { st.error = 'Training stopped: ' + (e.message || 'worker error'); st.running = false; emit(); };
-    w.postMessage({ type: 'init', car: carId, saved });
+    w.postMessage({ type: 'init', car: carId, saved, epoch });
   }
 
   // run or sleep the worker to match what is wanted now
@@ -73,7 +74,8 @@ export function createLearning({ track, getCarId, phone = false }) {
     reset() {
       write(genomeKey(track, getCarId()), null);
       ctxCache = {}; version++;
-      if (worker && st.carId === getCarId()) worker.postMessage({ type: 'reset' });
+      // a new session number: whatever the worker is still working on carries the old one and is ignored when it arrives
+      if (worker && st.carId === getCarId()) { epoch++; st.running = false; worker.postMessage({ type: 'reset', epoch }); }
       loadStored(getCarId());
       emit();
     },
@@ -83,8 +85,7 @@ export function createLearning({ track, getCarId, phone = false }) {
       const text = read(genomeKey(track, cfg.id));
       if (!text) return null;
       try {
-        lineCache = lineCache || new Autopilot(track, cfg, { skill: 0.9 }).line;
-        const ctx = ctxCache[cfg.id] || (ctxCache[cfg.id] = makeContext(track, cfg, { light: true, baseLine: lineCache }));
+        const ctx = ctxCache[cfg.id] || (ctxCache[cfg.id] = makeContext(track, cfg, { light: true, baseLine: sharedRacingLine(track) }));
         const rec = genomeFromJSON(ctx, text);
         return rec ? makeDriver(ctx, rec.x, base) : null;
       } catch (e) { return null; }
