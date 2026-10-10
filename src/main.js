@@ -27,6 +27,7 @@ import { createInput } from './input.js';
 import { Hud } from './hud.js';
 import { createMiniMap } from './miniMap.js';
 import { createMarshalLights, planMarshal, MarshalWatch } from './marshal.js';
+import { addServiceVehicles } from './serviceVehicles.js';
 import { hudOn, cyclePreset, PRESET_NAMES } from './hudSettings.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { ReportTool } from './report.js';
@@ -106,6 +107,7 @@ env.set(urlEnv || settings, { instant: true });
 env.registerWorld(world);
 const marshal = createMarshalLights(track, ground, planMarshal(track, ground, scenery.userData.keepClear));   // LED panels at the minisector boundaries (src/marshal.js)
 scene.add(marshal.group);
+addServiceVehicles(scene, track, ground, scenery.userData.keepClear);   // parked ambulances, fire engines, the safety car and the rest (src/serviceVehicles.js)
 const marshalWatch = new MarshalWatch(marshal, track);
 const racingLine = createRacingLine(track);   // optional colour coded racing line (L key, Settings); the page ?line=1 turns it on
 scene.add(racingLine.group);
