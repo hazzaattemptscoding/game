@@ -12,6 +12,7 @@ import { lampMaterial, flagMaterial, addFlag, onLampLevel, wind } from './lamps.
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { crowdMesh } from './crowd.js';
 import { CORNERS } from './corners.js';
+import { vehicleBlockers } from './vehicleBays.js';
 
 
 const wrapN = (i, n) => ((i % n) + n) % n;
@@ -34,26 +35,29 @@ export const EXTRA_SITES = [
   { kind: 'screen', name: 'Big Screen Hairpin', s: 2420, range: 120, sides: [0, 1], len: 14, depth: 7 },
   { kind: 'screen', name: 'Big Screen Chicane', s: 3340, range: 120, sides: [0, 1], len: 14, depth: 7 },
   // the left of Scramble, Hurricane Sweep and the run to Windsock Hairpin (placed after the stands, so they fill round them)
-  { kind: 'marquee', name: 'Scramble Marquees', s: 440, range: 90, sides: [0], len: 40, depth: 14, back: [0, 10, 20] },
-  { kind: 'screen', name: 'Standings Screen', s: 400, range: 80, sides: [0], len: 18, depth: 7, standings: true },
+  // (the left of Scramble itself, s 335 to 520, is the pit exit side and is kept for the service vehicles: src/vehicleBays.js)
+  { kind: 'marquee', name: 'Scramble Marquees', s: 300, range: 160, sides: [1], len: 40, depth: 14, back: [0, 10, 20, 30, 40] },
+  { kind: 'screen', name: 'Standings Screen', s: 560, range: 90, sides: [0, 1], len: 18, depth: 7, standings: true },
   { kind: 'tower', name: 'Commentary Tower', s: 630, range: 90, sides: [0], len: 12, depth: 12 },
   { kind: 'screen', name: 'Big Screen Hurricane', s: 690, range: 60, sides: [0], len: 16, depth: 7 },
   { kind: 'marquee', name: 'Approach Marquees', s: 860, range: 70, sides: [0], len: 36, depth: 14 },
   // well back from the track: the ferris wheel, past the first row of stands, and the paddock behind the pit building
-  { kind: 'wheel', name: 'Ferris Wheel', s: 500, range: 40, sides: [0], len: 44, depth: 16, back: [50, 40] },
+  { kind: 'wheel', name: 'Ferris Wheel', s: 600, range: 100, sides: [0], len: 44, depth: 16, back: [60, 50, 70, 80] },
   { kind: 'paddock', name: 'Paddock', s: 35, range: 10, sides: [0], len: 60, depth: 24, back: [70] },
   // infield and start straight
   { kind: 'medical', name: 'Medical Centre', s: 1070, range: 60, sides: [1], len: 36, depth: 30, back: [0] },
-  { kind: 'scoreboard', name: 'Scoreboard', s: 3790, range: 60, sides: [0, 1], len: 8, depth: 5 },
-  { kind: 'crane', name: 'Camera Crane', s: 4000, range: 60, sides: [1, 0], len: 14, depth: 8 },
+  { kind: 'scoreboard', name: 'Scoreboard', s: 300, range: 80, sides: [1], len: 8, depth: 5 },
+  { kind: 'crane', name: 'Camera Crane', s: 3990, range: 140, sides: [1], len: 14, depth: 8 },
   { kind: 'camtower', name: 'TV Tower Start', s: 280, range: 60, sides: [1], len: 4, depth: 4 },
   { kind: 'camtower', name: 'TV Tower Scramble', s: 460, range: 60, sides: [1], len: 4, depth: 4 },
   { kind: 'camtower', name: 'TV Tower Hairpin', s: 900, range: 60, sides: [1, 0], len: 4, depth: 4 },
 ];
 
-export function planSites(T, ground, blockers, placed, sites = EXTRA_SITES) {
-  const out = [], why = [], all = [...placed];
+export function planSites(T, ground, blockers0, placed, sites = EXTRA_SITES) {
+  const out = [], why = [], all = [...placed], vehicles = vehicleBlockers(T);
   for (const site of sites) {
+    // the ground kept for the service vehicles; the paddock awnings may stand in the paddock zone (they are well behind the trucks)
+    const blockers = [...blockers0, ...vehicles.filter(b => !(site.kind === 'paddock' && b.zone === 'paddock'))];
     let best = null;
     const reason = {};
     search:
@@ -137,10 +141,12 @@ export const PIT_ARROWS = { entry: [-1, 1], exit: [1, 0] };
 export const SMALL_RULES = { cater: { behind: 8, barrier: 6 }, photo: { behind: 2.5, barrier: 2.5 }, sign: { behind: 2.5, barrier: 3 }, bin: { behind: 3, barrier: 3 }, flag: { behind: 6, barrier: 5 }, pit: { behind: 2.2, barrier: 2.5 }, fence: { behind: 30, barrier: 20 } };
 
 export function planSmall(T, ground, blockers, obstacles) {
+  const bays = vehicleBlockers(T, false);
   const free = (x, z, r) => {
     if (wallClearance(T, x, z) < r.behind) return false;
     for (const sg of T.segs) if (segDist(x, z, sg) < r.barrier) return false;
     for (const b of blockers) if (Math.hypot(x - b.x, z - b.z) < b.r + 2) return false;
+    if (r !== SMALL_RULES.flag) for (const b of bays) if (Math.hypot(x - b.x, z - b.z) < b.r + 2) return false;   // the banner flags are the vehicle plan's own
     for (const o of obstacles) { const a = (x - o.x) * o.ex[0] + (z - o.z) * o.ex[1], b = (x - o.x) * o.ez[0] + (z - o.z) * o.ez[1]; if (Math.abs(a) < o.len / 2 + 2 && b > -3 && b < o.depth + 2) return false; }
     return true;
   };

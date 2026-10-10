@@ -11,6 +11,7 @@ import { Kit, metreUV, sponsorPanel, sponsorRow, trackPoint, hash01 } from './me
 import { entryRoadAt } from './track.js';
 import { lampMaterial, flagMaterial, addFlag } from './lamps.js';
 import { crowdMesh } from './crowd.js';
+import { vehicleBlockers } from './vehicleBays.js';
 
 export const GAP = 11;          // metres from the containment wall to the front of a stand
 export const FENCE_AT = 4.5;    // the spectator fence stands this far behind the wall
@@ -35,7 +36,7 @@ export const SITES = [
   { name: 'Esses Scaffold', kind: 'scaffold', s: 3200, range: 150, sides: [0, 1], len: 40, rows: 8, roof: false },
   { name: 'Bridge Viewing', kind: 'terrace', s: 1690, range: 140, sides: [0, 1], len: 40, rows: 8, roof: false },
   // the left of Scramble and Hurricane Sweep, and the run to Windsock Hairpin: a long covered stand, an open terrace and a small hairpin stand
-  { name: 'Hurricane Grandstand', kind: 'main', s: 520, range: 70, sides: [0], len: 96, rows: 13, roof: true },
+  { name: 'Hurricane Grandstand', kind: 'main', s: 590, range: 80, sides: [0], len: 96, rows: 13, roof: true },
   { name: 'Approach Terrace', kind: 'terrace', s: 770, range: 60, sides: [0], len: 56, rows: 10, roof: false },
   { name: 'Hairpin Stand', kind: 'main', s: 1010, range: 50, sides: [0], len: 34, rows: 8, roof: true },
 ];
@@ -123,8 +124,8 @@ export function checkStand(T, ground, blockers, others, f, side, len, depth) {
 }
 
 // Choose the places. Returns [{ name, s, side, len, rows, roof, x, z, ex, ez, yaw, F, depth, y0, low }], and `why` for sites that failed.
-export function planStands(T, ground, blockers, sites = SITES) {
-  const placed = [], why = [];
+export function planStands(T, ground, blockers0, sites = SITES) {
+  const placed = [], why = [], blockers = [...blockers0, ...vehicleBlockers(T)];   // and the ground kept for the service vehicles
   for (const site of sites) {
     let best = null;
     const reason = {};

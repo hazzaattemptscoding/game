@@ -8,6 +8,8 @@
 //     the same rules as the stands, and no two of them overlap
 //   - signs, bins, pit boards, banner flags, the perimeter fence and the floodlight masts are behind the wall, off the barrier lines and clear of buildings and stands
 //   - no bridge pier stands within 6 m of the containment wall of any part of the circuit
+//   - nothing of the venue within 6 m of a parked service vehicle's spot, no stand or building on the pit exit side (left, s 335 to 520)
+//     or in the paddock behind the garages (src/vehicleBays.js); the paddock awnings 25 m or more behind the garage fronts
 // It checks the plan (numbers only), the same one the game draws.
 
 import { buildTrack } from '../src/track.js';
@@ -20,6 +22,7 @@ import { planExtras, footBlockers, smallBlockers, footprintPoints, SMALL_RULES, 
 import { planFences } from '../src/grandstands.js';
 import { entryRoadAt } from '../src/track.js';
 import { planMasts, MAST_BEHIND, MAST_BARRIER } from '../src/floodlights.js';
+import { vehicleBlockers, bayDistance, BAY_CLEAR, VEHICLE_BAYS } from '../src/vehicleBays.js';
 
 const T = buildTrack(), ground = createGround(T), errors = [];
 const fail = m => errors.push(m);
@@ -136,6 +139,26 @@ for (const m of masts) {
   if (withSmall.some(bl => Math.hypot(m.x - bl.x, m.z - bl.z) < bl.r)) fail(`mast at s ${m.s.toFixed(0)} is on a building or a kiosk`);
   if (inObstacle(m.x, m.z)) fail(`mast at s ${m.s.toFixed(0)} is on a stand`);
 }
+// ---- ground kept for the parked service vehicles (src/vehicleBays.js): nothing of the venue within BAY_CLEAR of a vehicle's spot,
+// and no stand or building in the pit exit side or the paddock zone (the paddock awnings excepted, 25 m or more behind the garages).
+// The floodlight masts and the start straight banner flags are left out: the vehicle plan avoids those itself.
+{
+  const zoneCircles = vehicleBlockers(T).filter(b => b.zone);
+  let worst = Infinity, inZone = 0;
+  const near = (what, x, z) => { const d = bayDistance(T, x, z); worst = Math.min(worst, d); if (d < BAY_CLEAR - 0.05) fail(`${what} at (${x.toFixed(0)}, ${z.toFixed(0)}) is ${d.toFixed(1)} m from a service vehicle's spot, need ${BAY_CLEAR}`); };
+  for (const o of everything) for (let a = -o.len / 2; a <= o.len / 2 + 0.01; a += 2) for (let b = 0; b <= o.depth + 0.01; b += 2) {
+    const x = o.x + o.ex[0] * a + o.ez[0] * b, z = o.z + o.ex[1] * a + o.ez[1] * b;
+    near(o.name, x, z);
+    if (o.kind !== 'paddock' && zoneCircles.some(c => Math.hypot(x - c.x, z - c.z) < c.r)) { inZone++; fail(`${o.name} stands in the ${zoneCircles.find(c => Math.hypot(x - c.x, z - c.z) < c.r).zone} zone kept for the service vehicles`); }
+  }
+  const pad = extras.items.find(o => o.kind === 'paddock');
+  if (pad) { const i = trackPoint(T, pad.s, 0).i, behind = pad.F - (T.pitOut[i] + 2); if (behind < 25) fail(`the paddock awnings are ${behind.toFixed(1)} m behind the garage fronts, need 25`); }
+  for (const p of [...small.signs, ...small.bins, ...small.photo, ...small.pit]) near('a sign, bin, photographer or pit board', p.x, p.z);
+  for (const c of small.cater) for (const [x, z] of c.pts) near('a kiosk', x, z);
+  for (const f of T.furniture.filter(f => f.fill)) near(`a trackside ${f.type}`, f.x, f.z);
+  console.log(`  service vehicle spots: ${VEHICLE_BAYS.length} kept clear, the nearest venue object ${worst.toFixed(1)} m away; ${inZone} points in the kept zones`);
+}
+
 console.log(`  ${small.cater.length} toilet blocks and kiosks, ${small.photo.length} photographers`);
 console.log(`  ${small.signs.length} signs, ${small.bins.length} bins, ${small.flags.length} banner flags, ${small.pit.length} pit boards, ${small.fence.length} fence panels, ${masts.length} floodlight masts`);
 
