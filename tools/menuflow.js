@@ -2,25 +2,29 @@
 // screen starts or opens the right thing, Continue repeats the last mode, Back and Escape go up one level, the pause menu has its
 // six actions with their number keys, and the settings tabs are the ones named. Run with `node tools/menuflow.js` (also part of
 // `npm run check`). Skips if Chromium or Playwright is not installed (as smoke.mjs does).
+// It runs the built game (tools/lib/dist.mjs) with ?norender=1: the game runs but draws nothing, so a click or a key does not wait
+// on software GL for a frame. What a click does is tested here, not the picture (tools/smoke.mjs renders every kind of view).
+// Waits are for frames (settle), not for fixed times.
 import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
-import { startVite } from './lib/vite.mjs';
+import { startDist } from './lib/dist.mjs';
 const chromePath = process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const pw = process.env.PLAYWRIGHT_PATH || '/opt/node22/lib/node_modules/playwright';
 if (!existsSync(chromePath) || !existsSync(pw)) { console.log('menuflow: Chromium or Playwright not found, skipped'); process.exit(0); }
 const { chromium } = createRequire(import.meta.url)(pw);
 
-const PORT = 5196;
+const PORT = +process.env.MENUFLOW_PORT || 5196;
 const fails = [];
 const check = (ok, msg) => { if (!ok) fails.push(msg); };
 const eq = (got, want, msg) => check(JSON.stringify(got) === JSON.stringify(want), `${msg}: got ${JSON.stringify(got)}, wanted ${JSON.stringify(want)}`);
-const server = await startVite(PORT);
+const server = await startDist(PORT);
 const browser = await chromium.launch({ executablePath: chromePath, args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
-const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+const page = await browser.newPage({ viewport: { width: 960, height: 540 } });   // the layout the checks were written for; nothing is drawn, so its size costs nothing
 await page.addInitScript(() => { try { localStorage.setItem('lakeside-settings', JSON.stringify({ quality: 'low' })); } catch (e) { /* no storage */ } });   // a light scene: the test drives the menu, not the picture
 const errors = [];
 page.on('pageerror', e => errors.push(e.message));
-const pause = ms => page.waitForTimeout(Math.min(ms, 300));
+// wait for the game to run n frames (a key or a click is acted on in the next frame, a menu is built before it)
+const settle = (n = 4) => page.evaluate(n => new Promise(r => { let k = 0; const f = () => (++k >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
 
 // what the menu shows now
 const where = () => page.evaluate(() => {
@@ -34,17 +38,17 @@ const texts = sel => page.evaluate(s => [...document.querySelectorAll(s)].map(e 
 const click = async sel => {
   const ok = await page.evaluate(s => { const el = [...document.querySelectorAll(s)].find(e => e.getClientRects().length > 0); if (el) el.click(); return !!el; }, sel);
   if (!ok) throw new Error(`click ${sel}: nothing visible to click`);
-  await pause(450);
+  await settle();
 };
-const press = async k => { await page.keyboard.press(k); await pause(450); };
-const toMain = async () => { await page.evaluate(() => window.lakeside.dir.api.toMainMenu()); await pause(600); };
+const press = async k => { await page.keyboard.press(k); await settle(); };
+const toMain = async () => { await page.evaluate(() => window.lakeside.dir.api.toMainMenu()); await settle(); };
 const entry = id => `#menu .nav-item[data-entry=${id}]`;
 const card = id => `#menu .card[data-mode=${id}]`;
 
 try {
-  await page.goto(`http://localhost:${PORT}/?menu=main`, { timeout: 120000 });
+  await page.goto(`http://localhost:${PORT}/?menu=main&norender=1`, { timeout: 120000 });
   await page.waitForSelector('#menu[data-screen=main] .nav-item', { timeout: 120000 });
-  await pause(1500);
+  await settle(10);
 
   console.log('MAIN MENU');
   eq(await texts('#menu .nav-item'), ['Race', 'Garage', 'Leaderboard', 'Settings'], 'the main menu entries');
@@ -86,24 +90,27 @@ try {
 
   console.log('CONTINUE');
   for (const [mode, label, want] of [['timetrial', 'Hot lap', { mode: 'timetrial', laps: 0, start: 'track', reverse: false }], ['practice', 'Free drive', { mode: 'practice', laps: 0, start: 'pit', reverse: false }], ['race', 'Solo race', { mode: 'race', laps: 5, start: 'standing', reverse: false }]]) {
-    await page.evaluate(m => { window.lakeside.settings.lastMode = m; window.lakeside.dir.menu.open('main', 'main'); }, mode); await pause(500);
+    await page.evaluate(m => { window.lakeside.settings.lastMode = m; window.lakeside.dir.menu.open('main', 'main'); }, mode); await settle();
     eq(await page.evaluate(() => document.querySelector('#menu .nav-continue').textContent), `Continue: ${label}`, `Continue is labelled with the last mode (${mode})`);
     check(await page.evaluate(() => document.activeElement && document.activeElement.classList.contains('nav-continue')), 'the focus starts on Continue');
     await press('Enter'); eq(await session(), want, `Enter on Continue: ${label} starts it`);
     eq(await page.evaluate(() => window.lakeside.settings.lastMode), mode, 'the last mode is kept');
     await toMain();
   }
-  await page.evaluate(() => { window.lakeside.settings.lastMode = 'online'; window.lakeside.dir.menu.open('main', 'main'); }); await pause(500);
+  await page.evaluate(() => { window.lakeside.settings.lastMode = 'online'; window.lakeside.dir.menu.open('main', 'main'); }); await settle();
   eq(await page.evaluate(() => document.querySelector('#menu .nav-continue').textContent), 'Continue: Online race', 'Continue names the online race');
   await click('#menu .nav-continue'); eq((await where()).screen, 'online', 'Continue: Online race opens the lobby');
   await toMain();
 
   console.log('PAUSE MENU');
-  await click(entry('race')); await click(card('practice')); await click('#menu .summary .btn.primary'); await pause(800);
+  await click(entry('race')); await click(card('practice')); await click('#menu .summary .btn.primary'); await settle(8);
   await press('Escape');
   eq((await where()).screen, 'pause', 'Escape in a session opens the pause menu');
-  eq(await page.evaluate(() => [...document.querySelectorAll('#menu .pause-body button')].filter(b => b.offsetParent).map(b => b.querySelector('span').textContent).filter(t => t !== 'Screen control')),   // Screen control shows only while the driver may run the gantry screen
-    ['Resume', 'Restart', 'Garage', 'Settings', 'Leaderboard', 'Report a problem', 'Quit to menu'], 'the pause actions');
+  // exactly the buttons that are shown, in order. Screen control is among them while the game says the driver may run the gantry screen
+  // (api.screen.canControl(): true in a free drive on one's own, in a room only for the host or a driver the host ticked).
+  const mayScreen = await page.evaluate(() => !!window.lakeside.dir.api.screen.canControl());
+  eq(await page.evaluate(() => [...document.querySelectorAll('#menu .pause-body button')].filter(b => b.offsetParent).map(b => b.querySelector('span').textContent)),
+    ['Resume', 'Restart', 'Garage', 'Settings', 'Leaderboard', ...(mayScreen ? ['Screen control'] : []), 'Report a problem', 'Quit to menu'], 'the pause actions');
   eq(await page.evaluate(() => [...document.querySelectorAll('#menu .pause-body kbd')].map(k => k.textContent)), ['1', '2', '3', '4', '5', '6'], 'their number keys');
   for (const [k, id, title] of [['Digit3', 'garage', 'Garage'], ['Digit4', 'settings', 'Settings'], ['Digit5', 'times', 'Leaderboard']]) {
     await press(k); const w = await where(); eq([w.screen, w.title, w.backShown], [id, title, true], `pause key ${k.slice(-1)} opens ${title} with a Back button`);
@@ -114,10 +121,33 @@ try {
   await press('Escape'); await press('Escape'); eq((await where()).screen, null, 'Escape in the pause menu resumes');
   await press('Escape'); await press('Digit6');
   check(await page.evaluate(() => /Quit to the main menu/.test(document.querySelector('#menu .confirm').textContent) && !document.querySelector('#menu .confirm').hidden), 'Quit to menu asks first');
-  await click('#menu .confirm .actions .btn:not(.danger)'); await pause(200);
+  await click('#menu .confirm .actions .btn:not(.danger)');
   eq((await where()).screen, 'pause', 'Stay keeps the pause menu'); check((await session()) !== null, 'and the session');
-  await press('Digit6'); await click('#menu .confirm .actions .btn.danger'); await pause(600);
+  await press('Digit6'); await click('#menu .confirm .actions .btn.danger');
   eq([(await where()).screen, await session()], ['main', null], 'Quit to menu ends the session and shows the main menu');
+
+  console.log('A CLASS PICKED DURING A SESSION');
+  {
+    const carNow = () => page.evaluate(() => window.lakeside.car.cfg.id);
+    const pickInGarage = label => page.evaluate(l => { const b = [...document.querySelectorAll('.gar .opt')].find(x => x.textContent.trim() === l); if (b) b.click(); return !!b; }, label);
+    await click(entry('race')); await click(card('practice')); await click('#menu .summary .btn.primary'); await settle(8);
+    eq(await carNow(), 'GT', 'the free drive starts in the GT');
+    await press('Escape'); await press('Digit3');
+    check(await pickInGarage('GT1'), 'the garage offers the GT1');
+    await settle();
+    eq(await carNow(), 'GT', 'a class picked in the garage during a session does not change the car (paused)');
+    check(await page.evaluate(() => /next session/.test(document.querySelector('.gar').textContent)), 'the garage says it takes effect at the next session');
+    await press('Escape'); await press('Digit1'); await settle(30);
+    eq(await carNow(), 'GT', 'and not after the session resumes, the car still moving or not');
+    await press('Escape'); await press('Digit2');
+    eq([await carNow(), (await session()).mode], ['GT1', 'practice'], 'Restart is a session boundary: the picked class takes effect there');
+    await toMain();
+    await click(entry('garage'));
+    check(await pickInGarage('GT'), 'back in the main menu the garage offers the GT');
+    await settle();
+    eq(await carNow(), 'GT', 'with no session running a class takes effect at once');
+    await toMain();
+  }
 
   console.log('SETTINGS');
   await click(entry('settings'));

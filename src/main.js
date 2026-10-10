@@ -56,6 +56,9 @@ import { createCarFx } from './carFx.js';
 import { wakeFor } from './slipstream.js';
 import { createSlipFx } from './slipFx.js';
 const params = new URLSearchParams(location.search);
+// ?norender=1 is for the menu tests only (tools/menuflow.js): the game runs but no picture is drawn, so a menu walk does not wait on software GL.
+// Nothing sets it in normal play.
+const noRender = params.has('norender');
 const settings = loadSettings();
 
 // --- world ---
@@ -484,7 +487,7 @@ function frame(now) {
   selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake; selfFx.len = car.cfg.length; selfFx.v = Math.max(0, car.fwdSpeed); selfFx.cls = car.cfg.id;
   rig.extraFov = slipFx.update(paused || topDown ? 0 : car.wake, dt, now);
   carFx.update(dt, rig.camera, lobby.ghosts.fx, selfFx, env.resolved, topDown);
-  renderer.render(scene, rig.camera);
+  if (!noRender) renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

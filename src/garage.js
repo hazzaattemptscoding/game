@@ -94,6 +94,7 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
   // 3D preview, or a flat swatch when WebGL is not there
   let renderer = null, scene = null, camera = null, car = null, raf = 0, ro = null, flat = null;
   try {
+    if (new URLSearchParams(location.search).has('norender')) throw new Error('norender');   // menu tests: the flat swatch, no GL (see main.js)
     const canvas = el('canvas');
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
