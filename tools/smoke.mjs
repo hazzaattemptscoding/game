@@ -50,6 +50,7 @@ async function open(label, q, ctxOptions = DESKTOP) {
   page.on('console', m => { if (m.type() === 'error' && !/favicon|Failed to load resource/.test(m.text())) errors.push(`${label}: console ${m.text()}`); });
   await page.goto(`http://localhost:${PORT}/${q}`, { timeout: 240000, waitUntil: 'commit' });   // the load event waits on the first software GL frame; frames() below waits for that
   await page.keyboard.down('ArrowUp');   // a key press unlocks the audio (it may stay suspended with no sound device)
+  await page.waitForFunction(() => !!(window.lakeside && window.lakeside.dir), null, { timeout: 300000, polling: 250 });   // the world is built after the loading screen's first frames (src/boot.js)
   await frames(page, label, 'first frames', 6, 300000);
   if (process.env.SMOKE_LOG) console.log(`  ${((Date.now() - t0) / 1000).toFixed(1).padStart(5)} s  ${label}: loaded, 6 frames`);
   return { ctx, page };

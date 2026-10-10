@@ -361,7 +361,7 @@ function frame(now) {
   frameNo++;
   // the autopilot's racing line takes about 600 ms to work out (sharedRacingLine, src/autopilot.js): once, with a menu open and the
   // first picture long since drawn, so turning the autopilot on later does not stall the game
-  if (!linePrimed && frameNo > 120 && dir.menuOpen) { linePrimed = true; (window.requestIdleCallback || setTimeout)(() => sharedRacingLine(track)); }
+  if (!linePrimed && frameNo > 120 && dir.menuOpen) { linePrimed = true; (window.requestIdleCallback ? window.requestIdleCallback(() => sharedRacingLine(track)) : Promise.resolve().then(() => sharedRacingLine(track))); }
 
   const actions = input.takeActions();
   const menuToggled = dir.menuToggledSinceLastFrame();   // Esc that just closed the menu is also in the list: ignore it
