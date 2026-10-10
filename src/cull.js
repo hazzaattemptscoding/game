@@ -202,7 +202,7 @@ export function freezeWorld(root) {
 }
 
 // Small instanced props (a crowd, trees, bushes, bins) disappear beyond `limit` metres from the camera. Cheap enough to run every few frames.
-// A prop with userData.maxDist (a crowd, src/crowd.js) also goes beyond that distance on every tier: there a person is under two pixels.
+// A prop with userData.maxDist (a crowd, src/crowd.js) also goes beyond that distance on every tier: there a person is a few pixels.
 export function propCuller(root) {
   const props = [], c = new THREE.Vector3();
   root.updateMatrixWorld(true);
@@ -214,10 +214,10 @@ export function propCuller(root) {
     const s = o.boundingSphere;
     if (!s) return;
     c.copy(s.center).applyMatrix4(o.matrixWorld);
-    props.push({ o, x: c.x, z: c.z, r: s.radius, cap: o.userData.maxDist ?? Infinity });
+    props.push({ o, x: c.x, z: c.z, r: s.radius, cap: o.userData.maxDist ?? Infinity, lod: o.userData.farGeometry ? o.userData : null });
   });
   let last = -1;
-  const capped = props.some(p => p.cap < Infinity);
+  const capped = props.some(p => p.cap < Infinity || p.lod);
   return {
     count: props.length,
     // limit in metres (Infinity shows everything). A prop shows while any part of it can be inside the limit.
@@ -226,8 +226,10 @@ export function propCuller(root) {
       last = limit;
       const cx = cam.position.x, cz = cam.position.z;
       for (const p of props) {
-        const show = Math.hypot(p.x - cx, p.z - cz) - p.r <= Math.min(limit, p.cap);
+        const gap = Math.hypot(p.x - cx, p.z - cz) - p.r, show = gap <= Math.min(limit, p.cap);
         if (p.o.visible !== show) p.o.visible = show;
+        // a crowd with a simple person (src/crowd.js) uses it while no part of the crowd is within `nearDist`
+        if (p.lod && show) { const g = gap > p.lod.nearDist ? p.lod.farGeometry : p.lod.nearGeometry; if (p.o.geometry !== g) p.o.geometry = g; }
       }
     },
   };

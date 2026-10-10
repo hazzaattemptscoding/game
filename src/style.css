@@ -58,7 +58,7 @@ html, body {
 .hud-live[data-s=behind] b { color: var(--bad); }
 .hud-live-bar { position: relative; display: block; flex: 1; height: 6px; background: var(--hud-well); }
 .hud-live-bar::before { content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 12px; background: var(--hud-label); }
-.hud-live-bar i { position: absolute; top: 0; height: 100%; background: var(--bad); }
+.hud-live-bar i { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: left; background: var(--bad); }   /* moved with transform (hud.js), not left and width */
 .hud-live[data-s=ahead] .hud-live-bar i { background: var(--timing-pb); }
 
 /* the three sectors: each a solid plate in its timing colour (best, personal best) or a dark plate with the yellow time (slower) */
@@ -614,7 +614,7 @@ body.menu-main #hud, body.menu-main #sess { display: none; }
 #steer-bar { position: fixed; left: 50%; bottom: calc(6px + env(safe-area-inset-bottom, 0px)); width: min(320px, 40vw); height: 4px; transform: translateX(-50%); background: var(--pit-3); pointer-events: none; }
 #steer-bar[hidden] { display: none; }
 #steer-bar::before { content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 10px; background: var(--text-faint); }
-#steer-bar i { position: absolute; left: 50%; top: 0; width: 12%; height: 100%; margin-left: -6%; background: var(--text); }
+#steer-bar i { position: absolute; left: 44%; top: 0; width: 12%; height: 100%; background: var(--text); }   /* main.js moves it with translateX, from the middle */
 
 /* the times board, hold Tab or the Times button on a touch screen: the timing sheet of the results screen */
 #board { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-3); padding: var(--s-4); overflow-y: auto; pointer-events: none; font-family: var(--f-body); font-variant-numeric: tabular-nums; color: var(--text); }
@@ -750,3 +750,10 @@ body.report-mode #touch { display: none !important; }
 .hud-learn-tag { font-style: normal; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--warn); }
 .hud-learn-btn { font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text); background: var(--pit-3); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); padding: 3px 10px; cursor: pointer; }
 .hud-learn-btn:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+
+/* the loading screen (index.html, src/boot.js) */
+#boot { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #0b0f14; color: #e8edf2; font: 600 15px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: 0.04em; }
+#boot .boot-name { font-size: 28px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+#boot .boot-bar { width: min(280px, 64vw); height: 3px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+#boot .boot-bar i { display: block; height: 100%; background: #e8edf2; transform: scaleX(0.02); transform-origin: left; transition: transform 0.25s ease-out; }
+#boot .boot-step { opacity: 0.7; min-height: 1.2em; }

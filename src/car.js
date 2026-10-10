@@ -106,10 +106,27 @@ function gtShape(c) {
 
 const SHAPES = { GT: gtShape, GT1: gt1Shape, CITY: cityShape };
 
-// The shape of a car class. A config with no id, or an id with no shape of its own, is the GT.
+// The shape of a car class. A config with no id, or an id with no shape of its own, is the GT. One shape per config is kept (the
+// shapes are plain numbers and the lofted skins of the GT1 and the CITY, built once however many cars of the class there are).
+const specs = new WeakMap();
 export function bodySpec(cfg) {
-  return (cfg && Object.hasOwn(SHAPES, cfg.id) ? SHAPES[cfg.id] : gtShape)(cfg);
+  if (!cfg || typeof cfg !== 'object') return gtShape(cfg);
+  let sp = specs.get(cfg);
+  if (!sp) specs.set(cfg, sp = (Object.hasOwn(SHAPES, cfg.id) ? SHAPES[cfg.id] : gtShape)(cfg));
+  return sp;
 }
+
+// The lofted skins are shared by every CarView of a class: counted here, and freed when the last one is disposed.
+const skinUsers = new WeakMap();
+function takeSkin(sp) { skinUsers.set(sp, (skinUsers.get(sp) || 0) + 1); }
+function dropSkin(sp) {
+  const n = (skinUsers.get(sp) || 0) - 1;
+  skinUsers.set(sp, Math.max(0, n));
+  if (n <= 0 && sp.freeLoft) sp.freeLoft();
+}
+
+// A remote car is drawn with the simple skin beyond this many metres (THREE.LOD, only for the classes with a lofted skin).
+export const GHOST_LOD_DISTANCE = 60;
 
 // Where the side panel's texture is shown: its shape (SIDE_W by SIDE_H pixels).
 const SIDE_ASPECT = SIDE_H / SIDE_W;
@@ -120,11 +137,29 @@ const SIDE_ASPECT = SIDE_H / SIDE_W;
 // and the slot between them stays closed. Both take the livery's wing colour; the underside of the flap and the trailing face of
 // the main plane are in a much darker slot colour, so the open slot reads as a gap.
 const WING_POST_W = 0.1, WING_POST_T = 0.05;
+const SLOT = new THREE.Color(0x060708);   // the slot faces' own colour
+
+// A wing box (main plane or flap) in one material: a colour attribute (white, a tint of the wing colour) and the slot face dark. The
+// slot face's colour is set by slotColours() from the wing's colour, so it stays the same dark whatever the livery.
+function wingBox(w, h, d, slotFace) {
+  const g = new THREE.BoxGeometry(w, h, d);
+  g.clearGroups();
+  g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));
+  g.userData.slotFace = slotFace;
+  return g;
+}
+function slotColours(g, wing) {
+  const col = g.attributes.color, f = g.userData.slotFace;
+  const k = (a, b) => b > 1e-5 ? Math.min(1, a / b) : 1;
+  for (let v = f * 4; v < f * 4 + 4; v++) col.setXYZ(v, k(SLOT.r, wing.r), k(SLOT.g, wing.g), k(SLOT.b, wing.b));
+  col.needsUpdate = true;
+}
 const HINGE_SINK = 0.03;     // how far the flap's hinge sits inside the main plane, metres
 
 export class CarView {
   // `livery` is a livery object (src/livery.js), or a plain colour number as before.
-  constructor(cfg, livery = DEFAULT_LIVERY) {
+  // `ghost` is for a remote car: it casts no shadow and swaps to a simple skin at a distance.
+  constructor(cfg, livery = DEFAULT_LIVERY, { ghost = false } = {}) {
     livery = typeof livery === 'number' ? { ...DEFAULT_LIVERY, body: livery } : livery;
     this.cfg = cfg;
     this.spec = bodySpec(cfg);
@@ -141,12 +176,17 @@ export class CarView {
     const W = cfg.width, r = cfg.wheelRadius;
     const paint = this.paint = new THREE.MeshStandardMaterial({ color: 0xffd21f, roughness: 0.35, metalness: 0.3 });
     this.wingMat = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.5, metalness: 0.2 });
+    this.wingFaceMat = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.5, metalness: 0.2, vertexColors: true });   // the main plane and the flap
     const dark = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.6 });
     const glass = new THREE.MeshStandardMaterial(sp.glass || { color: 0x14181d, roughness: 0.1, metalness: 0.6 });
 
     // Body: the side profile extruded across the width with rounded edges, or (CITY, GT1) a lofted skin
     let shell, cabMesh, glassMesh = null;
+    this._sharedSkin = null; this._skinGeos = new Set();   // the skins this car takes from its class (freed by the class, not by the car)
     if (sp.loft) {
+      takeSkin(sp);
+      this._sharedSkin = sp;
+      for (const g of Object.values(sp.loft)) this._skinGeos.add(g);
       shell = new THREE.Mesh(sp.loft.body, paint);
       cabMesh = new THREE.Mesh(sp.loft.cab, paint);
       glassMesh = new THREE.Mesh(sp.loft.glass, glass);
@@ -162,24 +202,37 @@ export class CarView {
       cabMesh = new THREE.Mesh(cabGeo, glass);
     }
     shell.castShadow = true;
-    hull.add(shell);
     cabMesh.castShadow = true;
-    hull.add(cabMesh);
-    if (glassMesh) hull.add(glassMesh);
+    if (ghost && sp.loftLow) {
+      // near: the full skin; beyond GHOST_LOD_DISTANCE: the same shape in a sixth of the triangles, in the same materials
+      const lod = new THREE.LOD(), near = new THREE.Group(), far = new THREE.Group();
+      for (const g of Object.values(sp.loftLow)) this._skinGeos.add(g);
+      near.add(shell, cabMesh, glassMesh);
+      far.add(new THREE.Mesh(sp.loftLow.body, paint), new THREE.Mesh(sp.loftLow.cab, paint), new THREE.Mesh(sp.loftLow.glass, glass));
+      lod.addLevel(near, 0);
+      lod.addLevel(far, GHOST_LOD_DISTANCE);
+      hull.add(lod);
+    } else {
+      hull.add(shell);
+      hull.add(cabMesh);
+      if (glassMesh) hull.add(glassMesh);
+    }
 
     // Rear wing, when the class has one (the flap is the DRS flap: the flapPivot takes its angle in update)
-    const slot = new THREE.MeshStandardMaterial({ color: 0x060708, roughness: 0.8 });
+    this._wingSlots = [];     // the wing boxes with a slot face (see wingBox and _paint)
     this.wing = null; this.flapPivot = null;
     if (sp.wing) {
       const wg = sp.wing;
       this.wing = new THREE.Group();
       hull.add(this.wing);
-      const main = new THREE.Mesh(new THREE.BoxGeometry(wg.main, 0.05, wg.span), [this.wingMat, slot, this.wingMat, this.wingMat, this.wingMat, this.wingMat]);
+      // the main plane and the flap are one material each, with the dark slot faces in vertex colours (a box with six materials is six draws)
+      const main = new THREE.Mesh(wingBox(wg.main, 0.05, wg.span, 1), this.wingFaceMat);
       main.position.set(wg.x + wg.main / 2, wg.y, 0);
       this.wing.add(main);
       this.flapPivot = new THREE.Group();
       this.flapPivot.position.set(wg.x + HINGE_SINK, wg.y, 0);
-      const flap = new THREE.Mesh(new THREE.BoxGeometry(wg.flap, 0.035, wg.span), [this.wingMat, this.wingMat, this.wingMat, slot, this.wingMat, this.wingMat]);
+      const flap = new THREE.Mesh(wingBox(wg.flap, 0.035, wg.span, 3), this.wingFaceMat);
+      this._wingSlots.push(main.geometry, flap.geometry);
       flap.position.set(-wg.flap / 2, 0, 0);
       this.flapPivot.add(flap);
       this.wing.add(this.flapPivot);
@@ -310,6 +363,7 @@ export class CarView {
     this.flat = false;
     this.setLivery(livery);
 
+    if (ghost) this.root.traverse(o => { if (o.isMesh) o.castShadow = false; });   // a remote car casts no shadow (the shadow pass is the dearer part of a car)
     this._q = new THREE.Quaternion();
   }
 
@@ -352,6 +406,8 @@ export class CarView {
     const l = this.livery, flat = this.flat;
     this.paint.color.set(l.body);
     this.wingMat.color.set(flat ? '#1b1d20' : l.wing);
+    this.wingFaceMat.color.copy(this.wingMat.color);
+    for (const g of this._wingSlots) slotColours(g, this.wingMat.color);
     this.decals.visible = !flat;
     this.sides.forEach(m => { m.visible = !!this._tex.side; });
     this.plate.visible = !!this._tex.plate;
@@ -361,7 +417,9 @@ export class CarView {
   dispose() {
     if (this._tex) releaseTextures(this.livery);
     this._tex = null;
-    this.root.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+    // the lofted skins belong to the class (bodySpec): freed with the last car that uses them
+    this.root.traverse(o => { if (o.isMesh && !this._skinGeos.has(o.geometry)) o.geometry.dispose(); });
+    if (this._sharedSkin) { dropSkin(this._sharedSkin); this._sharedSkin = null; }
     for (const m of this.materials()) m.dispose();
   }
 

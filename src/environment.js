@@ -289,8 +289,10 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
         vertexShader: 'varying vec3 vD; void main() { vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
         fragmentShader: 'varying vec3 vD; uniform vec3 top, bot, sunDir, sunCol; uniform float sunK; void main() { vec3 d = normalize(vD); float k = smoothstep(-0.1, 0.8, d.y); vec3 c = mix(bot, top, k); c += sunCol * sunK * pow(max(dot(d, sunDir), 0.0), 60.0); if (d.y < 0.0) c = mix(bot, bot * 0.4, min(1.0, -d.y * 3.0)); gl_FragColor = vec4(c, 1.0); }',
       });
-      s.add(new THREE.Mesh(new THREE.SphereGeometry(50, 16, 12), mat));
+      const sphere = new THREE.SphereGeometry(50, 16, 12);
+      s.add(new THREE.Mesh(sphere, mat));
       const rt = pmrem.fromScene(s, 0.03);
+      sphere.dispose();
       if (envRT) envRT.dispose();
       envRT = rt;
       mat.dispose();

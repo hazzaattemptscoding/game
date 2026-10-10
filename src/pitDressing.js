@@ -286,7 +286,7 @@ export function buildPitDressing(T, ground) {
     sign: new THREE.MeshStandardMaterial({ map: signTexture(), roughness: 0.6, side: THREE.DoubleSide }),
   };
   // the plain coloured parts share one vertex coloured material, so the whole dressing is a handful of draw calls
-  const solid = [];
+  const plain = [], shiny = [];
   for (const [key, list] of kit.parts) {
     const m = mats[key];
     if (m.map || m.emissive?.getHex() || key === 'glass') continue;
@@ -295,14 +295,16 @@ export function buildPitDressing(T, ground) {
       const n = geo.attributes.position.count, col = new Float32Array(n * 3);
       for (let k = 0; k < n; k++) col.set([c.r, c.g, c.b], k * 3);
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      (m.metalness > 0.2 ? shiny : plain).push(geo);   // the metal parts (steel, roof) keep their look: a second material
       if (geo.attributes.uv) geo.deleteAttribute('uv');
-      solid.push(geo);
     }
     kit.parts.delete(key);
   }
-  if (solid.length) kit.parts.set('solid', solid);
+  if (plain.length) kit.parts.set('solid', plain);
+  if (shiny.length) kit.parts.set('solidMetal', shiny);
   mats.solid = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.15 });
-  for (const k of ['deck', 'concrete', 'solid']) mats[k].userData.wet = 'surface';
+  mats.solidMetal = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.42 });
+  for (const k of ['deck', 'concrete', 'solid', 'solidMetal']) mats[k].userData.wet = 'surface';
   const mesh = kit.build(mats, { debug: 'building' });
   g.add(mesh);
   const crew = crowdMesh(people);

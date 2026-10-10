@@ -24,7 +24,8 @@ export function setTopDown(topDown) {
 // A material that glows with the lamp level: emissive colour times `base` times the level (0 by day).
 export function lampMaterial(o, base = 2.2) {
   const m = new THREE.MeshStandardMaterial({ roughness: 0.4, ...o, emissive: o.emissive ?? 0xfff2cf, emissiveIntensity: 0 });
-  onLampLevel(l => { m.emissiveIntensity = base * l; });
+  const fn = onLampLevel(l => { m.emissiveIntensity = base * l; });
+  m.addEventListener('dispose', () => listeners.delete(fn));   // a rebuilt scenery disposes the old materials: their listeners go with them
   return m;
 }
 

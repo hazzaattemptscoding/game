@@ -43,6 +43,7 @@ import { createEnvironment } from './environment.js';
 import { envFromParams } from './weather.js';
 import { isRace } from './session.js';
 import { createGantryScreen } from './gantryScreen.js';
+import { bootStep, bootDone } from './boot.js';
 import powermediaLogo from './assets/powermedia-white.png';
 import deltadashLogo from './assets/deltadash.png';
 import '@fontsource/barlow-condensed/600.css';
@@ -62,6 +63,7 @@ const noRender = params.has('norender');
 const settings = loadSettings();
 
 // --- world ---
+await bootStep('Building the track', 0.05);   // the loading screen paints before each heavy step (src/boot.js)
 const track = buildTrack();
 const car = new Car(carById(settings.car), track);   // the car class (settings.car, picked in the garage): the same object for the whole session
 car.setAssists({ tc: settings.assistTc, abs: settings.assistAbs, esc: settings.assistEsc });
@@ -110,11 +112,14 @@ sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
 const SUN_DIR = new THREE.Vector3(-0.5, 0.75, 0.42).normalize();   // the environment (src/environment.js) moves it with the time of day
 
+await bootStep('Shaping the ground', 0.2);
 const ground = createGround(track);
 const terrain = ground.mesh();
 const world = new THREE.Group();
 const trackScene = buildTrackScene(track, ground);
+await bootStep('Building the circuit and its surroundings', 0.4);
 const scenery = buildScenery(track, ground);
+await bootStep('Finishing the scene', 0.8);
 world.add(terrain, trackScene, scenery);
 const optimised = optimiseWorld(world);   // long ribbons in pieces and small meshes merged (src/cull.js); the report tool swaps the real objects back
 freezeWorld(world);
@@ -145,11 +150,18 @@ const gantryScreen = createGantryScreen({
 });
 const gantryTex = new THREE.CanvasTexture(gantryScreen.canvas);
 gantryTex.colorSpace = THREE.SRGBColorSpace;
+gantryTex.generateMipmaps = false; gantryTex.minFilter = THREE.LinearFilter;   // the canvas is not a power of two and is re-sent often: no mipmaps to rebuild
 gantryTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 trackScene.userData.gantryScreenMaterial.map = gantryTex;
 trackScene.userData.gantryScreenMaterial.color.set(0xffffff);
 trackScene.userData.gantryScreenMaterial.needsUpdate = true;
+const menuEl = document.getElementById('menu');
 let gantryDrawn = -1;
+const gantryFrustum = new THREE.Frustum(), gantryBall = new THREE.Sphere(trackScene.userData.gantryPosition, 30), gantryPV = new THREE.Matrix4();
+function gantryInView() {
+  gantryPV.multiplyMatrices(rig.camera.projectionMatrix, rig.camera.matrixWorldInverse);
+  return gantryFrustum.setFromProjectionMatrix(gantryPV).intersectsSphere(gantryBall);
+}
 const lapsShown = new WeakSet();   // the hud empties timer.events on its own schedule, so remember which laps the screen has had
 const markers = debugMarkers(track);
 markers.visible = false;
@@ -447,20 +459,20 @@ function frame(now) {
   sun.target.position.set(shadowAt.x, shadowAt.y, shadowAt.z);
   sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 150);
   renderer.shadowMap.needsUpdate = quality.shadowDue(now);
-  if (frameNo % 8 === 0) props.update(rig.camera, reportTool.opened ? Infinity : quality.tier.propDist);
+  if (frameNo === 1 || frameNo % 8 === 0) props.update(rig.camera, reportTool.opened ? Infinity : quality.tier.propDist);
 
   env.update(dt, rig.camera, { speed: car.speed, lightning: settings.lightning });
   audioDue += dt;
   if (audioDue >= 1 / 62) { audio.update(car, audioDue, paused); audioDue = 0; }   // the sound parameters need no more than 60 updates a second
   lobby.update(now);
-  // gantry screen: lap board on crossing the line, redrawn 30 times a second while it is close enough to read
+  // gantry screen: lap board on crossing the line, redrawn 15 times a second while it is close enough to read and in view
   for (const ev of timer.events) {
     if (ev.type !== 'lap' || lapsShown.has(ev)) continue;
     lapsShown.add(ev);
     const raceLaps = dir.session && isRace(dir.session) ? dir.session.laps : null;   // a race shows "LAP 2 / 5"
     gantryScreen.lap({ lap: timer.lap, of: raceLaps, time: ev.time, kind: ev.best ? 'pb' : null, delta: ev.best || timer.best == null ? null : ev.time - timer.best });
   }
-  if (now - gantryDrawn > 33 && rig.camera.position.distanceTo(trackScene.userData.gantryPosition) < 900) {
+  if (now - gantryDrawn > 66 && rig.camera.position.distanceTo(trackScene.userData.gantryPosition) < 900 && gantryInView()) {
     gantryScreen.draw(now / 1000);
     gantryTex.needsUpdate = true;
     gantryDrawn = now;
@@ -483,16 +495,19 @@ function frame(now) {
   board.update(simTime, now);
   const cursorOn = settings.steering === 'cursor';
   steerBar.hidden = !(cursorOn && hudOn(settings, 'steerBar'));
-  if (cursorOn) steerMark.style.left = `${(50 + playerInput.steer * 44).toFixed(1)}%`;
+  if (cursorOn) steerMark.style.transform = `translateX(${(playerInput.steer * 366.7).toFixed(0)}%)`;   // 12 % wide: 44 % of the bar is 366.7 % of the mark
   selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake; selfFx.len = car.cfg.length; selfFx.v = Math.max(0, car.fwdSpeed); selfFx.cls = car.cfg.id;
   rig.extraFov = slipFx.update(paused || topDown ? 0 : car.wake, dt, now);
   carFx.update(dt, rig.camera, lobby.ghosts.fx, selfFx, env.resolved, topDown);
-  if (!noRender) renderer.render(scene, rig.camera);
+  // behind a menu that covers the world (every one but the main menu, .m-shade) at half the rate; in a room the world stays live
+  const covered = dir.menuOpen && !lobby.active && menuEl.dataset.home !== '1';
+  if (!noRender && !(covered && frameNo % 2)) renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+requestAnimationFrame(now => { frame(now); bootDone(); });
 // for quick checks from the browser console
-window.lakeside = { THREE, optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen, marshal, globalTimes, boardGhost, simTime: () => simTime };
+window.lakeside = { optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen, marshal, globalTimes, boardGhost, simTime: () => simTime };
+if (import.meta.env.DEV && params.has('debug')) window.lakeside.THREE = THREE;   // dev server only (?debug): a reference to the whole THREE namespace in a production build would keep all of three in the bundle
 
 const shadowAt = { x: 0, y: 0, z: 0 };
 // the FPS readout: frame rate and time, the slowest frame, the render scale and what the last frame cost

@@ -118,6 +118,7 @@ async function pageBudget() {
   let worst = { calls: 0, tris: 0 };
   for (const [name, q, at] of [['start grid', 'viewat=100,0,2,40'], ['crowded stretch', 'viewat=1000,0,2,40'], ['night and rain', 'viewat=3500,0,2,40&weather=heavyrain&time=night']]) {
     await page.goto(`http://localhost:${PORT}/?menu=0&${q}`, { timeout: 90000 });
+    await page.waitForFunction(() => window.lakeside, null, { timeout: 120000 });   // the page builds the world before the first frame (a slow machine takes a while)
     await page.waitForTimeout(3500);
     const r = await page.evaluate(() => { const L = window.lakeside, i = L.renderer.info.render; return { calls: i.calls, tris: i.triangles, auto: L.renderer.shadowMap.autoUpdate, q: L.settings.quality }; });
     console.log(`  ${name.padEnd(16)} ${r.calls} draw calls, ${r.tris} triangles`);

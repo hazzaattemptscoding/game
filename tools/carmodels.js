@@ -155,17 +155,18 @@ for (const [name, cfg] of Object.entries(CONFIGS)) {
 }
 
 // 9. the GT is the original model: a fingerprint of every mesh (geometry type, vertex count, a hash of the vertices, its position,
-// and its material colours, roughness, metalness and emissive colour), taken from the car before the other classes existed.
+// and its material colours, roughness, metalness and emissive colour), taken from the car before the other classes existed. The wing's main
+// plane and flap now draw in one material each (the dark slot faces are vertex colours): their material is the wing's, not six.
 const GT_FINGERPRINT = [
   "BoxGeometry 24 00b13db1768bdf7acbfed4d2916c1f10 2.2,0.16,0 1b1d20:0.6:0:000000",
-    "BoxGeometry 24 016f0dbb33e578141d37bb45df7c41e1 -0.11,0,0 1b1d20:0.5:0.2:000000|1b1d20:0.5:0.2:000000|1b1d20:0.5:0.2:000000|060708:0.8:0:000000|1b1d20:0.5:0.2:000000|1b1d20:0.5:0.2:000000",
+    "BoxGeometry 24 016f0dbb33e578141d37bb45df7c41e1 -0.11,0,0 1b1d20:0.5:0.2:000000",
     "BoxGeometry 24 07a16b0854a572aab88e8732e30d5f27 -2.38,0.62,-0.62 400000:1:0:ff1010",
     "BoxGeometry 24 07a16b0854a572aab88e8732e30d5f27 -2.38,0.62,0.62 400000:1:0:ff1010",
     "BoxGeometry 24 66170f477fc1bf8d062fab0783f4e72f 2.18,0.5,-0.6 ffffff:1:0:fff2d0",
     "BoxGeometry 24 66170f477fc1bf8d062fab0783f4e72f 2.18,0.5,0.6 ffffff:1:0:fff2d0",
     "BoxGeometry 24 6be779015c13a6ebf03458ad49cf3ab1 -2,1.02,-0.5 1b1d20:0.6:0:000000",
     "BoxGeometry 24 6be779015c13a6ebf03458ad49cf3ab1 -2,1.02,0.5 1b1d20:0.6:0:000000",
-    "BoxGeometry 24 f74309680df0723bf7ef66e1684ef47d -1.93,1.22,0 1b1d20:0.5:0.2:000000|060708:0.8:0:000000|1b1d20:0.5:0.2:000000|1b1d20:0.5:0.2:000000|1b1d20:0.5:0.2:000000|1b1d20:0.5:0.2:000000",
+    "BoxGeometry 24 f74309680df0723bf7ef66e1684ef47d -1.93,1.22,0 1b1d20:0.5:0.2:000000",
     "CylinderGeometry 148 29cc2175df10ef26d4a7f13323762d59 0,0,0 151515:0.9:0:000000",
     "CylinderGeometry 148 29cc2175df10ef26d4a7f13323762d59 0,0,0 151515:0.9:0:000000",
     "CylinderGeometry 148 29cc2175df10ef26d4a7f13323762d59 0,0,0 151515:0.9:0:000000",
@@ -195,6 +196,34 @@ const GT_FINGERPRINT = [
   const want = GT_FINGERPRINT.slice().sort(), have = got.sort();
   check(want.length === have.length && want.every((r, i) => r === have[i]), `the GT model is unchanged (${have.length} meshes match the original fingerprint)`);
   gt.dispose();
+}
+
+// 11. shared skins and remote cars: every GT1 (or CITY) uses one lofted skin, freed when the last car of the class is disposed; a remote car
+// casts no shadow and has a simple skin beyond 60 m (a THREE.LOD) on the classes with a lofted skin, the GT has no such skin
+{
+  check(bodySpec(CARS.GT1) === bodySpec(CARS.GT1), 'a class has one shape however many cars use it');
+  const a = new CarView(CARS.GT1), b = new CarView(CARS.GT1, 0xff0000, { ghost: true });
+  const skin = bodySpec(CARS.GT1).loft.body;
+  let freed = 0; skin.addEventListener('dispose', () => freed++);
+  check(bodyOf(a).geometry === skin, 'a GT1 uses the class skin, not a copy');
+  let shadows = 0, lods = 0;
+  b.root.traverse(o => { if (o.isMesh && o.castShadow) shadows++; if (o.isLOD) lods++; });
+  check(shadows === 0 && lods === 1, `a remote GT1 casts no shadow (${shadows} casters) and has one LOD switch (${lods})`);
+  check(b.root.children[0].children[0].children[0].children[0].isLOD && b.root.getObjectByProperty('isLOD', true).levels.length === 2 && b.root.getObjectByProperty('isLOD', true).levels[1].distance === 60, 'the remote car swaps at 60 m');
+  const lowTris = o => { let n = 0; o.traverse(m => { if (m.isMesh) n += m.geometry.index.count / 3; }); return n; };
+  const lod = b.root.getObjectByProperty('isLOD', true);
+  check(lowTris(lod.levels[1].object) < lowTris(lod.levels[0].object) / 2, `the far skin has under half the triangles (${lowTris(lod.levels[1].object)} against ${lowTris(lod.levels[0].object)})`);
+  a.dispose();
+  check(freed === 0, 'disposing one GT1 keeps the skin the other still draws');
+  b.dispose();
+  check(freed === 1, 'disposing the last GT1 frees the skin');
+  const c = new CarView(CARS.GT1);
+  check(bodyOf(c).geometry !== skin && bodyOf(c).geometry.getAttribute('position').count > 0, 'a GT1 built after that gets a fresh skin');
+  c.dispose();
+  const g = new CarView(CARS.GT, 0xff0000, { ghost: true });
+  let gl = 0, gs = 0; g.root.traverse(o => { if (o.isLOD) gl++; if (o.isMesh && o.castShadow) gs++; });
+  check(gl === 0 && gs === 0, 'a remote GT casts no shadow and keeps its own cheap body (no LOD)');
+  g.dispose();
 }
 
 // No id, or an unknown id, gives the GT's own shape.

@@ -8,7 +8,8 @@ import * as THREE from 'three';
 
 const SKIN = [0xf1c9a5, 0xe0ac88, 0xc68a62, 0x9a6540, 0x6b4328, 0xf6d6bd];
 const HEAD_Y = 0.64, HEAD_R = 0.155;
-export const CROWD_FAR = 520;   // metres: beyond this a crowd is not drawn (src/cull.js propCuller); a person there is under two pixels tall
+export const CROWD_FAR = 400;   // metres: beyond this a crowd is not drawn (src/cull.js propCuller); a person there is about three pixels tall
+export const CROWD_NEAR = 140;  // metres: a crowd whose nearest part is further than this is drawn with the simple person below
 
 function personGeometry() {
   const pos = [], skin = [], idx = [];
@@ -38,10 +39,32 @@ function personGeometry() {
   return g;
 }
 
+// The person for a crowd far away: a three sided prism as tall as the head, the shirt on the sides and the skin tone on the top, 7 triangles
+// instead of 16 (src/cull.js propCuller swaps it in on the crowd's mesh beyond CROWD_NEAR).
+function farGeometry() {
+  const pos = [], skin = [], idx = [];
+  const R = 0.24, H = 0.8;
+  const ring = [0, 1, 2].map(k => { const a = k * Math.PI * 2 / 3 + Math.PI / 2; return [Math.cos(a) * R, Math.sin(a) * R]; });
+  for (let k = 0; k < 3; k++) {
+    const a = ring[k], b = ring[(k + 1) % 3], s = pos.length / 3;
+    pos.push(a[0], 0, a[1], b[0], 0, b[1], b[0], H, b[1], a[0], H, a[1]); skin.push(0, 0, 0, 0);
+    idx.push(s, s + 2, s + 1, s, s + 3, s + 2);
+  }
+  const s = pos.length / 3;
+  for (const [x, z] of ring) { pos.push(x, H, z); skin.push(1); }
+  idx.push(s, s + 1, s + 2);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('skin', new THREE.Float32BufferAttribute(skin, 1));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 let shared = null;
 function parts() {
   if (shared) return shared;
-  const geo = personGeometry();
+  const geo = personGeometry(), far = farGeometry();
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const tones = SKIN.map(h => new THREE.Color(h)).map(c => `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`);
   mat.onBeforeCompile = sh => {
@@ -58,14 +81,14 @@ function parts() {
 #endif`);
   };
   mat.customProgramCacheKey = () => 'crowd-skin';
-  shared = { geo, mat };
+  shared = { geo, far, mat };
   return shared;
 }
 
 // One InstancedMesh for these people (null for none). A standing person is taller and stands a little higher (on a step).
 export function crowdMesh(spots) {
   if (!spots.length) return null;
-  const { geo, mat } = parts();
+  const { geo, far, mat } = parts();
   const im = new THREE.InstancedMesh(geo, mat, spots.length);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), p = new THREE.Vector3(), s = new THREE.Vector3();
   spots.forEach(([a, y, z, colour, h, standing], k) => {
@@ -77,5 +100,6 @@ export function crowdMesh(spots) {
   im.castShadow = false;
   im.userData.debug = 'building';
   im.userData.maxDist = CROWD_FAR;
+  im.userData.nearGeometry = geo; im.userData.farGeometry = far; im.userData.nearDist = CROWD_NEAR;   // swapped by propCuller
   return im;
 }

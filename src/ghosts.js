@@ -482,7 +482,7 @@ export class Ghosts {
 export function threeFactory(scene, tagRoot) {
   return {
     create({ livery, car }) {
-      const view = new CarView(car || GT, livery);
+      const view = new CarView(car || GT, livery, { ghost: true });
       scene.add(view.root);
       const tag = document.createElement('div');
       tag.className = 'mp-tag';

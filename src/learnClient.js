@@ -2,7 +2,9 @@
 // class in localStorage (one key per track build and class), and builds the driver that follows it. Nothing here touches lap times,
 // boards or global times: a lap with the autopilot is flagged exactly as before (timer.noteAutopilot in main.js).
 
-import LearnWorker from './learnWorker.js?worker&inline';
+// the training worker: a file of its own, fetched when training starts (vite.config.js turns this into learnWorker.js?worker, or
+// ?worker&inline for the single file artifact build, which has no files beside the page)
+import LearnWorker from 'lakeside-learn-worker';
 import { sharedRacingLine } from './autopilot.js';
 import { makeContext, makeDriver, genomeFromJSON, genomeKey } from './learn.js';
 

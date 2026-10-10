@@ -30,8 +30,10 @@ export function curve(pts) {
 export const smooth = t => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
 
 // Stations along x from a to b: even steps, and a finer run at each end where the shape turns fastest.
-export function stations(a, b, step = 0.02, fine = 0.12, fineStep = 0.008) {
+// `edges` are x positions where the shape has a sharp step (the ends of a wheel arch): each gets a few stations close to it on both sides.
+export function stations(a, b, step = 0.02, fine = 0.12, fineStep = 0.008, edges = []) {
   const out = new Set([a, b]);
+  for (const e of edges) for (const d of [0, 0.003, 0.009, 0.02]) { out.add(+(e + d).toFixed(5)); out.add(+(e - d).toFixed(5)); }
   for (let x = a; x <= b + 1e-9; x += step) out.add(+x.toFixed(5));
   for (let d = 0; d <= fine; d += fineStep) { out.add(+(a + d).toFixed(5)); out.add(+(b - d).toFixed(5)); }
   return [...out].filter(v => v >= a - 1e-9 && v <= b + 1e-9).sort((p, q) => p - q);

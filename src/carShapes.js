@@ -16,10 +16,14 @@ const pair = (p, s, rz = 0, ry = 0) => [{ p, s, rz, ry }, { p: [p[0], p[1], -p[2
 // The wheel arch: the height of its roof at x, or -Infinity outside it.
 const archTop = (x, a) => { const d = x - a.x; return Math.abs(d) < a.R ? a.cy + Math.sqrt(a.R * a.R - d * d) : -Infinity; };
 
+// How densely a skin is sampled along the car: the even step, the length of the finer run at each end and its step, in metres.
+// HIGH is the car as drawn up close; LOW is the same shape for a remote car further than a few tens of metres away (src/car.js).
+const HIGH = { step: 0.05, fine: 0.12, fineStep: 0.02 }, LOW = { step: 0.1, fine: 0.1, fineStep: 0.05 };
+
 // Build the three skins from a hull definition.
-function buildHull(h) {
+export function buildHull(h, q = HIGH) {
   const { F } = h;
-  const body = loft(stations(-F, F), x => {
+  const body = loft(stations(-F, F, q.step, q.fine, q.fineStep, q === HIGH ? h.arches.flatMap(a => [a.x - a.R, a.x + a.R]) : []), x => {
     const ys = h.ys(x);
     let y0 = h.yb(x);
     for (const a of h.arches) y0 = Math.max(y0, archTop(x, a));
@@ -30,30 +34,44 @@ function buildHull(h) {
     const yB = c.yB(x);
     return cabRing({ yB, yR: Math.max(c.roof(x), yB + 0.012), wb: c.wb(x), wr: c.wr(x), crown: c.crown });
   };
-  const cab = loft(stations(c.x0, c.x1, 0.02, 0.1, 0.008), cabAt);
+  const cab = loft(stations(c.x0, c.x1, q.step, Math.min(q.fine, 0.1), q.fineStep), cabAt);
   const inside = [0, 0.7, 0], lift = 0.004, n = 2 * (CAB.SIDE + 1 + CAB.CORNER) + CAB.ROOF - 1;
   const parts = [];
   const point = (x, j, flip) => { const ring = cabAt(x), [z, y] = ringPoint(ring, flip ? n - 1 - j : j, lift); return [x, y, z]; };
   for (const w of h.windows) {
     if (w.side) {
       for (const flip of [false, true]) {
-        parts.push(patch(18, 6, (u, v) => {
+        parts.push(patch(q === HIGH ? 18 : 8, q === HIGH ? 6 : 3, (u, v) => {
           const j = lerp(w.j0, w.j1, v), xf = lerp(w.front[0], w.front[1], v), xr = lerp(w.rear[0], w.rear[1], v);
           return point(lerp(xf, xr, u), j, flip);
         }, inside));
       }
     } else {
-      parts.push(patch(18, 6, (u, v) => point(lerp(w.x0, w.x1, u), lerp(w.j0, w.j1, v), false), inside));
+      parts.push(patch(q === HIGH ? 18 : 8, q === HIGH ? 6 : 3, (u, v) => point(lerp(w.x0, w.x1, u), lerp(w.j0, w.j1, v), false), inside));
     }
   }
   return { body, cab, glass: merge(parts) };
+}
+
+// The skins of a shape with a `hull` definition, as the properties `loft` (close up) and `loftLow` (far away). They are built when first
+// asked for and rebuilt after freeLoft(): a shape that is only read for its numbers (src/carFx.js, the garage camera) never builds them,
+// and CarView shares one set between all the cars of a class and frees it when the last of them goes (src/car.js).
+function withLofts(spec) {
+  let hi = null, lo = null;
+  Object.defineProperties(spec, {
+    loft: { get() { return hi ||= buildHull(spec.hull, HIGH); }, enumerable: true },
+    loftLow: { get() { return lo ||= buildHull(spec.hull, LOW); }, enumerable: true },
+    freeLoft: { value() { for (const set of [hi, lo]) if (set) for (const g of Object.values(set)) g.dispose(); hi = lo = null; } },
+  });
+  return spec;
 }
 
 // The liners: a dark panel on each side of each wheel, from the road up to the arch roof.
 const liners = (c, arches, track, tyreW) => arches.flatMap(a => [1, -1].map(s => ({ x: a.x, y: c.wheelRadius, z: s * (track / 2 - tyreW / 2 - 0.012), R: a.R + 0.02, floor: a.floor })));
 
 // CITY: a Peugeot 108 three-door hatchback.
-export function cityShape(c) {
+export const cityShape = c => withLofts(cityShapeRaw(c));
+function cityShapeRaw(c) {
   const L = c.length, F = L / 2, wb = c.wheelbase, r = c.wheelRadius;
   const fx = F - 0.2014 * L, rx = fx - wb;                         // the axles in the hull's own axes: 700 mm of nose, 435 mm of tail
   const dx = c.wheelbase * (1 - c.frontWeight) - fx;
@@ -76,7 +94,7 @@ export function cityShape(c) {
     { x0: 1.04, x1: 0.30, j0: 12.6, j1: 23.4 },                                       // the windscreen
     { x0: -1.46, x1: -1.69, j0: 12.8, j1: 23.2 },                                        // the tailgate
   ];
-  const loftGeo = buildHull({ F, ys, yb, w, crown, arches, rt: 0.10, rb: 0.05, z0: 0.25, cab, windows });
+  const hullDef = { F, ys, yb, w, crown, arches, rt: 0.10, rb: 0.05, z0: 0.25, cab, windows };
   const yc = x => ys(x) + crown(x);
   // the bonnet curve for the number plate, from the two ends and the middle
   const P = x => [x, yc(x)], p0 = P(1.55), p2 = P(1.2), pm = P(1.38), p1 = [2 * pm[0] - (p0[0] + p2[0]) / 2, 2 * pm[1] - (p0[1] + p2[1]) / 2];
@@ -87,7 +105,7 @@ export function cityShape(c) {
   for (let x = F - 0.01; x >= 1.11; x -= 0.04) bonnetPts.push([x, yc(x)]);
   const tailPts = [[-1.70, roof(-1.70)], [-1.72, ys(-1.72) + crown(-1.72)], [-1.7375 + 0.004, ys(-F + 0.01)], [-F, ys(-F) - 0.04], [-F, 0.45]];
   return {
-    half, dx, tyreW: 0.165, loft: loftGeo, liners: liners(c, arches, c.trackWidth, 0.165),
+    half, dx, tyreW: 0.165, hull: hullDef, liners: liners(c, arches, c.trackWidth, 0.165),
     rim: { color: 0x8f969d, roughness: 0.4, metalness: 0.3 },
     glass: { color: 0x4a5c72, roughness: 0.16, metalness: 0.1, emissive: 0x0a1018 },
     stripes: [{ pts: bonnetPts, off: 0.0 }, { pts: roofPts, off: 0.0 }, { pts: tailPts, off: 0.0 }],
@@ -112,7 +130,8 @@ export function cityShape(c) {
 // GT1: a Group GT1 racer after the Aston Martin DBR9. A long low nose between front fenders that stand clear of the bonnet, a
 // narrow cabin set back, and swollen rear haunches: the body's skin is one surface, with the shoulder rising from the low front
 // fenders over the doors to the full-width rear haunches. Splitter, diffuser and a big wing on two uprights (with the DRS flap).
-export function gt1Shape(c) {
+export const gt1Shape = c => withLofts(gt1ShapeRaw(c));
+function gt1ShapeRaw(c) {
   const L = c.length, F = L / 2, W = c.width, r = c.wheelRadius, tyreW = 0.28;
   const fx = c.wheelbase * (1 - c.frontWeight), rx = fx - c.wheelbase;
   const R = r + 0.065, half = 0.93;
@@ -133,7 +152,7 @@ export function gt1Shape(c) {
     { x0: 0.72, x1: 0.08, j0: 12.6, j1: 23.4 },
     { x0: -1.38, x1: -1.72, j0: 12.8, j1: 23.2 },
   ];
-  const loftGeo = buildHull({ F, ys, yb, w, crown, arches, rt: 0.09, rb: 0.04, z0: 0.45, cab, windows });
+  const hullDef = { F, ys, yb, w, crown, arches, rt: 0.09, rb: 0.04, z0: 0.45, cab, windows };
   const yc = x => ys(x) + crown(x);
   const P = x => [x, yc(x)], p0 = P(1.7), p2 = P(1.05), pm = P(1.35), p1 = [2 * pm[0] - (p0[0] + p2[0]) / 2, 2 * pm[1] - (p0[1] + p2[1]) / 2];
   const roofPts = [];
@@ -146,7 +165,7 @@ export function gt1Shape(c) {
   tailPts.push([-F, yc(-F)], [-F, 0.5]);
   const wx = -F + 0.35;
   return {
-    half, dx: 0, tyreW, loft: loftGeo, liners: liners(c, arches, c.trackWidth, tyreW),
+    half, dx: 0, tyreW, hull: hullDef, liners: liners(c, arches, c.trackWidth, tyreW),
     rim: { color: 0x8f969d, roughness: 0.4, metalness: 0.3 },
     glass: { color: 0x4a5c72, roughness: 0.16, metalness: 0.1, emissive: 0x0a1018 },
     stripes: [{ pts: bonnetPts, off: 0 }, { pts: roofPts, off: 0 }, { pts: tailPts, off: 0 }],
