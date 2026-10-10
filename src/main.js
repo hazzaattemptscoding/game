@@ -43,6 +43,7 @@ import { createEnvironment } from './environment.js';
 import { envFromParams } from './weather.js';
 import { isRace } from './session.js';
 import { createGantryScreen } from './gantryScreen.js';
+import { bootStep, bootDone } from './boot.js';
 import powermediaLogo from './assets/powermedia-white.png';
 import deltadashLogo from './assets/deltadash.png';
 import '@fontsource/barlow-condensed/600.css';
@@ -59,6 +60,7 @@ const params = new URLSearchParams(location.search);
 const settings = loadSettings();
 
 // --- world ---
+await bootStep('Building the track', 0.05);   // the loading screen paints before each heavy step (src/boot.js)
 const track = buildTrack();
 const car = new Car(carById(settings.car), track);   // the car class (settings.car, picked in the garage): the same object for the whole session
 car.setAssists({ tc: settings.assistTc, abs: settings.assistAbs, esc: settings.assistEsc });
@@ -106,11 +108,14 @@ sun.shadow.normalBias = 0.02;
 scene.add(sun, sun.target);
 const SUN_DIR = new THREE.Vector3(-0.5, 0.75, 0.42).normalize();   // the environment (src/environment.js) moves it with the time of day
 
+await bootStep('Shaping the ground', 0.2);
 const ground = createGround(track);
 const terrain = ground.mesh();
 const world = new THREE.Group();
 const trackScene = buildTrackScene(track, ground);
+await bootStep('Building the circuit and its surroundings', 0.4);
 const scenery = buildScenery(track, ground);
+await bootStep('Finishing the scene', 0.8);
 world.add(terrain, trackScene, scenery);
 const optimised = optimiseWorld(world);   // long ribbons in pieces and small meshes merged (src/cull.js); the report tool swaps the real objects back
 freezeWorld(world);
@@ -462,7 +467,7 @@ function frame(now) {
   renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+requestAnimationFrame(now => { frame(now); bootDone(); });
 // for quick checks from the browser console
 window.lakeside = { THREE, optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen, marshal, globalTimes, boardGhost, simTime: () => simTime };
 
