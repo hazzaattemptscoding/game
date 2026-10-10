@@ -14,6 +14,7 @@ import { buildGantry, buildStartPaint } from './gantry.js';
 import { buildBridge } from './bridge.js';
 import { meadowMaterial } from './scenery.js';
 import { garageBay } from './pitBuilding.js';
+import { fenceOpenings } from './pitDressing.js';
 import { Kit } from './meshKit.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
@@ -243,8 +244,16 @@ export function buildTrackScene(T, ground) {
       wall('white', 0, 0.8, 1.1);
       cap('white', 0, 0.6, 1.1);
       wall('wallConcrete', 0.6, 0, 1.1, 6);
-      strips('fence').strip(idx, k => at(k, 0.3, 1.1), k => at(k, 0.3, 3.1), k => len[k] / 2, 0.55, 1.55);
+      // the debris fence on top, broken by an opening at each team's stand where the pit boards go out (src/pitDressing.js); the wall
+      // under it and its collision faces run on unbroken
+      const openings = fenceOpenings(T), sAt = k => T.s[pts[k][3]];
+      const gap = k => openings.some(([a, c]) => Math.max(sAt(k), sAt(k + 1)) >= a && Math.min(sAt(k), sAt(k + 1)) <= c && Math.abs(sAt(k + 1) - sAt(k)) < 50);
+      let run = [];
+      const flush = () => { if (run.length > 1) strips('fence').strip(run, k => at(k, 0.3, 1.1), k => at(k, 0.3, 3.1), k => len[k] / 2, 0.55, 1.55); run = []; };
+      for (const k of idx) { run.push(k); if (k < idx.length - 1 && gap(k)) { flush(); } }
+      flush();
       for (let m = 0; m <= len[len.length - 1]; m += 5) fencePosts.push([...pointAt(pts, nrm, len, m, 0.3), 3.1]);
+      for (const k of idx) if (k < idx.length - 1 && gap(k)) for (const e of [k, k + 1]) fencePosts.push([...at(e, 0.3, 0), 3.1]);   // a post each side of an opening
       group.add(attenuator(pts, nrm, mat.attenuator));
     } else if (b.type === BARRIER.PITOUTER) {
       wall('pitOuter', 0, -0.2, 0.81, 6); cap('pitOuter', 0, 0.3, 0.81);

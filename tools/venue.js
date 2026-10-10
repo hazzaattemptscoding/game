@@ -10,6 +10,8 @@
 //   - no bridge pier stands within 6 m of the containment wall of any part of the circuit
 //   - nothing of the venue within 6 m of a parked service vehicle's spot, no stand or building on the pit exit side (left, s 335 to 520)
 //     or in the paddock behind the garages (src/vehicleBays.js); the paddock awnings 25 m or more behind the garage fronts
+//   - the pit wall team stands: the gantry deck 2.4 m or more over the lane, a pit board 1 m at most over the track, the fence openings
+//     on the gantry; the service area before the garages off the lane, the entry road and the vehicle spots, its buildings out of the paddock zone
 // It checks the plan (numbers only), the same one the game draws.
 
 import { buildTrack } from '../src/track.js';
@@ -22,7 +24,8 @@ import { planExtras, footBlockers, smallBlockers, footprintPoints, SMALL_RULES, 
 import { planFences } from '../src/grandstands.js';
 import { entryRoadAt } from '../src/track.js';
 import { planMasts, MAST_BEHIND, MAST_BARRIER } from '../src/floodlights.js';
-import { vehicleBlockers, bayDistance, BAY_CLEAR, VEHICLE_BAYS } from '../src/vehicleBays.js';
+import { vehicleBlockers, bayDistance, BAY_CLEAR, VEHICLE_BAYS, VEHICLE_ZONES } from '../src/vehicleBays.js';
+import { planPitDressing, fenceOpenings, itemPoints, PIT_DRESS } from '../src/pitDressing.js';
 
 const T = buildTrack(), ground = createGround(T), errors = [];
 const fail = m => errors.push(m);
@@ -157,6 +160,28 @@ for (const m of masts) {
   for (const c of small.cater) for (const [x, z] of c.pts) near('a kiosk', x, z);
   for (const f of T.furniture.filter(f => f.fill)) near(`a trackside ${f.type}`, f.x, f.z);
   console.log(`  service vehicle spots: ${VEHICLE_BAYS.length} kept clear, the nearest venue object ${worst.toFixed(1)} m away; ${inZone} points in the kept zones`);
+}
+
+// ---- pit area dressing (src/pitDressing.js): the team stands over the pit wall, the service area before the garages
+{
+  const pd = planPitDressing(T), G = pd.gantry;
+  if (G.stands.length < 5) fail(`only ${G.stands.length} team stands on the pit wall`);
+  if (PIT_DRESS.deckUnder < 2.4) fail(`the pit wall gantry deck is ${PIT_DRESS.deckUnder} m over the lane, need 2.4 for a car to pass under`);
+  if (PIT_DRESS.boardReach > 1.0) fail(`a pit board reaches ${PIT_DRESS.boardReach} m over the track, at most 1 m`);
+  for (const [a, b] of fenceOpenings(T)) if (a < G.from - 0.5 || b > G.to + 0.5) fail(`a debris fence opening at s ${a.toFixed(0)} is outside the gantry`);
+  const zone = VEHICLE_ZONES.find(z => z.name === 'paddock'), inZone = s => { const u = ((s - zone.s0) % T.length + T.length) % T.length; return u <= zone.s1 - zone.s0; };
+  const buildings = new Set(['hut', 'weighbridge', 'tyrebay']);
+  for (const it of pd.items) for (const p of itemPoints(T, it)) {
+    const what = `pit ${it.kind} at s ${it.s.toFixed(0)}`;
+    if (p.d < T.pitOut[p.i] + 3) { fail(`${what} is ${(p.d - T.pitOut[p.i]).toFixed(1)} m from the pit lane edge, need 3`); break; }
+    if (T.wall[0][p.i] - p.d < (buildings.has(it.kind) ? 3 : 1)) { fail(`${what} is ${(T.wall[0][p.i] - p.d).toFixed(1)} m inside the containment wall`); break; }
+    if (entryRoadAt(T, p.x, p.z, 2)) { fail(`${what} is on the pit entry road`); break; }
+    const bd = bayDistance(T, p.x, p.z);
+    if (bd < BAY_CLEAR - 0.05) { fail(`${what} is ${bd.toFixed(1)} m from a service vehicle's spot`); break; }
+    if (buildings.has(it.kind) && inZone(T.s[p.i])) { fail(`${what} is a building in the paddock zone kept for the service vehicles`); break; }
+  }
+  for (const k of ['hut', 'weighbridge', 'tyrebay', 'lamp', 'sign']) if (!pd.items.some(it => it.kind === k)) fail(`no pit ${k} placed`);
+  console.log(`  pit area: ${G.stands.length} team stands on the gantry (deck ${PIT_DRESS.deckUnder} m over the lane), ${fenceOpenings(T).length} fence openings, ${pd.items.length} service area items`);
 }
 
 console.log(`  ${small.cater.length} toilet blocks and kiosks, ${small.photo.length} photographers`);

@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import * as tex from './textures.js';
 import { Kit, hash01 } from './meshKit.js';
 import { lampMaterial } from './lamps.js';
+import { crowdMesh } from './crowd.js';
 
 
 function runsOf(N, test) {
@@ -80,6 +81,9 @@ export function buildPitDetail(T, ground) {
     const q = frame(u), [x, z] = at(u, f);
     kit.box(key, w, h1 - h0, d, x, flo(u) + (h0 + h1) / 2, z, -Math.atan2(q.tz, q.tx));
   };
+  // an upright cylinder centred at (u, f), from h0 to h1
+  const can = (key, u, f, r, h0, h1, n = 10) => { const [x, y, z] = pt(u, f, (h0 + h1) / 2); const c = new THREE.CylinderGeometry(r, r, h1 - h0, n); c.translate(x, y, z); kit.push(key, c); };
+  const crew = [];   // mechanics in the open garages, drawn as one crowd mesh
   // a flat quad facing `want` (a world direction); a, b, c, d as seen from the front, left to right, bottom then top
   const quad = (key, a, b, c, d, uv, want) => {
     const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
@@ -123,6 +127,16 @@ export function buildPitDetail(T, ground) {
       bar('dark', ua, ub, -REC, -0.2, DOOR_H, DOOR_H + 0.1);
       for (const du2 of [-1.5, 1.5]) bar('lamp', uc + du2 - 0.15, uc + du2 + 0.15, -REC + 0.5, -0.9, DOOR_H - 0.07, DOOR_H);
       bar('lamp', ua + 0.4, ub - 0.4, -REC + 0.3, -REC + 0.5, DOOR_H - 0.07, DOOR_H);
+      // the team's kit inside the door: two tyre trolleys with a set on each, a tool cart, a fire bottle, a mechanic or two
+      for (const f of [-1.4, -2.7]) {
+        bar('dark', ua + 0.45, ua + 1.35, f - 0.45, f + 0.45, lift + 0.08, lift + 0.16);
+        can('dark', ua + 0.9, f, 0.33, lift + 0.16, lift + 1.24);
+        can('render', ua + 0.9, f, 0.335, lift + 1.0, lift + 1.24);
+      }
+      bar('kitRed', ub - 1.4, ub - 0.5, -4.2, -3.5, lift + 0.15, lift + 1.0);
+      bar('dark', ub - 1.45, ub - 0.45, -4.25, -3.45, lift + 1.0, lift + 1.04);
+      can('kitRed', ua + 0.35, -0.8, 0.12, lift, lift + 0.6, 8);
+      for (const [cu, cf] of [[uc + 0.6, -1.8], [uc - 0.2, -3.6]]) if (hash01(b, Math.round(cf), 9) < 0.7) { const [x, y, z] = pt(cu, cf, lift); crew.push([x, y, z, [0xc8102e, 0x1d4e9e, 0xffd21f, 0x0e7c86, 0xff6a13, 0x3f9d4f, 0x8a5cd6, 0xf2f2ee][team], hash01(b, 3, 3), true]); }
     } else {
       face('pit', ua, ub, -0.15, 0.04, DOOR_H, DOORS[(b + (b >> 2)) & 1]);
     }
@@ -195,10 +209,13 @@ export function buildPitDetail(T, ground) {
     metal: new THREE.MeshStandardMaterial({ color: 0x9aa0a4, roughness: 0.6, metalness: 0.4 }),
     glass: lampMaterial({ color: 0x50697a, emissive: 0xffd9a0, roughness: 0.2, metalness: 0.3 }, 1.4),
     lamp: lampMaterial({ color: 0xe9ecee, emissive: 0xfff2cf }, 5),
+    kitRed: new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: 0.4, metalness: 0.2 }),   // tool carts and fire bottles
   };
   for (const k of ['render', 'concrete', 'metal']) mats[k].userData.wet = 'surface';   // darker and glossier in the rain (src/environment.js)
   const mesh = kit.build(mats);
   mesh.traverse(o => { if (o.isMesh) o.userData.debug = 'building'; });
   g.add(mesh);
+  const people = crowdMesh(crew);
+  if (people) g.add(people);
   return g;
 }
