@@ -12,6 +12,7 @@ import { loadBest, bestKey } from './board.js';
 import { CAR_LIST, carById } from './cars.js';
 import { ownLivery, localPlayerId, STRIPE_STYLES } from './livery.js';
 import { TIME_NAMES, WEATHER_NAMES } from './weather.js';
+import { learnGroup } from './learnUi.js';
 
 export const h = (tag, cls, ...kids) => {
   const e = document.createElement(tag);
@@ -388,6 +389,7 @@ function settingsScreen() {
             onOff('FPS readout', () => !!settings.hud.fps, v => { settings.hud.fps = v; }, 'Frame rate and frame time in the top corner. The F key switches it too.'),
             onOff('Handling readout', () => !!settings.debug, v => { settings.debug = v; }),
             ap));
+          if (api.learn && !reverseNow) p.append(learnGroup({ h, btn, group, segRow }, api.learn, settings, persist, api.autopilotStyleChanged));
         },
         Interface(p) {
           // every switch writes into settings.hud / settings.trackMap; the HUD reads them each frame. `rows` are re-synced after any

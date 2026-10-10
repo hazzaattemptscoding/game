@@ -84,7 +84,7 @@ export class Autopilot {
     // assist plan: per lap segment, per assist, 0 keep the player's state, 1 off, 2 on (src/learn.js); baseAssists is the player's state
     this.assistPlan = assistPlan || null;
     this.baseAssists = baseAssists || { tc: true, abs: true, esc: true };
-    this._seg = -1;
+    this.planOn = true;    // the game switches the plan off when a race sets its own assists
     this.input = { steer: 0, throttle: 0, brake: 0, drs: true };
     this.brakeCap = 1;
     this.throttleCap = 1;
@@ -92,7 +92,7 @@ export class Autopilot {
   }
 
   drive(car) {
-    if (this.assistPlan) this.applyAssistPlan(car);
+    if (this.assistPlan && this.planOn) this.applyAssistPlan(car);
     const T = this.track, L = this.line, i = car.loc.i, v = Math.max(car.fwdSpeed, 0);
 
     // steering: aim at a point on the line ahead (pure pursuit), measured
@@ -138,8 +138,6 @@ export class Autopilot {
   // Switch the car's assists the way a player would (Car.setAssists, the same call the settings menu makes), per segment of the lap.
   applyAssistPlan(car) {
     const n = this.assistPlan.length / 3, seg = Math.min(n - 1, Math.floor(car.loc.s / this.track.length * n));
-    if (seg === this._seg) return;
-    this._seg = seg;
     const pick = (k, base) => { const v = this.assistPlan[seg * 3 + k]; return v === 0 ? base : v === 2; };
     const b = this.baseAssists;
     car.setAssists({ tc: pick(0, b.tc), abs: pick(1, b.abs), esc: pick(2, b.esc) });

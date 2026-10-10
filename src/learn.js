@@ -110,12 +110,13 @@ export function interpolate(ctrl, N) {
 const clamp1 = v => (v < -1 ? -1 : v > 1 ? 1 : v);
 
 // ---- a context: everything that depends on the track and the car class, built once ----
-export function makeContext(T, cfg, { skill = SKILL } = {}) {
-  const baseLine = computeRacingLine(T);
+export function makeContext(T, cfg, { skill = SKILL, light = false, baseLine: given } = {}) {
+  const baseLine = given || computeRacingLine(T);
   const baseVmax = speedProfile(T, baseLine, cfg, skill);
   const corners = findCorners(T, baseVmax);
   const layout = layoutFor(corners.length);
   const ctx = { T, cfg, skill, baseLine, baseVmax, corners, layout, zones: limitZones(), sig: trackSig(T), carId: cfg.id };
+  if (light) return ctx;   // enough to decode a genome into a driver (the game's main thread); no training state
   // drive the plain autopilot from the standing start to the start of lap 2 and keep the car there
   const car = new Car(cfg, T);
   car.setAssists(true);
