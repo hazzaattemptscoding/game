@@ -280,6 +280,12 @@ if (DatabaseSync) { modelTests(() => new SqlTimesStore(sqlApi()), 'sqlite'); sql
 {
   const model = new T.TimesModel(new T.MemoryTimesStore()), limiter = new T.RateLimiter(1000);
   const run = (method, route, query = '', bodyText, now = 1000) => T.handleTimes(model, limiter, { method, route, params: new URLSearchParams(query), bodyText, ip: '9.9.9.9', now });
+  {
+    const r = await run('GET', 'times', 'board=dry-solo-fwd-on&n=1');
+    check(JSON.stringify(r.json.cars) === JSON.stringify(T.CAR_IDS), 'a board answer lists the car classes the worker knows');
+    const e = await run('GET', 'times', 'board=nope');
+    check(e.status === 400 && !('cars' in e.json), 'an error answer carries no list');
+  }
   eq((await run('POST', 'times', '', 'nope')).status, 400, 'bad JSON is 400');
   eq((await run('POST', 'times', '', JSON.stringify(lap({ time: 5 })))).status, 400, 'a validation failure is 400');
   eq((await run('POST', 'times', '', JSON.stringify(lap({ token: undefined })))).status, 400, 'a lap with no token is 400');
@@ -328,7 +334,7 @@ const post = (body, headers = ORIGIN) => fetch(base + '/times', { method: 'POST'
 try {
   let r = await post(lap());
   let j = await r.json();
-  eq([r.status, j], [200, { ok: true, improved: true, rank: 1, best: 100, entries: 1 }], 'POST /times');
+  eq([r.status, j], [200, { ok: true, improved: true, rank: 1, best: 100, entries: 1, cars: T.CAR_IDS }], 'POST /times');
   check(r.headers.get('access-control-allow-origin') === 'http://ok.example' && /Origin/.test(r.headers.get('vary')) && r.headers.get('cache-control') === 'no-store' && /json/.test(r.headers.get('content-type')), 'POST has CORS, Vary, no-store, JSON');
   r = await post(lap({ name: 'Ann', time: 99, sectors: [29, 30, 40], token: TOKEN2 }));
   eq((await r.json()).rank, 1, 'a faster driver ranks first');

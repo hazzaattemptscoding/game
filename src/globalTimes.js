@@ -76,6 +76,12 @@ export function createGlobalTimes(o = {}) {
   const token = o.token || timesToken(storage);   // sent with every post, never kept in the queue
   const getBase = o.getBase || (() => '');
   let queue = [], busy = false, retryAt = 0;
+  // The car classes the times server said it knows (`cars` in its answers, worker/src/times.js). An old server says nothing, which
+  // is GT only: a lap of another class waits in the queue until an answer lists its class, so it can never land on the GT board.
+  let known = new Set(['GT']), heard = false;
+  const noteCars = body => { if (body && Array.isArray(body.cars)) { known = new Set(['GT', ...body.cars.filter(c => CAR_IDS.includes(c))]); heard = true; } };
+  const carOf = p => boardCar(p.car !== undefined ? p.car : p.board && p.board.car);
+  const sendable = p => known.has(carOf(p));
   try { const q = JSON.parse(storage?.getItem(QUEUE_KEY) || '[]'); if (Array.isArray(q)) queue = q.filter(p => p && typeof p === 'object').slice(-QUEUE_MAX); } catch { queue = []; }
   const save = () => { try { storage?.setItem(QUEUE_KEY, JSON.stringify(queue)); } catch { /* storage full or blocked: the queue lives in memory */ } };
   const status = { last: null, error: null };   // the last answer the relay gave a post, and the last reason it could not be reached
@@ -83,6 +89,8 @@ export function createGlobalTimes(o = {}) {
   const api = {
     status,
     get pending() { return queue.length; },
+    get held() { return queue.filter(p => !sendable(p)).length; },     // laps waiting for the server to list their class
+    get cars() { return [...known]; },
     available: () => !!getBase(),
 
     // a finished lap: { name, time, sectors, board, build, ghost? }. Queued at once, sent when the relay answers.
@@ -102,17 +110,27 @@ export function createGlobalTimes(o = {}) {
       if (busy || !queue.length || !base || now() < retryAt) return false;
       busy = true;
       try {
-        while (queue.length) {
-          const post = queue[0];
+        // a lap of a class the server has not listed: ask once what it knows (any answer carries the list) before deciding to hold it
+        if (queue.some(p => !sendable(p))) {
+          try { const r = await fetchFn(`${base}/times?board=${boardKey({ weather: 'dry', mode: 'solo', dir: 'fwd', assists: 'on' })}&n=1`); if (r.ok) noteCars(await r.json()); } catch { /* the post below finds out */ }
+        }
+        for (;;) {
+          const i = queue.findIndex(sendable);
+          if (i < 0) {
+            if (!queue.length) return true;
+            status.error = heard ? 'The times server does not know this car yet: the lap waits' : 'The times server is older than this game: laps in this car wait';
+            retryAt = now() + RETRY_MS;
+            return false;
+          }
+          const post = queue[i];
           let r;
           try { r = await fetchFn(base + '/times', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...post, token }) }); }
           catch (e) { status.error = 'The times server cannot be reached'; retryAt = now() + RETRY_MS; return false; }
           let body = null; try { body = await r.json(); } catch { body = null; }
-          if (r.status === 200) { queue.shift(); save(); status.last = { post, answer: body }; status.error = null; o.onResult && o.onResult(post, body); continue; }
-          if (r.status === 400 || r.status === 403) { queue.shift(); save(); status.error = (body && body.error) || `refused (${r.status})`; continue; }   // never accepted: do not retry
+          if (r.status === 200) { queue.splice(queue.indexOf(post), 1); save(); noteCars(body); status.last = { post, answer: body }; status.error = null; o.onResult && o.onResult(post, body); continue; }
+          if (r.status === 400 || r.status === 403) { queue.splice(queue.indexOf(post), 1); save(); status.error = (body && body.error) || `refused (${r.status})`; continue; }   // never accepted: do not retry
           status.error = (body && body.error) || `the times server answered ${r.status}`; retryAt = now() + RETRY_MS; return false;   // 429, 5xx: later
         }
-        return true;
       } finally { busy = false; }
     },
 
@@ -121,7 +139,7 @@ export function createGlobalTimes(o = {}) {
       const base = getBase();
       if (!base || !validBoard(board)) return null;
       const q = `board=${boardKey(board)}&n=${n}` + (cleanName(name) ? `&name=${encodeURIComponent(cleanName(name))}` : '');
-      try { const r = await fetchFn(`${base}/times?${q}`); return r.ok ? await r.json() : null; } catch { return null; }
+      try { const r = await fetchFn(`${base}/times?${q}`); if (!r.ok) return null; const j = await r.json(); noteCars(j); return j; } catch { return null; }
     },
 
     // a stored ghost line: { name, time, ghost } (base64, src/lapTrace.js), or null

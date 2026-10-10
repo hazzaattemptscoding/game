@@ -226,7 +226,15 @@ export class TimesModel {
 
 // The whole request logic with no I/O: returns { status, json }. bodyText is the raw POST body (null when it was over MAX_BODY
 // before it was read), params a URLSearchParams.
-export async function handleTimes(model, limiter, { method, route, params, bodyText, ip, now }) {
+// Every answer that is not an error also lists the car classes this worker knows (`cars`). The game holds the laps of a class other
+// than the GT until it has seen that class listed, so a game deployed before the worker never puts a GT1 lap on the GT board of an
+// old worker (which ignores the class). An old worker sends no list, which reads as "GT only".
+export async function handleTimes(model, limiter, args) {
+  const r = await handleTimesInner(model, limiter, args);
+  return r.status === 200 ? { ...r, json: { ...r.json, cars: CAR_IDS.slice() } } : r;
+}
+
+async function handleTimesInner(model, limiter, { method, route, params, bodyText, ip, now }) {
   const bad = (status, error) => ({ status, json: { error } });
   if (route === 'times' && method === 'POST') {
     if (!limiter.allow(ip || 'unknown', now)) return bad(429, 'too many laps, try again later');

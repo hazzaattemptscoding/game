@@ -203,6 +203,38 @@ async function queueTests() {
   eq(g.name, 'Harry', 'ghost answer');
   down = true;
   eq(await gt.top(board, 'Harry'), null, 'an unreachable server gives null, not an error');
+
+  // deploy order: a lap in another class waits until the server lists that class (an old server ignores the class and would file it as a GT)
+  down = false;
+  const posted = [];
+  let serverCars; // undefined = an old server that sends no list
+  const fetch3 = async (url, init) => {
+    const body = url.includes('/times?') ? { board: 'dry-solo-fwd-on', entries: [], you: null } : { ok: true, improved: true, rank: 1, best: 90, entries: 1 };
+    if (serverCars) body.cars = serverCars;
+    if (init && init.method === 'POST') posted.push(JSON.parse(init.body));
+    return { status: 200, ok: true, json: async () => body };
+  };
+  const mk = () => createGlobalTimes({ fetchFn: fetch3, storage: { getItem: () => null, setItem() {} }, now: () => clock, getBase: () => base });
+  const gt3 = mk();
+  const city = { ...post(130), board: { ...board, car: 'CITY' }, car: 'CITY' }, gtPost = post(91);
+  await gt3.submit(city);
+  eq([posted.length, gt3.pending, gt3.held], [0, 1, 1], 'old server (no list): a CITY lap is not posted, it stays in the queue');
+  check(/older than this game/.test(gt3.status.error || ''), 'and the screen says why');
+  await gt3.submit(gtPost);
+  eq([posted.map(p => p.time), gt3.pending], [[91], 1], 'a GT lap still goes out past the waiting one');
+  clock += RETRY_MS + 1;
+  serverCars = ['GT', 'GT1'];
+  await gt3.flush();
+  eq([posted.map(p => p.car || 'GT').join(), gt3.pending, gt3.held], ['GT', 1, 1], 'a server that lists GT and GT1 does not release a CITY lap');
+  check(/does not know this car/.test(gt3.status.error || ''), 'with its own message');
+  clock += RETRY_MS + 1;
+  serverCars = ['GT', 'GT1', 'CITY'];
+  await gt3.flush();
+  eq([posted.map(p => p.car || 'GT').join(), gt3.pending], ['GT,CITY', 0], 'once the server lists CITY the lap is sent');
+  eq(gt3.cars.sort().join(), 'CITY,GT,GT1', 'the known classes follow the last list');
+  const gt4 = mk();
+  await gt4.submit({ ...post(86), board: { ...board, car: 'GT1' }, car: 'GT1' });
+  eq(posted.at(-1).car, 'GT1', 'a new session learns the list from a probe and sends a GT1 lap at once');
 }
 
 // ---- the lap watcher over simulated laps ----

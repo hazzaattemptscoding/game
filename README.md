@@ -83,6 +83,8 @@ Free plan limits: about 100,000 requests a day, and the relay counts every 20 me
 
 ## Deploying
 
+**Deploy the worker first, then the game.** The relay worker (`worker/`) holds the lap boards and the room relay. A game that is newer than the worker can post a GT1 or 108 lap that an old worker does not understand: it ignores the class and files the lap on the GT board. So publish the worker (`wrangler deploy` in `worker/`) before you upload `dist/`. The worker answers every successful `/times` and `/ghost` request with the car classes it knows (`cars`); the game keeps laps of any class other than the GT in its queue until it has seen that class listed, so a game that went out too early waits instead of posting to the wrong board. Rooms also work in either order: the game announces its protocol (`v: 2`) with its livery and the worker passes it on.
+
 The build is static files only, so any web host works. First, once: `npm install`, then `npm run build`. Everything to upload is in `dist/` (it includes `.htaccess` and `_headers`, which come from `public/`).
 
 **IONOS web hosting (Apache)**
