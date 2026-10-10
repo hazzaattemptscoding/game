@@ -15,7 +15,21 @@
   --f-display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --f-body: "Barlow", system-ui, sans-serif;
 }
-:root { --hud-card: color-mix(in srgb, var(--pit-1) 82%, transparent); }   /* the cards on the game's own surfaces: HUD, session, board */
+:root {
+  /* the HUD tokens (.interface-design/system.md, HUD exception): the old game's plates and colours, tinted with the settings' purple */
+  --hud-card: color-mix(in srgb, var(--pit-1) 80%, transparent);       /* the plates: translucent purple-dark (the old rgba(20,24,29,.65)) */
+  --hud-card-hi: color-mix(in srgb, var(--pit-1) 90%, transparent);    /* the messages, a little more solid */
+  --hud-well: color-mix(in srgb, var(--pit-0) 60%, transparent);       /* wells inside a plate: bars, sector cells, keys */
+  --hud-rule: rgba(235, 233, 243, .14);
+  --hud-label: #b4b0c8;     /* labels on a plate, 4.5:1 or better on the sky and in tunnels */
+  --hud-paper: var(--text);
+  --hud-yel: #ffd21f;       /* gear, lit items (DRS open, pit limiter), DRS available */
+  --hud-amber: #ff9a1f;     /* track limits */
+  --hud-start: #ff2a1a;     /* the start lights, lit */
+  --hud-start-off: #2b1010; /* the start lights, not yet */
+  --hud-shade: 0 1px 3px rgba(0, 0, 0, .6);
+  --r-hud: 2px;
+}
 * { box-sizing: border-box; }
 i, em { font-style: normal; }   /* the browser slants <i> and <em> by default: the UI has no slanted type */
 html, body {
@@ -25,107 +39,106 @@ html, body {
 #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 #hud { position: fixed; inset: 0; pointer-events: none; font-family: var(--f-body); font-variant-numeric: tabular-nums; color: var(--text); font-size: 14px; }
 
-/* the lap block, top left: one flat panel; the lap time is the big numeral, Last and Best under it */
-.hud-times { position: absolute; left: 16px; top: calc(12px + env(safe-area-inset-top, 0px)); width: 236px; padding: 12px 14px 10px; background: var(--hud-card); border: 1px solid var(--line-strong); border-radius: var(--r-card); transform: scale(var(--hs, 1)); transform-origin: 0 0; }
-.hud-cap { display: block; font-size: 11px; font-weight: 600; line-height: 1.2; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
-.hud-lap { font-family: var(--f-display); font-weight: 600; font-size: 44px; line-height: 1; letter-spacing: 0; color: var(--text); }
-.hud-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+/* the lap block, top left: one plate; the lap time is the big numeral, Last and Best under it. The HUD keeps the old game's look
+   (.interface-design/system.md, HUD exception): bold italic condensed numerals with a soft shade, dark plates tinted with the
+   settings' purple, the old timing greens, yellows and reds, and the old paper-white fills for lit items. */
+.hud-times { position: absolute; left: 16px; top: calc(12px + env(safe-area-inset-top, 0px)); width: 236px; padding: 12px 14px 10px; background: var(--hud-card); border-radius: var(--r-hud); transform: scale(var(--hs, 1)); transform-origin: 0 0; }
+.hud-cap { display: block; font-size: 11px; font-weight: 600; line-height: 1.2; letter-spacing: .1em; text-transform: uppercase; color: var(--hud-label); text-shadow: var(--hud-shade); }
+.hud-lap { font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 44px; line-height: 1; letter-spacing: 0; color: var(--hud-paper); text-shadow: var(--hud-shade); }
+.hud-rows { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hud-rule); }
 .hud-rows > div { display: grid; gap: 2px; }
-.hud-rows span { font-size: 11px; font-weight: 500; line-height: 1.2; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
-.hud-rows b { font-family: var(--f-display); font-weight: 600; font-size: 20px; line-height: 1.1; color: var(--text); }
+.hud-rows span { font-size: 11px; font-weight: 500; line-height: 1.2; letter-spacing: .1em; text-transform: uppercase; color: var(--hud-label); text-shadow: var(--hud-shade); }
+.hud-rows b { font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 20px; line-height: 1.1; color: var(--hud-paper); text-shadow: var(--hud-shade); }
 
-/* the live delta: a number and a bar from the centre, timing-pb ahead and timing-slow behind */
+/* the live delta: a number and a bar from the centre, green ahead and red behind (the old colours) */
 .hud-live { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .hud-live[hidden] { display: none; }
-.hud-live b { min-width: 84px; font-family: var(--f-display); font-weight: 600; font-size: 24px; line-height: 1; color: var(--text); }
+.hud-live b { min-width: 84px; font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 24px; line-height: 1; color: var(--hud-paper); text-shadow: var(--hud-shade); }
 .hud-live[data-s=ahead] b { color: var(--timing-pb); }
-.hud-live[data-s=behind] b { color: var(--timing-slow); }
-.hud-live-bar { position: relative; display: block; flex: 1; height: 4px; background: var(--pit-3); }
-.hud-live-bar::before { content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 10px; background: var(--text-faint); }
-.hud-live-bar i { position: absolute; top: 0; height: 100%; background: var(--timing-slow); }
+.hud-live[data-s=behind] b { color: var(--bad); }
+.hud-live-bar { position: relative; display: block; flex: 1; height: 6px; background: var(--hud-well); }
+.hud-live-bar::before { content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 12px; background: var(--hud-label); }
+.hud-live-bar i { position: absolute; top: 0; height: 100%; background: var(--bad); }
 .hud-live[data-s=ahead] .hud-live-bar i { background: var(--timing-pb); }
 
-/* the three sectors: a flat 4px bar each in its timing colour, then the name, the time and the change to the last lap */
-.hud-sectors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
-.hud-sectors i { position: relative; display: grid; gap: 1px; min-width: 0; font-size: 13px; line-height: 1.25; color: var(--text); }
-.hud-sectors i::before { content: ""; display: block; height: 4px; margin-bottom: 6px; background: var(--pit-3); }
-.hud-sectors i.best::before { background: var(--timing-best); }
-.hud-sectors i.pb::before { background: var(--timing-pb); }
-.hud-sectors i.slow::before { background: var(--timing-slow); }
-.hud-sectors b { font-family: var(--f-display); font-weight: 600; font-size: 13px; letter-spacing: .04em; color: var(--text-faint); }
-.hud-sectors span { font-weight: 600; }
-.hud-sectors em { font-style: normal; font-size: 12px; font-weight: 600; color: var(--text-faint); }
+/* the three sectors: each a solid plate in its timing colour (best, personal best) or a dark plate with the yellow time (slower) */
+.hud-sectors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.hud-sectors i { position: relative; display: grid; gap: 0; min-width: 0; padding: 4px 6px 5px; font-size: 13px; line-height: 1.2; color: var(--hud-paper); background: var(--hud-well); }
+.hud-sectors i.best { background: var(--timing-best); color: var(--pit-0); }
+.hud-sectors i.pb { background: var(--timing-pb); color: var(--pit-0); }
+.hud-sectors i.slow { color: var(--timing-slow); }
+.hud-sectors b { font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 13px; letter-spacing: .04em; opacity: .8; }
+.hud-sectors span { font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 19px; line-height: 1.05; }
+.hud-sectors em { font-size: 12px; font-weight: 600; }
 .hud-sectors em.neg { color: var(--timing-pb); }
 .hud-sectors em.pos { color: var(--timing-slow); }
+.hud-sectors i.best em, .hud-sectors i.pb em { color: inherit; opacity: .85; }
 
-/* the minisector ribbon: thin flat segments, the one being driven outlined */
-.hud-mini { display: flex; gap: 2px; width: 0; min-width: 100%; height: 4px; margin-top: 12px; }
+/* the minisector ribbon: 6 px segments in the timing colours, the one being driven outlined (the old bar, a little taller) */
+.hud-mini { display: flex; gap: 1px; width: 0; min-width: 100%; height: 6px; margin-top: 12px; }
 .hud-mini i { position: relative; flex: 1; min-width: 0; }
-.hud-mini i::before { content: ""; position: absolute; inset: 0; background: var(--pit-3); }
+.hud-mini i::before { content: ""; position: absolute; inset: 0; background: var(--hud-well); }
 .hud-mini i.purple::before { background: var(--timing-best); }
 .hud-mini i.green::before { background: var(--timing-pb); }
 .hud-mini i.yellow::before { background: var(--timing-slow); }
-.hud-mini i.cur::after { content: ""; position: absolute; left: -1px; right: -1px; top: -3px; bottom: -3px; border: 1px solid var(--text); }
+.hud-mini i.cur::after { content: ""; position: absolute; left: -1px; right: -1px; top: -3px; bottom: -3px; border: 1px solid var(--hud-paper); }
 
-.hud-limits { display: inline-block; margin-top: 10px; padding: 2px 8px; font-size: 12px; font-weight: 600; color: var(--warn); border: 1px solid var(--warn); border-radius: var(--r-ctl); }
+.hud-limits { display: inline-block; margin-top: 10px; padding: 2px 8px; font-size: 13px; font-weight: 600; color: var(--hud-amber); background: var(--hud-well); border-radius: 2px; }
 .hud-limits[hidden] { display: none; }
-.hud-fps { margin-top: 8px; font-size: 12px; color: var(--text-faint); }
-.hud-ping { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--lake); }
-.hud-ping[data-tone=mid] { color: var(--warn); }
+.hud-fps { margin-top: 8px; font-size: 12px; color: var(--hud-label); text-shadow: var(--hud-shade); }
+.hud-ping { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--timing-pb); text-shadow: var(--hud-shade); }
+.hud-ping[data-tone=mid] { color: var(--hud-amber); }
 .hud-ping[data-tone=bad] { color: var(--bad); }
 .hud-ping[hidden] { display: none; }
 
-/* the messages: a flat rectangle, the coloured edge on the left carries the meaning (info lake, warn warn, penalty or invalid bad,
-   best timing-best, personal best timing-pb). The text is upright. 140 ms in with 4 px of travel, 120 ms out. */
-.hud-flash, .hud-warn { position: absolute; left: 50%; top: 18%; z-index: 1; padding: 8px 16px 8px 14px; font-family: var(--f-body); font-weight: 600; font-size: 18px; line-height: 1.2; color: var(--text); white-space: nowrap; opacity: 0; transform: translate(-50%, 4px) scale(var(--hs, 1)); transform-origin: 50% 0; transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out); background: color-mix(in srgb, var(--pit-1) 88%, transparent); border: 1px solid var(--line-strong); border-left: 4px solid var(--bar); border-radius: var(--r-card); --bar: var(--lake); }
-.hud-warn { top: calc(18% + 52px); --bar: var(--warn); font-size: 16px; }
+/* the messages: a plate with the numerals in bold italic. Best and personal-best laps are filled with the brand purple (the old
+   purple flash), an invalid lap with the red, the track limits warning in amber with an amber edge (the old look). 140 ms in with
+   4 px of travel, 120 ms out. */
+.hud-flash, .hud-warn { position: absolute; left: 50%; top: 18%; z-index: 1; padding: 4px 16px; font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 30px; line-height: 1.1; color: var(--hud-paper); white-space: nowrap; opacity: 0; transform: translate(-50%, 4px) scale(var(--hs, 1)); transform-origin: 50% 0; transition: opacity 120ms var(--ease-out), transform 120ms var(--ease-out); background: var(--hud-card-hi); border-radius: 2px; text-shadow: var(--hud-shade); }
+.hud-warn { top: calc(18% + 54px); font-size: 22px; padding: 4px 14px; color: var(--hud-amber); border-left: 4px solid var(--hud-amber); }
 .hud-flash.show, .hud-warn.show { opacity: 1; transform: translate(-50%, 0) scale(var(--hs, 1)); transition: opacity 140ms var(--ease-out), transform 140ms var(--ease-out); }
-.hud-flash.info { --bar: var(--lake); }
-.hud-flash.best { --bar: var(--timing-best); }
-.hud-flash.pb { --bar: var(--timing-pb); }
-.hud-flash.bad { --bar: var(--bad); }
-.hud-flash.warn { --bar: var(--warn); }
+.hud-flash.best, .hud-flash.pb { background: var(--accent-fill); }
+.hud-flash.bad { background: var(--bad); color: var(--pit-0); text-shadow: none; }
+.hud-flash.warn { color: var(--hud-amber); }
 
 /* the dash, bottom right: speed, gear, revs and the assist lights */
-.hud-dash { position: absolute; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 236px; padding: 12px 14px; background: var(--hud-card); border: 1px solid var(--line-strong); border-radius: var(--r-card); transform: scale(var(--hs, 1)); transform-origin: 0 100%; }
-/* slipstream chip: a quiet panel above the dash with the lake dot and a thin strength bar (src/hud.js) */
-.hud-slip { position: absolute; left: -1px; bottom: calc(100% + 6px); display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--hud-card); border: 1px solid var(--line-strong); border-radius: var(--r-card); font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--text-dim); white-space: nowrap; }
+.hud-dash { position: absolute; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 236px; padding: 12px 14px; background: var(--hud-card); border-radius: var(--r-hud); transform: scale(var(--hs, 1)); transform-origin: 0 100%; }
+/* slipstream chip: a plate above the dash with a purple dot and a thin strength bar (src/hud.js) */
+.hud-slip { position: absolute; left: 0; bottom: calc(100% + 6px); display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--hud-card); border-radius: 2px; font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--hud-label); text-shadow: var(--hud-shade); white-space: nowrap; }
 .hud-slip[hidden] { display: none; }
-.hud-slip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--lake); }
-.hud-slip-bar { display: block; width: 56px; height: 3px; background: var(--pit-3); overflow: hidden; }
-.hud-slip-bar i { display: block; height: 100%; background: var(--lake); transform-origin: left; }
+.hud-slip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-soft); }
+.hud-slip-bar { display: block; width: 56px; height: 4px; background: var(--hud-well); overflow: hidden; }
+.hud-slip-bar i { display: block; height: 100%; background: var(--accent-soft); transform-origin: left; }
 /* speed lines at the screen edges while drafting (src/slipFx.js): a canvas under the HUD, drawn only with motion allowed */
 #slipfx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.hud-rev { height: 4px; margin-bottom: 10px; background: var(--pit-3); overflow: hidden; }
-.hud-rev i { display: block; height: 100%; background: var(--lake); transform-origin: left; }
+.hud-rev { height: 6px; margin-bottom: 10px; background: var(--hud-well); overflow: hidden; }
+.hud-rev i { display: block; height: 100%; background: var(--hud-paper); transform-origin: left; }
 .hud-rev i.hot { background: var(--bad); }
 .hud-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .hud-speed { display: flex; align-items: baseline; min-width: 0; }
-.hud-speed b { font-family: var(--f-display); font-weight: 600; font-size: 56px; line-height: .9; letter-spacing: 0; color: var(--text); }
-.hud-speed span { margin-left: 6px; font-family: var(--f-body); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
-.hud-gear { min-width: 40px; padding: 0; text-align: center; font-family: var(--f-display); font-weight: 600; font-size: 44px; line-height: 1; color: var(--text); }
+.hud-speed b { font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 56px; line-height: .9; letter-spacing: 0; color: var(--hud-paper); text-shadow: var(--hud-shade); }
+.hud-speed span { margin-left: 6px; font-family: var(--f-body); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--hud-label); text-shadow: var(--hud-shade); }
+.hud-gear { min-width: 40px; padding: 0; text-align: center; font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 46px; line-height: 1; color: var(--hud-yel); text-shadow: var(--hud-shade); }
 .hud-lights { display: flex; gap: 4px; margin-top: 12px; }
-.hud-lights span { flex: 1; padding: 4px 0 3px; text-align: center; font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--text-faint); border: 1px solid var(--line-strong); border-radius: 3px; }
-.hud-lights span.arm { color: var(--text-dim); border-color: var(--accent); }
-.hud-lights span.act { color: var(--text); background: var(--accent-tint); border-color: var(--accent); }
-.hud-lights span.zone { color: var(--lake); border-color: var(--lake); }           /* DRS available */
-.hud-lights span.on { color: var(--text); }
-#h-drs.on { color: var(--pit-0); background: var(--lake); border-color: var(--lake); }   /* DRS open */
-#h-pit.on { color: var(--warn); border-color: var(--warn); }                          /* pit limiter */
-.hud-lights span.off { color: var(--text-faint); border-color: var(--line); }
+.hud-lights span { flex: 1; padding: 4px 0 3px; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--hud-label); background: var(--hud-well); border-radius: 2px; }
+.hud-lights span.arm { color: var(--text-dim); }
+.hud-lights span.act { color: var(--pit-0); background: var(--hud-paper); }   /* an assist working: paper fill */
+.hud-lights span.zone { color: var(--hud-yel); }                              /* DRS available */
+.hud-lights span.on { color: var(--pit-0); background: var(--hud-yel); }
+.hud-lights span.off { color: var(--hud-label); opacity: .4; text-decoration: line-through; }   /* an assist switched off */
 
 /* the optional readouts: the handling line, the pedals and the keys, the help line */
-.hud-debug { position: absolute; left: 268px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); margin: 0; padding: 8px 10px; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--text-dim); background: var(--hud-card); border: 1px solid var(--line); border-radius: var(--r-ctl); display: none; }
-.hud-help { position: absolute; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); padding: 6px 14px; font-size: 13px; color: var(--text-dim); background: var(--hud-card); border: 1px solid var(--line); border-radius: var(--r-ctl); white-space: nowrap; transition: opacity 1s; }
+.hud-debug { position: absolute; left: 268px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); margin: 0; padding: 8px 10px; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--text-dim); background: var(--hud-card); border-radius: 2px; display: none; }
+.hud-help { position: absolute; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); padding: 6px 14px; font-size: 13px; color: var(--text); background: var(--hud-card); border-radius: 2px; white-space: nowrap; transition: opacity 1s; }
 .hud-help.fade { opacity: 0; }
 .hud-inputs { position: absolute; left: 50%; bottom: calc(52px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) scale(var(--hs, 1)); transform-origin: 50% 100%; display: flex; align-items: flex-end; gap: 14px; }
 .hud-pedals { display: flex; gap: 5px; }
-.hud-pedals span { position: relative; display: block; width: 12px; height: 46px; overflow: hidden; background: var(--pit-3); border-radius: 2px; }
-.hud-pedals i { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; transform: scaleY(0); transform-origin: bottom; background: var(--lake); }
+.hud-pedals span { position: relative; display: block; width: 12px; height: 46px; overflow: hidden; background: var(--hud-well); }
+.hud-pedals i { position: absolute; left: 0; right: 0; bottom: 0; height: 100%; transform: scaleY(0); transform-origin: bottom; background: var(--timing-pb); }
 .hud-pedals span:first-child i { background: var(--bad); }
 .hud-keys { display: grid; grid-template-columns: repeat(3, 24px); grid-template-rows: repeat(2, 24px); gap: 3px; font-size: 12px; }
-.hud-keys b { display: grid; place-items: center; font-weight: 600; color: var(--text-faint); background: color-mix(in srgb, var(--pit-0) 60%, transparent); border: 1px solid var(--line-strong); border-radius: 3px; }
-.hud-keys b.on { background: var(--accent-tint); border-color: var(--accent); color: var(--text); }
+.hud-keys b { display: grid; place-items: center; font-weight: 700; color: var(--hud-label); background: var(--hud-well); border-radius: 2px; }
+.hud-keys b.on { background: var(--hud-paper); color: var(--pit-0); }
 .hud-keys #h-ku { grid-column: 2; grid-row: 1; }
 .hud-keys #h-kl { grid-column: 1; grid-row: 2; }
 .hud-keys #h-kd { grid-column: 2; grid-row: 2; }
@@ -531,26 +544,25 @@ body.menu-main #hud, body.menu-main #sess { display: none; }
 /* session overlay: the race chip, start lights, banners, time trial laps (src/sessionHud.js) */
 #sess { position: fixed; inset: 0; pointer-events: none; z-index: 3; font-family: var(--f-body); font-variant-numeric: tabular-nums; color: var(--text); }
 #sess[hidden] { display: none; }
-.sess-chip { position: absolute; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 5px 10px; background: var(--hud-card); border: 1px solid var(--line-strong); border-radius: var(--r-card); white-space: nowrap; }
-.sess-title { padding: 0; font-family: var(--f-display); font-weight: 600; font-size: 14px; line-height: 1.2; letter-spacing: .12em; text-transform: uppercase; color: var(--text-dim); }
-.sess-lap { padding: 0 2px; font-family: var(--f-display); font-weight: 600; font-size: 22px; line-height: 1; color: var(--text); }
-.sess-pos { padding: 0; font-family: var(--f-display); font-weight: 600; font-size: 22px; line-height: 1.1; color: var(--text); }
-.sess-pos small { margin-left: 2px; font-family: var(--f-body); font-size: 13px; font-weight: 500; color: var(--text-dim); }
-.sess-lights { position: absolute; left: 50%; top: 14%; transform: translateX(-50%); display: flex; gap: 12px; padding: 12px 18px; background: var(--hud-card); border: 1px solid var(--line-strong); border-radius: var(--r-card); }
-.sess-lights i { width: clamp(30px, 6vw, 54px); aspect-ratio: 1; border-radius: 50%; background: color-mix(in srgb, var(--bad) 16%, var(--pit-1)); box-shadow: inset 0 0 0 3px var(--pit-0); }
-.sess-lights i.on { background: var(--bad); box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--bad) 45%, var(--pit-0)); }
+.sess-chip { position: absolute; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 5px 10px; background: var(--hud-card); border-radius: 2px; white-space: nowrap; }
+.sess-title { padding: 0; font-family: var(--f-display); font-weight: 600; font-size: 14px; line-height: 1.2; letter-spacing: .12em; text-transform: uppercase; color: var(--hud-label); text-shadow: var(--hud-shade); }
+.sess-lap { padding: 0 2px; font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 24px; line-height: 1; color: var(--hud-paper); text-shadow: var(--hud-shade); }
+.sess-pos { padding: 0; font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 24px; line-height: 1.1; color: var(--hud-paper); text-shadow: var(--hud-shade); }
+.sess-pos small { margin-left: 2px; font-family: var(--f-body); font-size: 13px; font-weight: 500; color: var(--hud-label); }
+.sess-lights { position: absolute; left: 50%; top: 14%; transform: translateX(-50%); display: flex; gap: 12px; padding: 12px 18px; background: var(--hud-card); border-radius: 2px; }
+.sess-lights i { width: clamp(30px, 6vw, 54px); aspect-ratio: 1; border-radius: 50%; background: var(--hud-start-off); box-shadow: inset 0 0 0 3px var(--pit-0); }
+.sess-lights i.on { background: var(--hud-start); box-shadow: inset 0 0 0 3px var(--pit-0), 0 0 22px 4px rgba(255, 42, 26, .65); }   /* the lit start lights glow (the old look) */
 .sess-lights[hidden], .sess-banner[hidden], .sess-laps[hidden], .sess-chip[hidden] { display: none; }
-/* the big banner (GO, the countdown, the flag): a flat rectangle, the coloured edge on the left; it fades in with 4 px of travel */
-.sess-banner { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); padding: 8px 24px 8px 20px; font-family: var(--f-display); font-weight: 700; font-size: clamp(44px, 9vw, 84px); line-height: 1; color: var(--text); white-space: nowrap; background: color-mix(in srgb, var(--pit-1) 88%, transparent); border: 1px solid var(--line-strong); border-left: 4px solid var(--bar); border-radius: var(--r-card); --bar: var(--lake); animation: hud-in 140ms var(--ease-out) both; }
-.sess-banner.ready { --bar: var(--accent); }
-.sess-banner.jump { --bar: var(--bad); font-size: clamp(26px, 5vw, 44px); }
-.sess-banner.flag { --bar: var(--accent); font-size: clamp(30px, 6vw, 56px); }
-.sess-laps { position: absolute; left: 16px; top: 38%; width: 210px; padding: 10px 12px; background: var(--hud-card); border: 1px solid var(--line); border-radius: var(--r-card); font-size: 14px; }
-.sess-laps h3 { margin: 0 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
-.sess-laps div { display: flex; gap: 8px; align-items: baseline; padding: 5px 0; border-top: 1px solid var(--line); }
+
+.sess-banner { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); padding: 8px 24px 8px 20px; font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: clamp(44px, 9vw, 84px); line-height: 1; color: var(--hud-paper); white-space: nowrap; background: var(--hud-card-hi); border-radius: 2px; text-shadow: 0 2px 8px rgba(0, 0, 0, .5); animation: hud-in 140ms var(--ease-out) both; }
+.sess-banner.jump { color: var(--hud-amber); font-size: clamp(26px, 5vw, 44px); }
+.sess-banner.flag { font-size: clamp(30px, 6vw, 56px); }
+.sess-laps { position: absolute; left: 16px; top: 38%; width: 210px; padding: 10px 12px; background: var(--hud-card); border-radius: 2px; font-size: 14px; }
+.sess-laps h3 { margin: 0 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--hud-label); }
+.sess-laps div { display: flex; gap: 8px; align-items: baseline; padding: 5px 0; border-top: 1px solid var(--hud-rule); }
 .sess-laps h3 + div { border-top: 0; }
-.sess-laps span { width: 18px; color: var(--text-faint); }
-.sess-laps b { font-family: var(--f-display); font-weight: 600; font-size: 18px; color: var(--text); }
+.sess-laps span { width: 18px; color: var(--hud-label); }
+.sess-laps b { font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 18px; color: var(--hud-paper); text-shadow: var(--hud-shade); }
 .sess-laps .best b { color: var(--timing-best); }
 .sess-laps .bad b { color: var(--bad); }
 .sess-laps em { font-style: normal; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--bad); }
@@ -582,40 +594,38 @@ body.menu-main #hud, body.menu-main #sess { display: none; }
 #board { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s-3); padding: var(--s-4); overflow-y: auto; pointer-events: none; font-family: var(--f-body); font-variant-numeric: tabular-nums; color: var(--text); }
 #board[hidden] { display: none; }
 #board > * { width: min(760px, 100%); }
-#board h2 { margin: 0; padding: 0 2px; font-family: var(--f-body); font-weight: 600; font-size: 20px; line-height: 1.2; letter-spacing: -.005em; text-shadow: 0 1px 1px var(--pit-0); }
-#board section { margin: 0; padding: var(--s-4) var(--s-5); background: color-mix(in srgb, var(--pit-1) 94%, transparent); border: 1px solid var(--line); border-radius: var(--r-card); }
-#board h3 { margin: 0 0 var(--s-3); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
+#board h2 { margin: 0; padding: 0 2px; font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 28px; line-height: 1.1; color: var(--hud-paper); text-shadow: var(--hud-shade); }
+#board section { margin: 0; padding: var(--s-3) var(--s-4); background: var(--hud-card-hi); border-radius: 2px; }
+#board h3 { margin: 0 0 var(--s-2); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--hud-label); text-shadow: var(--hud-shade); }
 #board .bd-big { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s-2) var(--s-7); }
-#board .bd-big span { display: block; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
-#board .bd-big b { font-family: var(--f-display); font-weight: 600; font-size: 28px; line-height: 1; color: var(--text); }
+#board .bd-big span { display: block; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--hud-label); text-shadow: var(--hud-shade); }
+#board .bd-big b { font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 30px; line-height: 1; color: var(--hud-paper); text-shadow: var(--hud-shade); }
 #board .bd-big b.green { color: var(--timing-pb); }
 #board .bd-big b.yellow { color: var(--timing-slow); }
-#board .bd-sectors { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); align-items: end; gap: var(--s-2); margin-top: var(--s-4); }
-#board .bd-sectors > span { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); padding-bottom: 4px; }
-#board .bd-sectors i { position: relative; padding-top: 12px; font-size: 15px; font-weight: 600; color: var(--text); }
-#board .bd-sectors i::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--pit-3); }
-#board .bd-sectors i.purple::before { background: var(--timing-best); }
-#board .bd-sectors i.green::before { background: var(--timing-pb); }
-#board .bd-sectors i.yellow::before { background: var(--timing-slow); }
+#board .bd-sectors { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); align-items: center; gap: var(--s-2); margin-top: var(--s-3); }
+#board .bd-sectors > span { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--hud-label); }
+#board .bd-sectors i { padding: 4px 8px; font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 18px; color: var(--hud-paper); background: var(--hud-well); text-align: center; }
+#board .bd-sectors i.purple { background: var(--timing-best); color: var(--pit-0); }
+#board .bd-sectors i.green { background: var(--timing-pb); color: var(--pit-0); }
+#board .bd-sectors i.yellow { color: var(--timing-slow); }
 #board table { width: 100%; border-collapse: collapse; font-size: 14px; }
-#board th { padding: 0 var(--s-2) var(--s-2); text-align: right; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
-#board td { height: 40px; padding: 0 var(--s-2); border-top: 1px solid var(--line); text-align: right; white-space: nowrap; font-weight: 500; }
+#board th { padding: 0 var(--s-2) var(--s-2); text-align: right; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--hud-label); }
+#board td { height: 40px; padding: 0 var(--s-2); border-top: 1px solid var(--hud-rule); text-align: right; white-space: nowrap; font-weight: 500; color: var(--hud-paper); }
 #board th:first-child, #board td:first-child { width: 64px; text-align: center; }
-#board td:first-child { position: relative; font-family: var(--f-display); font-weight: 600; font-size: 16px; color: var(--text-dim); }
+#board td:first-child { font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 18px; color: var(--text-dim); }
 #board td.name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 #board th.name { text-align: left; }
 #board td.tag { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--bad); }
-#board td.tag.reset { color: var(--text-faint); }
+#board td.tag.reset { color: var(--hud-label); }
 #board em { font-style: normal; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--bad); margin-left: 4px; }
-#board tr.me td { background: var(--accent-tint); }
-#board tr.me td:first-child::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
+#board tr.me td { background: var(--hud-well); color: var(--hud-yel); }   /* your row: yellow, the old board */
 #board tr.pb td:first-child { color: var(--timing-best); }
 #board tr.pb td:nth-child(2) { font-weight: 600; color: var(--timing-best); }
 #board tr.invalid td:nth-child(2) { color: var(--bad); }
 #board .purple { color: var(--timing-best); }
 #board .green { color: var(--timing-pb); }
 #board .yellow { color: var(--timing-slow); }
-#board .bd-none { margin: 0; font-size: 14px; color: var(--text-faint); }
+#board .bd-none { margin: 0; font-size: 14px; color: var(--hud-label); }
 @media (max-height: 560px) { #board { justify-content: flex-start; } }
 
 /* the button row, top right, the same in both modes: Menu, Camera, Reset, Report, Times. Flat rectangles, 44 px targets. */
@@ -634,11 +644,14 @@ body.steered .t-hint { opacity: 0; }   /* gone after the first steer touch (src/
 .t-knob { position: fixed; width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--text); background: color-mix(in srgb, var(--pit-0) 40%, transparent); transform: translate(-50%, -50%); display: none; pointer-events: none; }
 .t-knob.on { display: block; }
 .t-pedals { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: 84px 96px; grid-template-rows: 56px 150px; gap: 8px; }
-.t-pedals button { min-height: 44px; font-family: var(--f-body); font-weight: 600; font-size: 14px; letter-spacing: .04em; text-transform: uppercase; color: var(--text); background: var(--pit-1); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); touch-action: none; -webkit-user-select: none; user-select: none; }
-.t-pedals button.on { background: var(--accent-tint); border-color: var(--accent); }
+/* the touch pedals are HUD (the old flat rectangles): a plate, paper when pressed; brake red, throttle green, DRS yellow */
+.t-pedals button { min-height: 44px; font-family: var(--f-body); font-weight: 700; font-size: 14px; letter-spacing: .04em; text-transform: uppercase; color: var(--hud-paper); background: var(--hud-card); border: 0; border-radius: var(--r-hud); touch-action: none; -webkit-user-select: none; user-select: none; }
+.t-pedals button.on { background: var(--hud-paper); color: var(--pit-0); }
 .t-drs { grid-column: 1 / 3; }
-.t-brake.on { background: color-mix(in srgb, var(--bad) 18%, var(--pit-1)); border-color: var(--bad); }
-.t-gas.on { background: color-mix(in srgb, var(--lake) 18%, var(--pit-1)); border-color: var(--lake); }
+.t-pedals .t-drs.on { background: var(--hud-yel); color: var(--pit-0); }
+.t-pedals .t-brake { background: color-mix(in srgb, var(--bad) 42%, var(--pit-0)); }
+.t-pedals .t-brake.on { background: var(--bad); color: var(--pit-0); }
+.t-pedals .t-gas.on { background: var(--timing-pb); color: var(--pit-0); }
 
 /* the track report tool (src/reportTool.js): the header, the tools and the form, all on the tokens */
 #report-layer { position: fixed; inset: 0; z-index: 8; pointer-events: none; color: var(--text); font-family: var(--f-body); font-variant-numeric: tabular-nums; }
