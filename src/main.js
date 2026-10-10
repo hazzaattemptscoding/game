@@ -424,7 +424,7 @@ function frame(now) {
   sun.target.position.set(shadowAt.x, shadowAt.y, shadowAt.z);
   sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 150);
   renderer.shadowMap.needsUpdate = quality.shadowDue(now);
-  if (frameNo % 8 === 0) props.update(rig.camera, reportTool.opened ? Infinity : quality.tier.propDist);
+  if (frameNo === 1 || frameNo % 8 === 0) props.update(rig.camera, reportTool.opened ? Infinity : quality.tier.propDist);
 
   env.update(dt, rig.camera, { speed: car.speed, lightning: settings.lightning });
   audioDue += dt;
