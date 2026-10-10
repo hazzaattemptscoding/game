@@ -16,6 +16,7 @@ import { meadowMaterial } from './scenery.js';
 import { garageBay } from './pitBuilding.js';
 import { fenceOpenings } from './pitDressing.js';
 import { Kit } from './meshKit.js';
+import { crowdMesh } from './crowd.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
 const ROAD_TIGHT = 80;       // metres: a cambered bend tighter than this gets four road strips across, not two
@@ -377,7 +378,7 @@ const FILL_TYPES = new Set(['marshal', 'tyres', 'cabinet', 'mast', 'banner', 'st
 const FILL_COLOURS = { metal: 0xdddddd, rubber: 0x1e1e20, red: 0xc8102e, yellow: 0xffd21f, white: 0xeeeeea, orange: 0xff6a13, grey: 0x5b6168, concrete: 0xa9a59c, dark: 0x2a2d31 };
 const FILL_HUES = [0xc8102e, 0x1d4e9e, 0xffd21f, 0x3f9d4f];
 function fillObjects(T, g) {
-  const kit = new Kit(), faces = new Kit(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  const marshals = [], kit = new Kit(), faces = new Kit(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
   const part = (colour, geo, x, y, z, rotY = 0) => {
     e.set(0, rotY, 0, 'YXZ');
     m4.compose(v.set(x, y, z), q.setFromEuler(e), one);
@@ -403,6 +404,7 @@ function fillObjects(T, g) {
       box('white', 2.4, 0.9, 0.06, 0, -0.3, 0.1);
       box('orange', 2.8, 0.14, 1.9, 0, 0.45, 2.3);
       box('metal', 0.07, 3.8, 0.07, 1.5, -0.2, 0); box('yellow', 0.9, 0.6, 0.03, 1.97, -0.2, 3.1);
+      marshals.push([f.x + ax * 0.5 + ox * 0.3, f.y - 0.05, f.z + az * 0.5 + oz * 0.3, 0xff6a13, (f.s * 0.13) % 1, true]);   // the marshal, under the roof
     } else if (f.type === 'tyres') {
       // a bank of tyre stacks, five high, a white tyre on top of each
       for (const a of [-0.95, 0, 0.95]) { cyl('rubber', 0.45, 1.1, a, 0.2, 0); cyl('white', 0.45, 0.22, a, 0.2, 1.1); }
@@ -439,6 +441,8 @@ function fillObjects(T, g) {
   if (!kit.parts.size) return;
   g.add(kit.build({ fill: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) }));
   if (faces.parts.size) g.add(faces.build({ sponsor: new THREE.MeshStandardMaterial({ map: tex.sharedSponsorAtlas(), roughness: 0.55 }) }, { sponsor: { cast: false } }));
+  const people = crowdMesh(marshals);
+  if (people) g.add(people);
 }
 
 // Boards, bollards and signs are merged into a few meshes (one per material), not one mesh each: the same geometry,

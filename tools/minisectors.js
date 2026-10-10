@@ -171,7 +171,7 @@ console.log(`  ${plan.posts.length} posts, nearest to a wall ${worstWall.toFixed
 console.log('LIGHT PANELS');
 {
   const m = createMarshalLights(T, ground, plan), col = k => { const c = m.group.children[1].instanceColor; return [c.getX(k), c.getY(k), c.getZ(k)]; };
-  check(m.group.children.length === 2 && m.group.children.every(o => o.isInstancedMesh && o.count === plan.posts.length), 'two instanced meshes (posts, panels): two draw calls');
+  check(m.group.children.length === 3 && m.group.children.every(o => o.isInstancedMesh && o.count === plan.posts.length), 'three instanced meshes (posts, panels, the marshals): three draw calls');
   check(STATES.join() === 'off,yellow,double,red,green,blue', 'the six states');
   const off = col(3);
   m.set(3, 'red'); m.update(0);

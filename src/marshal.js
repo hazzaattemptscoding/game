@@ -11,6 +11,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { SURF } from './track.js';
 import { wallClearance } from './grandstands.js';
 import { trackPoint } from './meshKit.js';
+import { crowdMesh } from './crowd.js';
 import { minisectorBounds, minisectorAt } from './minisectors.js';
 import { allWheelsBeyondLine } from './trackLimits.js';
 
@@ -86,6 +87,9 @@ export function createMarshalLights(T, ground, plan = planMarshal(T, ground)) {
   frames.computeBoundingSphere(); leds.computeBoundingSphere();
   frames.userData.debug = leds.userData.debug = 'sign';
   group.add(frames, leds);
+  // a marshal in orange overalls standing just behind each post, along the track (one crowd mesh, one draw call)
+  const marshals = crowdMesh(posts.map((p, i) => { const x = p.x - Math.sin(p.yaw) * 0.8, z = p.z - Math.cos(p.yaw) * 0.8; return [x, (ground ? ground.meshHeight(x, z) : 0) - 0.05, z, i % 3 ? 0xff6a13 : 0xf2f2ee, (i * 0.37) % 1, true]; }));
+  if (marshals) group.add(marshals);
 
   const states = new Array(N).fill('off');
   let dirty = true, flashing = 0, lastPhase = '';
