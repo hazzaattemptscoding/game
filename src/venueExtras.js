@@ -450,7 +450,13 @@ function medical(kit, st) {
   kit.box('white', bx1 - bx0, H, bz1 - bz0, (bx0 + bx1) / 2, H / 2, (bz0 + bz1) / 2);
   kit.box('roof', bx1 - bx0 + 0.6, 0.3, bz1 - bz0 + 0.6, (bx0 + bx1) / 2, H + 0.15, (bz0 + bz1) / 2);
   kit.box('red', bx1 - bx0 + 0.02, 0.5, bz1 - bz0 + 0.02, (bx0 + bx1) / 2, H - 0.6, (bz0 + bz1) / 2);
-  kit.quad('glass', [bx1 - 1, 0.8, bz0 - 0.03], [bx0 + 6, 0.8, bz0 - 0.03], [bx0 + 6, 3.4, bz0 - 0.03], [bx1 - 1, 3.4, bz0 - 0.03], [[0, 0], [2.5, 0], [2.5, 1], [0, 1]]);
+  kit.quad('glass', [bx1 - 3.5, 0.8, bz0 - 0.03], [bx0 + 6, 0.8, bz0 - 0.03], [bx0 + 6, 3.4, bz0 - 0.03], [bx1 - 3.5, 3.4, bz0 - 0.03], [[0, 0], [2, 0], [2, 1], [0, 1]]);
+  // the front door at the right hand end, up a short ramp with a rail on each side
+  const dx = bx1 - 2;
+  kit.box('steel', 2.0, 2.6, 0.08, dx, 1.5, bz0 - 0.04); kit.box('tint', 1.6, 2.25, 0.1, dx, 1.42, bz0 - 0.06);
+  kit.box('concrete', 2.6, 0.2, 1.1, dx, 0.1, bz0 - 0.6, 0, 4);
+  kit.box('concrete', 2.2, 0.1, 1.85, dx, 0.1, bz0 - 2.0, 0, 4, -0.11);
+  for (const sx of [-1.2, 1.2]) { kit.box('steel', 0.05, 0.05, 2.8, dx + sx, 0.95, bz0 - 1.5); for (const z of [-0.2, -1.4, -2.7]) kit.box('steel', 0.05, 0.9, 0.05, dx + sx, 0.5, bz0 + z); }
   // the cross on the front, and a smaller one on the roof
   const cx = bx0 + 3, cy = 2.4;
   kit.box('red', 2.4, 0.7, 0.08, cx, cy, bz0 - 0.05); kit.box('red', 0.7, 2.4, 0.08, cx, cy, bz0 - 0.05);
@@ -458,6 +464,7 @@ function medical(kit, st) {
   // ambulance canopy at the side of the building
   for (const x of [bx0 + 1, bx0 + 9]) kit.box('steel', 0.2, 3.6, 0.2, x, 1.8, 0.6);
   kit.box('roof', 10, 0.2, 3.2, bx0 + 5, 3.7, 1.6);
+  kit.box('red', 7, 0.8, 0.12, bx0 + 5, 4.2, 0.06); kit.box('white', 0.6, 0.16, 0.14, bx0 + 5, 4.2, 0.06); kit.box('white', 0.16, 0.6, 0.14, bx0 + 5, 4.2, 0.06);   // a sign on the canopy edge
   // helipad: a raised concrete square with the H and circle on top, edge lights, a windsock
   const hx = x0 + 28, hz = depth / 2 + 1, P = 14;
   kit.box('concrete', P, 0.35, P, hx, 0.17, hz, 0, 4);
@@ -465,17 +472,28 @@ function medical(kit, st) {
   for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; kit.box('lamp', 0.25, 0.15, 0.25, hx + Math.cos(a) * (P / 2 - 0.4), 0.42, hz + Math.sin(a) * (P / 2 - 0.4)); }
   kit.box('steel', 0.1, 6, 0.1, hx + P / 2 + 1.5, 3, hz - P / 2);
   const sock = new THREE.ConeGeometry(0.4, 2.2, 6, 1, true); sock.rotateZ(Math.PI / 2); sock.translate(hx + P / 2 + 2.6, 5.7, hz - P / 2); kit.push('orange', sock);
-  // the helicopter: body, cabin glass, tail boom and fin, skids, a two blade main rotor and the tail rotor
+  // the helicopter, about 11.5 m nose to tail: a glass bubble, a red body with a cream roof, a tail boom with fin and tail rotor,
+  // skids with cross tubes, a mast and a four blade main rotor 12 m across (still)
   const g = new Kit(), yaw = 0.5;
-  g.box('red', 3.2, 1.6, 1.7, 0, 1.55, 0);
-  g.box('glass', 1.3, 1.2, 1.5, 2.1, 1.65, 0);
-  g.box('white', 2.6, 0.5, 1.72, 0.2, 2.15, 0);
-  beam(g, 'red', [-1.4, 1.9, 0], [-6.2, 2.3, 0], 0.45, 0.35);
-  g.box('red', 0.7, 1.3, 0.12, -6.1, 2.8, 0);
-  g.box('steel', 0.16, 0.5, 0.5, -6.3, 2.5, 0.3);
-  for (const z of [-0.95, 0.95]) { g.box('steel', 4.2, 0.08, 0.1, 0.2, 0.32, z); for (const x of [-0.8, 1.2]) g.box('steel', 0.08, 0.55, 0.08, x, 0.6, z * 0.9); }
-  g.box('steel', 0.3, 0.5, 0.3, 0, 2.6, 0);
-  g.box('steel', 10.5, 0.06, 0.35, 0, 2.9, 0, 0.6);
+  const bubble = new THREE.SphereGeometry(1, 12, 8); bubble.scale(1.45, 1.0, 0.95); bubble.translate(1.9, 1.7, 0); g.push('tint', bubble);
+  g.box('red', 3.6, 1.7, 1.9, -0.2, 1.75, 0);
+  g.box('white', 3.0, 0.3, 1.92, -0.3, 2.7, 0);
+  g.box('red', 2.2, 1.2, 1.5, -2.7, 2.35, 0);
+  for (const z of [-0.97, 0.97]) { g.box('tint', 1.2, 0.7, 0.04, 0.7, 2.0, z); g.box('tint', 0.9, 0.7, 0.04, -0.7, 2.0, z); }
+  beam(g, 'red', [-3.4, 2.4, 0], [-8.6, 2.75, 0], 0.5, 0.36);
+  g.box('red', 0.9, 1.8, 0.14, -8.4, 3.5, 0, 0, 0, 0, 0.25);
+  g.box('red', 0.8, 0.08, 2.2, -8.0, 2.85, 0);
+  g.box('steel', 0.12, 0.12, 0.3, -8.5, 3.95, 0.2);
+  g.box('black', 0.06, 1.5, 0.04, -8.5, 3.95, 0.4); g.box('black', 1.5, 0.06, 0.04, -8.5, 3.95, 0.4);
+  for (const z of [-1.1, 1.1]) {
+    g.box('steel', 4.6, 0.06, 0.06, 0.7, 0.03, z);
+    beam(g, 'steel', [2.9, 0.03, z], [3.3, 0.35, z], 0.06);
+    for (const x of [-0.7, 1.4]) beam(g, 'steel', [x, 0.03, z], [x, 0.95, z * 0.65], 0.06);
+  }
+  for (const x of [-0.7, 1.4]) g.box('steel', 0.06, 0.06, 1.5, x, 0.95, 0);
+  g.box('steel', 0.35, 0.8, 0.35, -0.3, 3.25, 0);
+  g.box('steel', 0.5, 0.16, 0.5, -0.3, 3.7, 0);
+  g.box('black', 12, 0.04, 0.15, -0.3, 3.66, 0, 0.3); g.box('black', 12, 0.04, 0.15, -0.3, 3.66, 0, 0.3 + Math.PI / 2);
   for (const [key, list] of g.parts) for (const geo of list) { geo.rotateY(yaw); geo.translate(hx, 0.36, hz); kit.push(key, geo); }
 }
 
@@ -695,6 +713,7 @@ export function buildExtras(T, ground, plan) {
     flagR: flagMaterial({ color: 0xc8102e }), flagB: flagMaterial({ color: 0x1d4e9e }), flagY: flagMaterial({ color: 0xffd21f }), flagW: flagMaterial({ color: 0xf2f2ee }),
     tentWhite: new THREE.MeshStandardMaterial({ color: 0xf4f3ee, roughness: 0.85, side: THREE.DoubleSide }),
     red: new THREE.MeshStandardMaterial({ color: 0xc8102e, roughness: 0.6 }),
+    tint: new THREE.MeshStandardMaterial({ color: 0x1c2630, roughness: 0.12, metalness: 0.35 }),
     orange: new THREE.MeshStandardMaterial({ color: 0xff6a13, roughness: 0.7, side: THREE.DoubleSide }),
     black: new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.6, metalness: 0.3 }),
     scaff: new THREE.MeshStandardMaterial({ color: 0xb9bec2, roughness: 0.45, metalness: 0.7 }),
