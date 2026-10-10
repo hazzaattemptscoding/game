@@ -13,6 +13,7 @@ export class LapTimer {
   reset() {
     this.reverse ??= false;  // the lap driven the other way round: distances and sectors are mirrored, the line stays put
     this.lap = 0;            // completed laps
+    this.lapCar = null;      // the class the lap being driven started in (carId when it started)
     this.lapStart = null;    // sim time the current lap started, null before the first crossing
     this.sector = 0;
     this.current = [];       // sector times this lap
@@ -130,11 +131,12 @@ export class LapTimer {
       }
       // clean: a whole lap, valid; only a valid AND clean lap goes to the global times
       const clean = whole && valid;
-      this.history.push({ lap: this.lap, time: lapTime, sectors: this.lastSectors, warnings, valid, clean, jumped, autopilot });
+      this.history.push({ lap: this.lap, time: lapTime, sectors: this.lastSectors, warnings, valid, clean, jumped, autopilot, car: this.lapCar || this.carId || 'GT' });
       this.events.push({ type: 'lap', time: lapTime, best: isBest, valid, sectors: this.lastSectors });
     }
     else this.minis.finishLap(0, false);   // the out lap or a lap that skipped a sector: nothing to keep
     this.lapStart = time;
+    this.lapCar = this.carId || null;   // the class this lap starts in (main.js sets carId): a lap is filed under it even if the class changed meanwhile
     this.sectorBests = this.bestSectors.slice();
     this.sector = 0;
     this.current = [];

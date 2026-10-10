@@ -4,7 +4,7 @@
 //   3. the local top 10 (sorting, cutting, saving and loading, storage that throws)
 //   4. the room board rows (order by best lap, gaps, "you")
 import { LapTimer } from '../src/timing.js';
-import { sectorClass, lapRows, sessionView, addBest, loadBest, saveBest, personalSectors, createBoard, BEST_KEY, TOP_N, today } from '../src/board.js';
+import { sectorClass, lapRows, sessionView, addBest, loadBest, saveBest, personalSectors, createBoard, bestKey, BEST_KEY, TOP_N, today } from '../src/board.js';
 import { Ghosts } from '../src/ghosts.js';
 
 const fails = [];
@@ -124,6 +124,22 @@ const scenario = [
   const list = loadBest(st, BEST_KEY);
   check(list.length === 2 && list.map(e => Math.round(e.time)).join() === '90,90', `the local list has the valid, non-autopilot laps: no warned lap, no reset lap (got ${list.map(e => e.time.toFixed(2))})`);
   check(!list.some(e => e.time < 85 || (e.time > 88 && e.time < 89.5)), 'neither the warned 84 nor the autopilot 89 is saved');
+}
+{
+  // a lap that started in one class is filed under that class's list even if the car class has changed by the time it is filed
+  const st = { m: {}, getItem(k) { return k in this.m ? this.m[k] : null; }, setItem(k, v) { this.m[k] = String(v); } };
+  let now = 'GT';
+  const bt = new LapTimer(track);
+  bt.carId = 'GT';
+  state.s = 949; bt.update(state.s, state.t);
+  const bd = createBoard({ hidden: true }, { timer: bt, lobby: null, storage: st, car: () => now });
+  drive(bt, 51, 1);
+  lapOf(bt, { secs: [30, 31, 29] });
+  bt.carId = 'CITY'; now = 'CITY';          // the class changes after the lap is over, before the board looks
+  bd.update(state.t, 0);
+  check(loadBest(st, bestKey(false, 'GT')).length === 1, 'a lap driven as a GT is filed in the GT list');
+  check(loadBest(st, bestKey(false, 'CITY')).length === 0, 'and not in the list of the class chosen since');
+  check(bt.history[0].car === 'GT', 'the lap carries the class it started in');
 }
 
 console.log('BOARD DATA');

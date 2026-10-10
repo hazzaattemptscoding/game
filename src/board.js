@@ -148,7 +148,10 @@ export function createBoard(root, ctx) {
       for (; seen < h.length; seen++) {
         const l = h[seen];
         if (!l.valid || l.autopilot) continue;   // only the driver's valid laps go on the list (not invalid laps, not autopilot laps)
-        fresh = { time: l.time, sectors: l.sectors.slice(), date: today(), warn: l.warnings };
+        const lapKey = bestKey(!!ctx.timer.reverse, l.car || carNow());     // the class the lap STARTED in, not the one chosen since
+        const entry = { time: l.time, sectors: l.sectors.slice(), date: today(), warn: l.warnings };
+        if (lapKey !== key) { saveBest(addBest(loadBest(storage, lapKey), entry), storage, lapKey); continue; }
+        fresh = entry;
         best = addBest(best, fresh);
         saveBest(best, storage, key);
         if (!best.includes(fresh)) fresh = null;

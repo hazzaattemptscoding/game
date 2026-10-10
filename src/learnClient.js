@@ -64,7 +64,7 @@ export function createLearning({ track, getCarId, phone = false }) {
     onChange: f => { listeners.add(f); return () => listeners.delete(f); },
     // bumps whenever a better genome has been stored, so main.js can pick it up at the start line
     get version() { return version; },
-    refresh() { loadStored(getCarId()); },
+    refresh() { loadStored(getCarId()); apply(); emit(); },     // the class changed: the chip and the trainer follow it
     get training() { return want; },
     // the game says whether training may run now (a session is running or the menu is open)
     allow(v) { if (v !== canRun) { canRun = v; apply(); } },

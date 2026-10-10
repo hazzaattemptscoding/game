@@ -65,6 +65,7 @@ export function createDirector(g) {
   // Put the car where the session starts, clear the timing and start the flow. o: { keepPlacement, restart, seq }
   function launch(s, o = {}) {
     const now = performance.now();
+    if (g.commitCar) g.commitCar();      // a launch is a session boundary: a class picked in the garage meanwhile takes effect now
     session = s;
     if (settings.lastMode !== s.mode && ['practice', 'timetrial', 'race', 'online'].includes(s.mode)) { settings.lastMode = s.mode; g.save(settings); }   // the main menu's Resume button
     if (!o.keepPlacement) { const spot = s.start === 'standing' ? gridSlot(track, s.slot, s.reverse) : s.start === 'track' ? ttSlot(track) : pitSlot(track, s.reverse); car.placeAt(spot.s, spot.d, !!s.reverse); }
@@ -180,6 +181,8 @@ export function createDirector(g) {
     autopilotStyleChanged: () => g.autopilotStyleChanged && g.autopilotStyleChanged(),
     livery: () => g.liveryChanged(),
     car: id => g.setCar(id),   // the garage's car class (src/cars.js)
+    carNote: () => (g.carNote ? g.carNote() : ''),       // 'Takes effect at your next session.' while a session is live and a class waits
+    currentCar: () => (g.currentCar ? g.currentCar() : 'GT'),
     globalTimes: g.globalTimes || null,
     go(id) {
       if (id === 'practice') menu.push('setup', { mode: 'practice' });
@@ -205,6 +208,7 @@ export function createDirector(g) {
     toMainMenu() {
       rc.endRace();
       flow.toMenu(); session = null; finishedAt = null;
+      if (g.commitCar) g.commitCar();      // back at the main menu: a class picked during the session takes effect
       applyAssists();
       showMain();
     },

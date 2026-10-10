@@ -64,6 +64,7 @@ const car = new Car(carById(settings.car), track);   // the car class (settings.
 car.setAssists({ tc: settings.assistTc, abs: settings.assistAbs, esc: settings.assistEsc });
 car.placeAt(params.has('at') ? +params.get('at') : -20, 0);  // ?at=1500 starts the car 1500 m into the lap
 const timer = new LapTimer(track);
+timer.carId = car.cfg.id;   // the class a lap is driven in (src/timing.js stamps it on the lap)
 // the learning autopilot (experimental, src/learn.js): with the style set to 'learn' and a learned genome the autopilot drives that
 const learn = createLearning({ track, getCarId: () => car.cfg.id, phone: isPhone() });
 const playerAssists = () => ({ tc: settings.assistTc, abs: settings.assistAbs, esc: settings.assistEsc });
@@ -251,27 +252,34 @@ function openReport() {
 const save = () => saveSettings(settings);
 
 // --- the car class (settings.car, src/cars.js), picked in the garage. The physics car stays the same object (its config changes,
-// see Car.setConfig), so the lobby, the mini map and the report keep their reference. The view is made again. It changes when the
-// car is stopped (under 1 m/s), so a change never happens in the middle of a corner.
+// see Car.setConfig), so the lobby, the mini map and the report keep their reference. The view is made again. The class changes only
+// at a session boundary: from the main menu (no session), at the launch of a session, or on the way back to the main menu. While a
+// race, a practice, a time trial or an online session is live (running, paused or on the results) the choice waits as pendingCar,
+// so a class never changes in the middle of a lap and a lap is never filed under the wrong class.
 let pendingCar = null;
+const carLocked = () => dir.phase !== 'menu';
 function setCarClass(id) {
   settings.car = id; save();
-  pendingCar = id;
+  pendingCar = id === car.cfg.id ? null : id;
   applyCarClass();
 }
-function applyCarClass() {
+function carNote() { return pendingCar !== null && pendingCar !== car.cfg.id && carLocked() ? 'Takes effect at your next session.' : ''; }
+// force: a session boundary (launch, back to the main menu) applies the pending class even though a session was live a moment ago
+function applyCarClass(force = false) {
   if (pendingCar === null) return;
   if (pendingCar === car.cfg.id) { pendingCar = null; return; }
-  if (car.speed > 1) return;   // moving: wait until it stops
+  if (!force && carLocked()) return;
   const cfg = carById(pendingCar);
   pendingCar = null;
   car.setConfig(cfg);
+  timer.carId = cfg.id; timer.markJump(); timer.trace = null; timer.traceAt = -1;   // the lap in progress (if any) was another car's: no trace, never a reference
   scene.remove(view.root); view.dispose();
   view = new CarView(cfg, myLivery());
   view.setFlat(settings.blockout);
   scene.add(view.root);
   env.attachCar(view);
   if (autopilot) autopilot = newAutopilot();
+  learn.refresh();   // the chip and the trainer follow the class
   if (window.lakeside) window.lakeside.view = view;
 }
 
@@ -287,6 +295,9 @@ const dir = createDirector({
   car, timer, track, lobby, settings, params, rig, hud, history, save, openReport,
   get view() { return view; },   // read each time: the class can change the view (applyCarClass)
   setCar: id => setCarClass(id),
+  commitCar: () => applyCarClass(true),   // a session boundary: the class chosen meanwhile takes effect (director.js launch, toMainMenu)
+  carNote,
+  currentCar: () => car.cfg.id,
   simTime: () => simTime,
   applyLook: () => { applyLook(); view.setFlat(settings.blockout); },
   getTopDown: () => topDown, setTopDown: v => { topDown = v; applyLook(); },
@@ -346,7 +357,7 @@ function frame(now) {
   }
   if (dir.menuOpen) board.hide();
 
-  applyCarClass();   // a class chosen in the garage takes effect once the car is stopped
+  applyCarClass();   // a class chosen while a session was live takes effect once none is
   const playerInput = input.read(dt, car.speed);
   dir.frame(now, dt, playerInput);
   const paused = dir.inMenu || (dir.menuOpen && !lobby.active) || reportTool.opened;     // in a room the car keeps rolling behind the menu

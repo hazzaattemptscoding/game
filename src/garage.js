@@ -6,7 +6,8 @@
 // settings.livery holds the choice (a livery object, see src/livery.js; null means the default for this browser's player id).
 // save() is called after each change so the caller can persist the settings; onChange(livery) is called live with the new
 // normalised livery so the car on the track repaints. The room sees the same paint: it is sent with the hello and every 2 s.
-// The car class (settings.car, a CAR_IDS id from src/cars.js) is picked at the top; onCar(id) is called when it changes.
+// The car class (settings.car, a CAR_IDS id from src/cars.js) is picked at the top; onCar(id) is called when it changes. pendingNote()
+// returns a line to show under the picker ('' for none): the game says a class chosen during a session waits for the next one.
 
 import * as THREE from 'three';
 import { CarView } from './car.js';
@@ -72,7 +73,7 @@ const CSS = `
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
-export function mountGarage(container, { settings, save = () => {}, onChange = () => {}, onCar = () => {} }) {
+export function mountGarage(container, { settings, save = () => {}, onChange = () => {}, onCar = () => {}, pendingNote = () => '' }) {
   const style = el('style'); style.textContent = CSS;
   const root = el('div', 'gar');
   container.append(style, root);
@@ -182,7 +183,10 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
     return [cfg.id, b];
   });
   const carNote = el('p', 'gar-spec');
-  carCard.append(carRow, carNote);
+  const waitNote = el('p', 'gar-spec');
+  const showNote = () => { waitNote.textContent = pendingNote() || ''; waitNote.hidden = !waitNote.textContent; };
+  showNote();
+  carCard.append(carRow, carNote, waitNote);
   colourRow('Body colour', 'body', BODY_COLOURS);
   colourRow('Stripe colour', 'stripe', ACCENT_COLOURS);
   colourRow('Wing colour', 'wing', ACCENT_COLOURS.concat(['#1b1d20']));
@@ -246,6 +250,7 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
     if (scene) { car = new CarView(carById(id), livery); scene.add(car.root); }
     sync(false);
     onCar(id);
+    showNote();
   }
 
   // --- state ---

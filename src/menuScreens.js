@@ -670,10 +670,11 @@ function timesScreen() {
           const got = await client.ghost(board, e.name);
           if (!got || !gt.loadGhost({ ...got, board: { ...board } })) { status.textContent = 'That ghost could not be loaded.'; return; }
           showGhost();
-          if (board.car && board.car !== ctx.settings.car) ctx.api.car && ctx.api.car(board.car);   // race it in the class it was driven in
+          const wantCar = board.car && board.car !== (ctx.api.currentCar ? ctx.api.currentCar() : ctx.settings.car);
+          if (wantCar) ctx.api.car && ctx.api.car(board.car);   // race it in the class it was driven in: it takes effect at the new session below
           const s = ctx.api.session && ctx.api.session();
           const wantRev = board.dir === 'rev';
-          if (s && s.mode === 'practice' && !!s.reverse === wantRev) ctx.api.resume();
+          if (!wantCar && s && s.mode === 'practice' && !!s.reverse === wantRev) ctx.api.resume();
           else ctx.api.startPractice({ start: ctx.settings.practiceStart === 'standing' ? 'standing' : 'pit', reverse: wantRev });
         }));
         r.append(cell);
@@ -724,7 +725,7 @@ function garageScreen() {
       import('./garage.js').then(m => {
         if (dead) return;
         box.replaceChildren();
-        inst = m.mountGarage(box, { settings: ctx.settings, save: ctx.save, onChange: () => { ctx.api.livery && ctx.api.livery(); ctx.menu.refreshRail(); }, onCar: id => { ctx.api.car && ctx.api.car(id); ctx.menu.refreshRail(); } });
+        inst = m.mountGarage(box, { settings: ctx.settings, save: ctx.save, onChange: () => { ctx.api.livery && ctx.api.livery(); ctx.menu.refreshRail(); }, onCar: id => { ctx.api.car && ctx.api.car(id); ctx.menu.refreshRail(); }, pendingNote: () => (ctx.api.carNote ? ctx.api.carNote() : '') });
       }).catch(() => { if (!dead) box.replaceChildren(h('p', 'm-sub', 'Coming soon.'), h('p', 'm-note', 'The garage is not ready yet.')); });
       return { dispose() { dead = true; if (inst && inst.dispose) inst.dispose(); } };
     },
