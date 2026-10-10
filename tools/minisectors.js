@@ -191,9 +191,12 @@ console.log('MARSHAL STATIONS');
 console.log('LIGHT PANELS');
 {
   const m = createMarshalLights(T, ground, plan), col = k => { const c = m.group.children[1].instanceColor; return [c.getX(k), c.getY(k), c.getZ(k)]; };
-  check(m.group.children.length === 5 && m.group.children.every(o => o.isInstancedMesh) && m.group.children[0].count === plan.posts.length && m.group.children[1].count === plan.posts.length, 'five instanced meshes (posts, panels, the marshals, their flags and extinguishers): five draw calls');
-  check(m.group.children[2].count === plan.stations.length * 2 && m.group.children[4].count === plan.stations.length, 'two marshals and one extinguisher at every station');
-  const flag = k => { const c = m.group.children[3].instanceColor; return [c.getX(k), c.getY(k), c.getZ(k)]; }, post = plan.stations[0].post;
+  const crewMeshes = m.group.children.slice(2);
+  check(m.group.children.every(o => o.isInstancedMesh) && m.group.children[0].count === plan.posts.length && m.group.children[1].count === plan.posts.length, 'the posts and the panels are one instanced mesh each');
+  check(crewMeshes.length <= 3 * 7, `the crew is at most three meshes for each 650 m of the lap (${crewMeshes.length})`);
+  const people = crewMeshes.filter(o => o.geometry.attributes.skin).reduce((a, o) => a + o.count, 0), withColour = crewMeshes.filter(o => o.instanceColor && !o.geometry.attributes.skin), flagCount = withColour.reduce((a, o) => a + o.count, 0);
+  check(people === plan.stations.length * 2 && crewMeshes.reduce((a, o) => a + o.count, 0) === people + flagCount + plan.stations.length, 'two marshals and one extinguisher at every station');
+  const flag = k => { const c = withColour[0].instanceColor; return [c.getX(k), c.getY(k), c.getZ(k)]; }, post = plan.stations.find(st => st.s < 650).post;
   m.set(plan.posts[post].k, 'red'); m.update(0);
   check(flag(0)[0] > 0.9 && flag(0)[1] < 0.2, 'a flag takes the colour of its nearest panel (red)');
   check(STATES.join() === 'off,yellow,double,red,green,blue', 'the six states');

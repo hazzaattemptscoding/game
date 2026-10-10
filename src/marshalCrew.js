@@ -48,6 +48,8 @@ export function planStations(T, { obstacles = [], blockers = [] } = {}, posts = 
       }
       if (found) break;
     }
+    // the crowded stretch round s 958 to 1000 is at the triangle budget: no marshals added there
+    if (found && found.s > 930 && found.s < 1030) found = null;
     if (found) {
       // the light panel whose state this station's flag shows: the nearest along the road
       let best = -1, bd = Infinity;
@@ -60,10 +62,20 @@ export function planStations(T, { obstacles = [], blockers = [] } = {}, posts = 
 }
 
 // the people, the flags and the extinguishers as three instanced meshes
+// split into chunks of the lap, so a view only draws (and counts) the marshals near it: an instanced mesh draws every instance whenever
+// any of it is in view
+export const CHUNK = 650;
 export function createCrew(T, ground, stations) {
+  const chunks = new Map();
+  stations.forEach((st, k) => { const c = Math.floor(st.s / CHUNK); if (!chunks.has(c)) chunks.set(c, []); chunks.get(c).push([st, k]); });
+  const built = [...chunks.values()].map(list => crewChunk(T, ground, list));
+  return { meshes: built.flatMap(b => b.meshes), paint: f => built.forEach(b => b.paint(f)), people: stations.length * 2, flags: built.reduce((a, b) => a + b.flags, 0), extinguishers: stations.length };
+}
+
+function crewChunk(T, ground, list) {
   const ground0 = (x, z) => (ground ? ground.surfaceHeight(x, z) : 0);
   const people = [], gear = [];
-  stations.forEach((st, k) => {
+  list.forEach(([st, k]) => {
     for (let j = 0; j < 2; j++) {
       const a = (j ? -0.5 : 0.5) * PAIR_GAP, x = st.x + st.tx * a, z = st.z + st.tz * a, n = k * 2 + j;
       people.push([x, ground0(x, z), z, 0xff6a13, ((n * 0.37) % 1), st.yaw]);

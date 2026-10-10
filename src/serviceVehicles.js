@@ -197,6 +197,11 @@ function fire() {
   p.box(-4.1, 1.3, 2.55, 2.66, -0.5, -0.42, 0xd7dbdf); p.box(-4.1, 1.3, 2.55, 2.66, 0.42, 0.5, 0xd7dbdf);
   for (let x = -3.9; x <= 1.2; x += 0.5) p.box(x, x + 0.06, 2.6, 2.7, -0.46, 0.46, 0xd7dbdf);
   p.box(-4.0, -3.3, 2.55, 2.95, -0.55, 0.55, 0x5a6067);
+  // the hose reel on the roof: a drum on its frame, hose wound on it
+  const drumX = -2.4, reel = zz => Array.from({ length: 8 }, (_, k) => { const a = k * Math.PI / 4 + Math.PI / 8; return [drumX + Math.cos(a) * 0.3, 2.95 + Math.sin(a) * 0.3, zz]; });
+  p.box(drumX - 0.4, drumX + 0.4, 2.55, 2.64, -0.5, 0.5, 0x3a3f44);
+  p.loft([reel(-0.4), reel(0.4)], 0x23272b);
+  p.both(s => p.box(drumX - 0.03, drumX + 0.03, 2.64, 3.28, s * 0.45 - 0.03, s * 0.45 + 0.03, 0x3a3f44));
   // lights
   lightbar(p, 2.2, 2.8, 3.0, 0.95, 0.16);
   p.box(3.5, 3.54, 0.62, 0.85, 0.5, 0.9, 0x2a63ff, FX.blueA); p.box(3.5, 3.54, 0.62, 0.85, -0.9, -0.5, 0x2a63ff, FX.blueB);
@@ -380,6 +385,11 @@ function buggy() {
   p.both(s => p.decal(s, -0.95, 0.65, 1.74, 1.84, 0.62 + 0.002, ROW.marshal));
   p.box(-1.0, -0.82, 1.9, 2.02, -0.09, 0.09, 0xffa000, FX.amber);
   p.both(s => { p.box(1.39, 1.45, 0.45, 0.62, s * 0.42 - 0.1, s * 0.42 + 0.1, 0xf2f4ff, FX.head); p.box(-1.43, -1.4, 0.6, 0.7, s * 0.5 - 0.06, s * 0.5 + 0.06, 0xc0161c, FX.tail); });
+  p.box(1.4, 1.52, 0.28, 0.5, -0.5, 0.5, BUMP);                                                               // the front bumper
+  p.box(-1.45, -1.38, 0.3, 0.46, -0.52, 0.52, BUMP);                                                          // the rear bumper
+  p.box(0.3, 0.6, 0.55, 0.92, -0.5, 0.5, 0x2a2e33);                                                           // the dash
+  p.both(s => { p.box(0.7, 1.35, 0.3, 0.38, s * 0.56 - 0.02, s * 0.56 + 0.02 + s * 0.06, 0x3a3f44); p.box(-1.0, 0.5, 0.28, 0.34, s * 0.56 - 0.02, s * 0.56 + 0.02 + s * 0.06, 0x3a3f44); });   // the running boards
+  for (const x of [1.0, -0.95]) p.both(s => p.box(x - 0.27, x + 0.27, 0.36, 0.41, s * 0.6 - 0.07, s * 0.6 + 0.07, W, FX.paint));   // the mudguards
   p.both(s => p.wheel(1.0, s * 0.5, 0.2, 0.16, s)); p.both(s => p.wheel(-0.95, s * 0.5, 0.2, 0.16, s));
   return p;
 }
@@ -400,6 +410,13 @@ function transport() {
   p.both(s => { p.box(6.34, 6.42, 0.8, 1.05, s * 0.85 - 0.1, s * 0.85 + 0.1, 0xf2f4ff, FX.head); p.box(-6.56, -6.5, 0.9, 1.3, s * 1.05 - 0.07, s * 1.05 + 0.07, 0xc0161c, FX.tail); });
   p.both(s => p.box(5.85, 6.0, 2.2, 2.6, s * 1.27 - 0.03, s * 1.27 + 0.2 * s, BUMP));
   p.box(5.0, 5.3, 3.3, 3.42, -0.9, 0.9, 0x23272b);                                                             // roof marker bar
+  p.both(s => {
+    p.box(-4.2, 3.3, 0.7, 1.0, s * 1.05 - 0.03, s * 1.05 + 0.03 + s * 0.17, 0x2a2e33);                         // the side skirt under the box
+    p.box(-6.0, 3.6, 3.46, 3.52, s * 1.3 - 0.02, s * 1.3 + 0.06 * s, 0x8c939a);                                // the awning rail along the top of the box
+    for (let x = -5.6; x < 3.5; x += 1.8) p.box(x - 0.03, x + 0.03, 3.4, 3.56, s * 1.28 - 0.03, s * 1.28 + 0.1 * s, 0x6a7077);   // its brackets
+    p.box(3.4, 3.9, 0.9, 1.1, s * 1.2 - 0.04, s * 1.2 + 0.04, 0x2a2e33);
+  });
+  p.box(3.5, 3.62, 1.2, 3.7, 1.0, 1.12, CHROME); p.box(3.46, 3.66, 3.7, 3.78, 0.96, 1.16, 0x3a3f44);              // the exhaust stack up the back of the cab
   for (const x of [5.6, 3.9, 2.7, -3.9, -5.1, -6.2]) p.both(s => p.wheel(x, s * 1.0, 0.5, 0.4, s));
   return p;
 }
