@@ -96,6 +96,22 @@ Plain, short, from the driver's side. No em dashes, no exclamation marks, no "We
 4. **Contrast**: body text and `--text-faint` at least 4.5:1 on the surface they sit on.
 5. Compare with the approved mockup: /tmp/claude-0/-home-user-game/58c1e60f-5d06-5158-8b00-69725614967c/scratchpad/ui-v2-template.html (its CSS is the visual reference; it is written in container units, translate to px).
 
+## HUD exception (the in-game HUD only)
+
+The owner asked for the old in-game HUD look back after driving the quiet version: "the old appearance, actual colour and visual effects were better". So the in-game HUD is the one place where the old look stays. Menus, results, settings and screens are still quiet, with every ban above.
+
+The HUD (`src/hud.js`, `src/sessionHud.js`, the HUD blocks of `src/style.css`, the Tab board's blocks) keeps the NEW layout, element set, ids, classes and behaviour (positions, what shows, the steady no-jump rule, the HUD settings and toggles). Its appearance is the old game's:
+
+- Numerals (lap time, speed, gear, sector times, the flash and banner text) are Barlow Condensed 800 italic with a soft shade, `0 1px 3px rgba(0,0,0,.6)`. Labels stay upright, small and tracked.
+- Plates are dark, translucent and tinted with the settings' purple (`--hud-card`, `--pit-1` at 80%), with 2px corners and no border. Wells inside a plate are `--hud-well`.
+- Timing keeps its tokens: best magenta, personal best green, slower yellow, as solid sector plates. The live delta is green ahead and `--bad` red behind.
+- Gear, lit items (DRS open, pit limiter, a lit start) and the DRS-available text are yellow (`--hud-yel`). An assist that is working is a paper fill with dark text, and an assist switched off is struck through and dim.
+- Track limits are amber (`--hud-amber`). Start lights are red and glow when lit. This is the only glow allowed.
+- The brand purple (`--accent-fill`) fills the best and personal-best lap message, so the HUD belongs with the settings menu. The slipstream dot and bar use `--accent-soft`.
+- Pedal readouts and the touch pedals: throttle green, brake red, a pressed key paper.
+
+Rules that still hold in the HUD: every colour is a token (the `--hud-*` tokens on `:root` in `src/style.css`, the menu tokens otherwise), no raw hex in a rule, no text shadow except the shade above, `prefers-reduced-motion` keeps the fades and drops the travel. Text on a plate keeps 4.5:1 against bright sky (the labels measure about 6:1 on it); large numerals in red may sit a little under that. The slant of the old HUD is the italic only: the old plates were not skewed, so no plate is skewed.
+
 ## Behaviour guardrails
 
 - Keep every existing action, setting key, id and class that tests or code query. Change a selector only together with its test.
