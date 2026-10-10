@@ -253,7 +253,9 @@ export function buildTrackScene(T, ground) {
       const flush = () => { if (run.length > 1) strips('fence').strip(run, k => at(k, 0.3, 1.1), k => at(k, 0.3, 3.1), k => len[k] / 2, 0.55, 1.55); run = []; };
       for (const k of idx) { run.push(k); if (k < idx.length - 1 && gap(k)) { flush(); } }
       flush();
-      for (let m = 0; m <= len[len.length - 1]; m += 5) fencePosts.push([...pointAt(pts, nrm, len, m, 0.3), 3.1]);
+      // a regular post every 5 m, except where the fence is open: its s is read from the polyline's own track samples
+      const sAtLen = m => { let k = 0; while (k < len.length - 2 && len[k + 1] <= m) k++; const f = (m - len[k]) / Math.max(1e-6, len[k + 1] - len[k]), a = sAt(k), b = sAt(k + 1); return Math.abs(b - a) < 50 ? a + (b - a) * f : a; };
+      for (let m = 0; m <= len[len.length - 1]; m += 5) { const sm = sAtLen(m); if (openings.some(([a, c]) => sm >= a && sm <= c)) continue; fencePosts.push([...pointAt(pts, nrm, len, m, 0.3), 3.1]); }
       for (const k of idx) if (k < idx.length - 1 && gap(k)) for (const e of [k, k + 1]) fencePosts.push([...at(e, 0.3, 0), 3.1]);   // a post each side of an opening
       group.add(attenuator(pts, nrm, mat.attenuator));
     } else if (b.type === BARRIER.PITOUTER) {
@@ -422,7 +424,7 @@ function fillObjects(T, g) {
       // a 6 m sponsor banner on three posts, its printed face towards the track and a dark back
       for (const a of [-3, 0, 3]) box('metal', 0.08, 2.6, 0.08, a, 0.25, 0);
       box('dark', 6.0, 1.3, 0.04, 0, 0.27, 1.25);
-      const hw = 3, y0 = f.y + 1.25, y1 = f.y + 2.55, cx = f.x + ox * 0.24, cz = f.z + oz * 0.24;
+      const hw = 3, y0 = f.y + 1.25, y1 = f.y + 2.55, cx = f.x + ox * 0.22, cz = f.z + oz * 0.22;   // 3 cm in front of the backing (its track side is at 0.25): 1 cm z-fought from far away
       const row = tex.MODERN_SPONSORS[(Math.round(f.s) * 7) % tex.MODERN_SPONSORS.length], vb = 1 - (row + 1) / tex.SPONSORS.length, vt = 1 - row / tex.SPONSORS.length;
       // seen from the track, the viewer's left is further along the lap on the right side, back along it on the left side
       const L = [cx + ax * hw * g1, cz + az * hw * g1], R = [cx - ax * hw * g1, cz - az * hw * g1];

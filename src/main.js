@@ -146,11 +146,17 @@ const gantryScreen = createGantryScreen({
 });
 const gantryTex = new THREE.CanvasTexture(gantryScreen.canvas);
 gantryTex.colorSpace = THREE.SRGBColorSpace;
+gantryTex.generateMipmaps = false; gantryTex.minFilter = THREE.LinearFilter;   // the canvas is not a power of two and is re-sent often: no mipmaps to rebuild
 gantryTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 trackScene.userData.gantryScreenMaterial.map = gantryTex;
 trackScene.userData.gantryScreenMaterial.color.set(0xffffff);
 trackScene.userData.gantryScreenMaterial.needsUpdate = true;
 let gantryDrawn = -1;
+const gantryFrustum = new THREE.Frustum(), gantryBall = new THREE.Sphere(trackScene.userData.gantryPosition, 30), gantryPV = new THREE.Matrix4();
+function gantryInView() {
+  gantryPV.multiplyMatrices(rig.camera.projectionMatrix, rig.camera.matrixWorldInverse);
+  return gantryFrustum.setFromProjectionMatrix(gantryPV).intersectsSphere(gantryBall);
+}
 const lapsShown = new WeakSet();   // the hud empties timer.events on its own schedule, so remember which laps the screen has had
 const markers = debugMarkers(track);
 markers.visible = false;
@@ -430,14 +436,14 @@ function frame(now) {
   audioDue += dt;
   if (audioDue >= 1 / 62) { audio.update(car, audioDue, paused); audioDue = 0; }   // the sound parameters need no more than 60 updates a second
   lobby.update(now);
-  // gantry screen: lap board on crossing the line, redrawn 30 times a second while it is close enough to read
+  // gantry screen: lap board on crossing the line, redrawn 15 times a second while it is close enough to read and in view
   for (const ev of timer.events) {
     if (ev.type !== 'lap' || lapsShown.has(ev)) continue;
     lapsShown.add(ev);
     const raceLaps = dir.session && isRace(dir.session) ? dir.session.laps : null;   // a race shows "LAP 2 / 5"
     gantryScreen.lap({ lap: timer.lap, of: raceLaps, time: ev.time, kind: ev.best ? 'pb' : null, delta: ev.best || timer.best == null ? null : ev.time - timer.best });
   }
-  if (now - gantryDrawn > 33 && rig.camera.position.distanceTo(trackScene.userData.gantryPosition) < 900) {
+  if (now - gantryDrawn > 66 && rig.camera.position.distanceTo(trackScene.userData.gantryPosition) < 900 && gantryInView()) {
     gantryScreen.draw(now / 1000);
     gantryTex.needsUpdate = true;
     gantryDrawn = now;
