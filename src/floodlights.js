@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { trackPoint, hash01, Kit } from './meshKit.js';
 import { wallClearance } from './grandstands.js';
+import { nearBarrier } from './trackNear.js';
 import { lampMaterial, onLampLevel, onTopDown, light, flagMaterial, addFlag } from './lamps.js';
 
 export const MAST_H = 26;        // metres to the lamp frame
@@ -16,15 +17,10 @@ export const MAST_BEHIND = 7;    // metres behind the containment wall, at least
 export const MAST_BARRIER = 6;   // metres from any barrier line, at least
 const POOL_R = 24, POOL_AHEAD = 20;
 
-function segDist(x, z, sg) {
-  const t = Math.max(0, Math.min(1, ((x - sg.ax) * (sg.bx - sg.ax) + (z - sg.az) * (sg.bz - sg.az)) / (sg.len * sg.len)));
-  return Math.hypot(x - sg.ax - t * (sg.bx - sg.ax), z - sg.az - t * (sg.bz - sg.az));
-}
-
 // is a spot free for a mast (the same discipline as the props: wall, barriers, blockers, stands)
 export function mastFree(T, blockers, stands, x, z) {
   if (wallClearance(T, x, z) < MAST_BEHIND) return false;
-  for (const sg of T.segs) if (segDist(x, z, sg) < MAST_BARRIER) return false;
+  if (nearBarrier(T, x, z, MAST_BARRIER)) return false;
   for (const b of blockers) if (Math.hypot(x - b.x, z - b.z) < b.r + 4) return false;
   for (const o of stands) {
     const a = (x - o.x) * o.ex[0] + (z - o.z) * o.ex[1], b = (x - o.x) * o.ez[0] + (z - o.z) * o.ez[1];

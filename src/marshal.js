@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SURF } from './track.js';
 import { wallClearance } from './grandstands.js';
+import { nearBarrier } from './trackNear.js';
 import { trackPoint } from './meshKit.js';
 import { crowdMesh } from './crowd.js';
 import { minisectorBounds, minisectorAt } from './minisectors.js';
@@ -22,18 +23,13 @@ const PANEL = 1.8, POST_H = 2.1, PANEL_Y = 3.0;   // metres: the square housing,
 const SLIDES = [0]; for (let m = 6; m <= 120; m += 6) SLIDES.push(m, -m);
 const BEHIND = 2.5, BARRIER = 2.5;                 // least distance from the wall face and from any barrier line
 
-function segDist(x, z, sg) {
-  const t = Math.max(0, Math.min(1, ((x - sg.ax) * (sg.bx - sg.ax) + (z - sg.az) * (sg.bz - sg.az)) / (sg.len * sg.len)));
-  return Math.hypot(x - sg.ax - t * (sg.bx - sg.ax), z - sg.az - t * (sg.bz - sg.az));
-}
-
 // one post per minisector boundary: [{ k, s, side (0 left, 1 right), x, z, yaw, fx, fz }]; `why` lists any boundary with no valid place
 export function planMarshal(T, ground, { obstacles = [], blockers = [], n } = {}) {
   const B = minisectorBounds(T, false, n), count = B.length - 1, posts = [], why = [];
   const near = (i, f) => { for (let j = -10; j <= 10; j++) if (f(((i + j) % T.N + T.N) % T.N)) return true; return false; };
   const free = (x, z) => {
     if (wallClearance(T, x, z) < BEHIND) return false;
-    for (const sg of T.segs) if (segDist(x, z, sg) < BARRIER) return false;
+    if (nearBarrier(T, x, z, BARRIER)) return false;
     for (const b of blockers) if (Math.hypot(x - b.x, z - b.z) < b.r + 2) return false;
     for (const o of obstacles) { const a = (x - o.x) * o.ex[0] + (z - o.z) * o.ex[1], b = (x - o.x) * o.ez[0] + (z - o.z) * o.ez[1]; if (Math.abs(a) < o.len / 2 + 3 && b > -4 && b < o.depth + 3) return false; }
     return true;

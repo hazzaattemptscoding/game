@@ -12,6 +12,7 @@ import { entryRoadAt } from './track.js';
 import { lampMaterial, flagMaterial, addFlag } from './lamps.js';
 import { crowdMesh } from './crowd.js';
 import { vehicleBlockers } from './vehicleBays.js';
+import { wallClearance, nearBarrier } from './trackNear.js';
 
 export const GAP = 11;          // metres from the containment wall to the front of a stand
 export const FENCE_AT = 4.5;    // the spectator fence stands this far behind the wall
@@ -44,12 +45,6 @@ export const SITES = [
 export const standDepth = (site, rows = site.rows) => site.depth || rows * ROW + 3;
 
 const wrapN = (i, n) => ((i % n) + n) % n;
-
-// distance from point to segment
-function segDist(x, z, sg) {
-  const t = Math.max(0, Math.min(1, ((x - sg.ax) * (sg.bx - sg.ax) + (z - sg.az) * (sg.bz - sg.az)) / (sg.len * sg.len)));
-  return Math.hypot(x - sg.ax - t * (sg.bx - sg.ax), z - sg.az - t * (sg.bz - sg.az));
-}
 
 // Everything a stand must keep clear of that is not a barrier line: the pit garages, the bridge, the furniture.
 export function trackBlockers(T) {
@@ -85,23 +80,7 @@ const local = (f, a, b) => [f.x + f.ex[0] * a + f.ez[0] * b, f.z + f.ex[1] * a +
 
 // Signed distance from a point to the nearest containment wall (or the pit lane's outer edge) of any part of the circuit:
 // positive behind the wall, negative between the wall and the track.
-export function wallClearance(T, x, z, ignoreBridge = false) {
-  let nearest = -1, nq = Infinity, best = Infinity;
-  for (let j = 0; j < T.N; j++) {
-    if (ignoreBridge && T.isBridge[j]) continue;
-    const dx = x - T.x[j], dz = z - T.z[j], q = dx * dx + dz * dz;
-    if (q < nq) { nq = q; nearest = j; }
-    if (q > 200 * 200) continue;
-    for (let sd = 0; sd < 2; sd++) {
-      const sg = sd ? 1 : -1, w = Math.max(T.wall[sd][j], sd === 0 && T.pitOut[j] ? T.pitOut[j] + 2 : 0);
-      const wx = dx - T.nx[j] * sg * w, wz = dz - T.nz[j] * sg * w, d = wx * wx + wz * wz;
-      if (d < best) best = d;
-    }
-  }
-  const j = nearest, dx = x - T.x[j], dz = z - T.z[j], lat = dx * T.nx[j] + dz * T.nz[j], sd = lat < 0 ? 0 : 1;
-  const w = Math.max(T.wall[sd][j], sd === 0 && T.pitOut[j] ? T.pitOut[j] + 2 : 0);
-  return Math.abs(lat) < w ? -Math.sqrt(best) : Math.sqrt(best);
-}
+export { wallClearance };
 
 export function checkStand(T, ground, blockers, others, f, side, len, depth) {
   const pts = [];
@@ -111,9 +90,18 @@ export function checkStand(T, ground, blockers, others, f, side, len, depth) {
   // the structure itself stays 6 m from every barrier line
   for (const [, b, x, z] of pts) {
     if (b < 0) continue;
-    for (const sg of T.segs) if (segDist(x, z, sg) < 6) return 'too close to a barrier';
+    if (nearBarrier(T, x, z, 6)) return 'too close to a barrier';
   }
-  for (const bl of blockers) for (const [, , x, z] of pts) if (Math.hypot(x - bl.x, z - bl.z) < bl.r + 4) return 'overlaps ' + bl.name;
+  // only the blockers that can reach the footprint are tested against every point (the list holds hundreds)
+  let cx = 0, cz = 0;
+  for (const [, , x, z] of pts) { cx += x; cz += z; }
+  cx /= pts.length; cz /= pts.length;
+  let reach = 0;
+  for (const [, , x, z] of pts) reach = Math.max(reach, Math.hypot(x - cx, z - cz));
+  for (const bl of blockers) {
+    if (Math.hypot(cx - bl.x, cz - bl.z) > reach + bl.r + 4 + 1e-6) continue;
+    for (const [, , x, z] of pts) if (Math.hypot(x - bl.x, z - bl.z) < bl.r + 4) return 'overlaps ' + bl.name;
+  }
   for (const o of others) for (const [, , x, z] of pts) {
     const ax = (x - o.x) * o.ex[0] + (z - o.z) * o.ex[1], bz = (x - o.x) * o.ez[0] + (z - o.z) * o.ez[1];
     if (Math.abs(ax) < o.len / 2 + 10 && bz > -8 && bz < o.depth + 10) return 'overlaps ' + o.name;

@@ -8,6 +8,7 @@ import { bannerVideo } from './bannerVideo.js';
 import * as tex from './textures.js';
 import { Kit, metreUV, sponsorPanel, trackPoint, hash01, beam } from './meshKit.js';
 import { frame, checkStand, wallClearance, standDepth, GAP } from './grandstands.js';
+import { nearBarrier } from './trackNear.js';
 import { lampMaterial, flagMaterial, addFlag, onLampLevel, wind } from './lamps.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { crowdMesh } from './crowd.js';
@@ -18,10 +19,6 @@ import { vehicleBlockers } from './vehicleBays.js';
 const wrapN = (i, n) => ((i % n) + n) % n;
 const PALETTE = [0xc8102e, 0xf2f2ee, 0x1d4e9e, 0xffd21f, 0x0e7c86, 0xff6a13, 0x2f3136, 0x3f9d4f, 0xd4145a, 0x8a5cd6];
 
-function segDist(x, z, sg) {
-  const t = Math.max(0, Math.min(1, ((x - sg.ax) * (sg.bx - sg.ax) + (z - sg.az) * (sg.bz - sg.az)) / (sg.len * sg.len)));
-  return Math.hypot(x - sg.ax - t * (sg.bx - sg.ax), z - sg.az - t * (sg.bz - sg.az));
-}
 const local = (f, a, b) => [f.x + f.ex[0] * a + f.ez[0] * b, f.z + f.ex[1] * a + f.ez[1] * b];
 
 // ---- places ------------------------------------------------------------------------------------------------------
@@ -110,7 +107,7 @@ export function planFootbridges(T, ground, blockers, placed) {
         let lo = Infinity, hi = -Infinity;
         for (const [x, z] of pts) {
           if (wallClearance(T, x, z) < 8) { bad = 'too close to the circuit'; break; }
-          if (T.segs.some(sg => segDist(x, z, sg) < 6)) { bad = 'too close to a barrier'; break; }
+          if (nearBarrier(T, x, z, 6)) { bad = 'too close to a barrier'; break; }
           if (blockers.some(b => Math.hypot(x - b.x, z - b.z) < b.r + 4)) { bad = 'overlaps a building'; break; }
           if (placed.some(o => { const a = (x - o.x) * o.ex[0] + (z - o.z) * o.ex[1], b = (x - o.x) * o.ez[0] + (z - o.z) * o.ez[1]; return Math.abs(a) < o.len / 2 + 8 && b > -8 && b < o.depth + 8; })) { bad = 'overlaps a stand'; break; }
           const y = ground.meshHeight(x, z); lo = Math.min(lo, y); hi = Math.max(hi, y);
@@ -144,7 +141,7 @@ export function planSmall(T, ground, blockers, obstacles) {
   const bays = vehicleBlockers(T, false);
   const free = (x, z, r) => {
     if (wallClearance(T, x, z) < r.behind) return false;
-    for (const sg of T.segs) if (segDist(x, z, sg) < r.barrier) return false;
+    if (nearBarrier(T, x, z, r.barrier)) return false;
     for (const b of blockers) if (Math.hypot(x - b.x, z - b.z) < b.r + 2) return false;
     if (r !== SMALL_RULES.flag) for (const b of bays) if (Math.hypot(x - b.x, z - b.z) < b.r + 2) return false;   // the banner flags are the vehicle plan's own
     for (const o of obstacles) { const a = (x - o.x) * o.ex[0] + (z - o.z) * o.ex[1], b = (x - o.x) * o.ez[0] + (z - o.z) * o.ez[1]; if (Math.abs(a) < o.len / 2 + 2 && b > -3 && b < o.depth + 2) return false; }

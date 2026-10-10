@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import * as tex from './textures.js';
 import { Kit, trackPoint, hash01, sponsorRow } from './meshKit.js';
 import { wallClearance } from './grandstands.js';
+import { nearBarrier } from './trackNear.js';
 import { garageBay } from './pitBuilding.js';
 import { flagMaterial, addFlag } from './lamps.js';
 import { boardOffset } from './track.js';
@@ -23,11 +24,6 @@ function boardBack(kit, A, B, B2, A2, flip) {
   kit.quad('back', back(A), back(B), back(B2), back(A2));
   kit.quad('back', A, back(A), back(A2), A2);
   kit.quad('back', B, back(B), back(B2), B2);
-}
-
-function segDist(x, z, sg) {
-  const t = Math.max(0, Math.min(1, ((x - sg.ax) * (sg.bx - sg.ax) + (z - sg.az) * (sg.bz - sg.az)) / (sg.len * sg.len)));
-  return Math.hypot(x - sg.ax - t * (sg.bx - sg.ax), z - sg.az - t * (sg.bz - sg.az));
 }
 
 // is a stand footprint (grown by `m`) over this point
@@ -47,7 +43,7 @@ export function buildProps(T, ground, blockers, stands) {
   // buildings and stands.
   const free = (x, z, { behind = 3, fromBarrier = 3, pad = 3 } = {}) => {
     if (wallClearance(T, x, z) < behind) return false;
-    for (const sg of T.segs) if (segDist(x, z, sg) < fromBarrier) return false;
+    if (nearBarrier(T, x, z, fromBarrier)) return false;
     for (const b of blockers) if (Math.hypot(x - b.x, z - b.z) < b.r + pad) return false;
     return !inStand(stands, x, z, 6 + pad);
   };

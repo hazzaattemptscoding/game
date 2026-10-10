@@ -15,6 +15,7 @@
     "bumps": "node tools/bumps.js",
     "surfaces": "node tools/surfaces.js",
     "venue": "node tools/venue.js",
+    "nearparity": "node tools/nearparity.js",
     "limits": "node tools/limits.js",
     "assists": "node tools/assists.js",
     "cursor": "node tools/cursor.js",
