@@ -83,7 +83,7 @@ export function buildFloodlights(T, ground, masts) {
   const glowPos = [], poolPos = [], poolCol = [], poolIdx = [];
   const N = 9, tmpLoc = {};
   masts.forEach((m, k) => {
-    const y = ground.meshHeight(m.x, m.z) - 0.2;
+    const y = ground.surfaceHeight(m.x, m.z) - 0.2;
     e.set(0, m.yaw, 0);
     m4.compose(new THREE.Vector3(m.x, y, m.z), q.setFromEuler(e), one);
     poles.setMatrixAt(k, m4); heads.setMatrixAt(k, m4);
@@ -107,7 +107,7 @@ export function buildFloodlights(T, ground, masts) {
   const flags = new Kit(), keys = ['flagR', 'flagB', 'flagY'];
   masts.forEach((m, k) => {
     if (k % 2) return;
-    const y = ground.meshHeight(m.x, m.z) - 0.2, dx = Math.sin(m.yaw), dz = Math.cos(m.yaw);
+    const y = ground.surfaceHeight(m.x, m.z) - 0.2, dx = Math.sin(m.yaw), dz = Math.cos(m.yaw);
     addFlag(flags, keys[(k / 2) % 3], m.x + dx * 0.4, y + MAST_H * 0.45, m.z + dz * 0.4, dx, dz, 1.6, 4.5, 4);
   });
   if (flags.parts.size) g.add(flags.build({ flagR: flagMaterial({ color: 0xc8102e }), flagB: flagMaterial({ color: 0x1d4e9e }), flagY: flagMaterial({ color: 0xffd21f }) }, { debug: 'sign' }));

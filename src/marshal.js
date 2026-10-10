@@ -1,6 +1,7 @@
 // Marshal posts with LED light panels, one at every minisector boundary (src/minisectors.js), standing behind the barrier on the outside
 // of the track and facing the cars that are coming. The panel at boundary k is the one a car passes as it enters minisector k.
-// Two instanced meshes (the posts with the panel housing, and the lit faces with a colour per instance), so +2 draw calls however many posts.
+// Two instanced meshes (the posts with the panel housing, and the lit faces with a colour per instance), so +2 draw calls however many posts,
+// and the marshals' stations (src/marshalCrew.js): the people, their flags and their extinguishers, three more.
 //   planMarshal(T, ground, { obstacles, blockers })  where each post stands, as numbers (tools/minisectors.js checks them)
 //   createMarshalLights(T, ground, plan?)  { group, posts, set(k, state), setAll(state), state(k), update(time) }
 //   MarshalWatch  turns on yellow by itself for the player's car when it is off the track or stopped (needs no race control yet)
@@ -12,7 +13,7 @@ import { SURF } from './track.js';
 import { wallClearance } from './grandstands.js';
 import { nearBarrier } from './trackNear.js';
 import { trackPoint } from './meshKit.js';
-import { crowdMesh } from './crowd.js';
+import { planStations, createCrew } from './marshalCrew.js';
 import { minisectorBounds, minisectorAt } from './minisectors.js';
 import { allWheelsBeyondLine } from './trackLimits.js';
 
@@ -59,7 +60,7 @@ export function planMarshal(T, ground, { obstacles = [], blockers = [], n } = {}
     }
     if (found) posts.push(found); else why.push({ k, s: B[k] });
   }
-  return { posts, why };
+  return { posts, why, stations: planStations(T, { obstacles, blockers }, posts) };   // the marshals' stations every 70 m (src/marshalCrew.js)
 }
 
 export function createMarshalLights(T, ground, plan = planMarshal(T, ground)) {
@@ -76,16 +77,16 @@ export function createMarshalLights(T, ground, plan = planMarshal(T, ground)) {
   const leds = new THREE.InstancedMesh(led, new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }), N);
   const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), UP = new THREE.Vector3(0, 1, 0), ONE = new THREE.Vector3(1, 1, 1), C = new THREE.Color();
   posts.forEach((p, i) => {
-    M.compose(new THREE.Vector3(p.x, (ground ? ground.meshHeight(p.x, p.z) : 0) - 0.05, p.z), Q.setFromAxisAngle(UP, p.yaw), ONE);
+    M.compose(new THREE.Vector3(p.x, (ground ? ground.surfaceHeight(p.x, p.z) : 0) - 0.05, p.z), Q.setFromAxisAngle(UP, p.yaw), ONE);
     frames.setMatrixAt(i, M); leds.setMatrixAt(i, M); leds.setColorAt(i, C.setHex(COLOUR.off));
   });
   frames.castShadow = leds.castShadow = false;
   frames.computeBoundingSphere(); leds.computeBoundingSphere();
   frames.userData.debug = leds.userData.debug = 'sign';
   group.add(frames, leds);
-  // a marshal in orange overalls standing just behind each post, along the track (one crowd mesh, one draw call)
-  const marshals = crowdMesh(posts.map((p, i) => { const x = p.x - Math.sin(p.yaw) * 0.8, z = p.z - Math.cos(p.yaw) * 0.8; return [x, (ground ? ground.meshHeight(x, z) : 0) - 0.05, z, i % 3 ? 0xff6a13 : 0xf2f2ee, (i * 0.37) % 1, true]; }));
-  if (marshals) group.add(marshals);
+  // the marshals: a station every 70 m with two in orange overalls (src/marshalCrew.js), the flags taking the colour of the nearest panel
+  const crew = createCrew(T, ground, plan.stations || []);
+  for (const m of crew.meshes) group.add(m);
 
   const states = new Array(N).fill('off');
   let dirty = true, flashing = 0, lastPhase = '';
@@ -95,14 +96,17 @@ export function createMarshalLights(T, ground, plan = planMarshal(T, ground)) {
     if (!STATES.includes(state)) throw new Error('marshal light state: ' + state);
     const i = index.get(((k % (N || 1)) + (N || 1)) % (N || 1));
     if (i === undefined || states[i] === state) return;
-    states[i] = state; dirty = true;
+    states[i] = state; dirty = true; flagsDirty = true;
     flashing = states.filter(s => FLASH_HZ[s]).length;
   }
   const state = k => { const i = index.get(k); return i === undefined ? null : states[i]; };
   function setAll(s) { for (const p of posts) set(p.k, s); }
 
   // `time` in seconds; recolours only when a state changed or a flash turned over
+  const FLAG = { off: 0xe6e6dc, yellow: COLOUR.yellow, double: COLOUR.yellow, red: COLOUR.red, green: COLOUR.green, blue: COLOUR.blue };
+  let flagsDirty = true;
   function update(time) {
+    if (flagsDirty) { flagsDirty = false; crew.paint(i => FLAG[states[i]] ?? FLAG.off); }
     let phase = '';
     if (flashing) phase = Object.keys(FLASH_HZ).map(s => Math.floor(time * FLASH_HZ[s] * 2) & 1).join('');
     if (!dirty && phase === lastPhase) return;

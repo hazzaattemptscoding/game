@@ -725,12 +725,12 @@ export function buildExtras(T, ground, plan) {
   // signs, pit boards: one merged mesh with the atlas
   const sk = new Kit();
   for (const s of plan.small.signs) {
-    const y = ground.meshHeight(s.x, s.z), ex = [Math.cos(s.yaw), -Math.sin(s.yaw)], ux = ex[0] * 0.9, uz = ex[1] * 0.9;
+    const y = ground.surfaceHeight(s.x, s.z), ex = [Math.cos(s.yaw), -Math.sin(s.yaw)], ux = ex[0] * 0.9, uz = ex[1] * 0.9;
     sk.box('post', 0.08, 2.3, 0.08, s.x - ux * 0.7, y + 1.1, s.z - uz * 0.7); sk.box('post', 0.08, 2.3, 0.08, s.x + ux * 0.7, y + 1.1, s.z + uz * 0.7);
     sk.quad('signs', [s.x + ux, y + 1.5, s.z + uz], [s.x - ux, y + 1.5, s.z - uz], [s.x - ux, y + 2.6, s.z - uz], [s.x + ux, y + 2.6, s.z + uz], tileUV(s.tile));
   }
   for (const p of plan.small.pit) {
-    const y = ground.meshHeight(p.x, p.z), hwid = 2.4, a = [p.x + p.nx * hwid, p.z + p.nz * hwid], b = [p.x - p.nx * hwid, p.z - p.nz * hwid];
+    const y = ground.surfaceHeight(p.x, p.z), hwid = 2.4, a = [p.x + p.nx * hwid, p.z + p.nz * hwid], b = [p.x - p.nx * hwid, p.z - p.nz * hwid];
     for (const q of [a, b]) sk.box('post', 0.14, 4.4, 0.14, q[0], y + 2.1, q[1]);
     sk.quad('signs', [b[0], y + 2.2, b[1]], [a[0], y + 2.2, a[1]], [a[0], y + 4.4, a[1]], [b[0], y + 4.4, b[1]], tileUV(p.tile));
   }
@@ -755,7 +755,7 @@ export function buildExtras(T, ground, plan) {
     }
   }
   for (const p of plan.small.photo) {
-    const y = ground.meshHeight(p.x, p.z), yaw = Math.atan2(p.nx, p.nz);   // the lens (the box's long side) points at the track
+    const y = ground.surfaceHeight(p.x, p.z), yaw = Math.atan2(p.nx, p.nz);   // the lens (the box's long side) points at the track
     people.push([p.x, y, p.z, 0xff6a13, 0.5, true]);
     const lx = p.x + p.nx * 0.45, lz = p.z + p.nz * 0.45;
     all.box('black', 0.18, 0.18, 0.55, lx, y + 1.5, lz, yaw);
@@ -766,7 +766,7 @@ export function buildExtras(T, ground, plan) {
 
   // banner flags along the start straight: tall poles with long vertical flags (wind material)
   for (const f of plan.small.flags) {
-    const y = ground.meshHeight(f.x, f.z) - 0.1, k = Math.round(f.s / 16) % 4;
+    const y = ground.surfaceHeight(f.x, f.z) - 0.1, k = Math.round(f.s / 16) % 4;
     all.box('steel', 0.1, 8.4, 0.1, f.x, y + 4.2, f.z);
     addFlag(all, ['flagR', 'flagW', 'flagB', 'flagY'][k], f.x + f.tx * 0.05, y + 4.0, f.z + f.tz * 0.05, f.tx, f.tz, 1.5, 4.2, 4);
   }
@@ -780,7 +780,7 @@ export function buildExtras(T, ground, plan) {
     const bin = new THREE.CylinderGeometry(0.34, 0.3, 0.9, 8); bin.translate(0, 0.45, 0);
     const im = new THREE.InstancedMesh(bin, new THREE.MeshStandardMaterial({ color: 0x2f5d3c, roughness: 0.7 }), plan.small.bins.length);
     const m4 = new THREE.Matrix4();
-    plan.small.bins.forEach((b, k) => { m4.makeTranslation(b.x, ground.meshHeight(b.x, b.z) - 0.05, b.z); im.setMatrixAt(k, m4); });
+    plan.small.bins.forEach((b, k) => { m4.makeTranslation(b.x, ground.surfaceHeight(b.x, b.z) - 0.05, b.z); im.setMatrixAt(k, m4); });
     im.userData.debug = 'sign'; group.add(im);
   }
 
@@ -789,7 +789,7 @@ export function buildExtras(T, ground, plan) {
     const fk = new Kit(), pk = new Kit();
     let u = 0, prev = null;
     for (const s of plan.small.fence) {
-      const ya = ground.meshHeight(s.ax, s.az), yb = ground.meshHeight(s.bx, s.bz), du = Math.hypot(s.bx - s.ax, s.bz - s.az) / 2;
+      const ya = ground.surfaceHeight(s.ax, s.az), yb = ground.surfaceHeight(s.bx, s.bz), du = Math.hypot(s.bx - s.ax, s.bz - s.az) / 2;
       const cont = prev && Math.hypot(prev.bx - s.ax, prev.bz - s.az) < 0.5;
       if (!cont) u = 0;
       fk.quad('fence', [s.ax, ya - 0.2, s.az], [s.bx, yb - 0.2, s.bz], [s.bx, yb + 2.2, s.bz], [s.ax, ya + 2.2, s.az], [[u, 0], [u + du, 0], [u + du, 1.2], [u, 1.2]]);

@@ -197,6 +197,11 @@ function fire() {
   p.box(-4.1, 1.3, 2.55, 2.66, -0.5, -0.42, 0xd7dbdf); p.box(-4.1, 1.3, 2.55, 2.66, 0.42, 0.5, 0xd7dbdf);
   for (let x = -3.9; x <= 1.2; x += 0.5) p.box(x, x + 0.06, 2.6, 2.7, -0.46, 0.46, 0xd7dbdf);
   p.box(-4.0, -3.3, 2.55, 2.95, -0.55, 0.55, 0x5a6067);
+  // the hose reel on the roof: a drum on its frame, hose wound on it
+  const drumX = -2.4, reel = zz => Array.from({ length: 8 }, (_, k) => { const a = k * Math.PI / 4 + Math.PI / 8; return [drumX + Math.cos(a) * 0.3, 2.95 + Math.sin(a) * 0.3, zz]; });
+  p.box(drumX - 0.4, drumX + 0.4, 2.55, 2.64, -0.5, 0.5, 0x3a3f44);
+  p.loft([reel(-0.4), reel(0.4)], 0x23272b);
+  p.both(s => p.box(drumX - 0.03, drumX + 0.03, 2.64, 3.28, s * 0.45 - 0.03, s * 0.45 + 0.03, 0x3a3f44));
   // lights
   lightbar(p, 2.2, 2.8, 3.0, 0.95, 0.16);
   p.box(3.5, 3.54, 0.62, 0.85, 0.5, 0.9, 0x2a63ff, FX.blueA); p.box(3.5, 3.54, 0.62, 0.85, -0.9, -0.5, 0x2a63ff, FX.blueB);
@@ -290,39 +295,78 @@ const SC_ROOF = [[-1.75, 0.93], [-1.5, 1.1], [-1.2, 1.15], [-0.7, 1.19], [0, 1.1
 const along = (tab, x) => { for (let i = 0; i + 1 < tab.length; i++) if (x <= tab[i + 1][0]) { const t = (x - tab[i][0]) / (tab[i + 1][0] - tab[i][0] || 1); return tab[i][1] + (tab[i + 1][1] - tab[i][1]) * Math.max(0, t); } return tab[tab.length - 1][1]; };
 function safety() {
   const p = new Part(), xs = [-2.34, -2.1, -1.8, -1.4, -0.9, -0.4, 0.1, 0.6, 1.1, 1.5, 1.85, 2.1, 2.34];
-  const body = 0xf2f2ee, rgb = lin(body);
+  const body = 0xdfe3e6, green = 0x1d6b4a, black = 0x15181b;   // silver white with the green livery (PAINT.safety): neither follows the per vehicle paint pick
   // the body: a ring at each station, quads between, flat shaded
   const ring = x => {
     const yb = along(SC_YB, x), ys = along(SC_YS, x), w = along(SC_W, x);
     const half = [[0, yb], [w * 0.8, yb], [w, yb + 0.1], [w, ys - 0.12], [w * 0.92, ys], [w * 0.5, ys + 0.06], [0, ys + 0.08]];
     return [...half.map(([z, y]) => [x, y, z]), ...half.slice(1, -1).reverse().map(([z, y]) => [x, y, -z])];
   };
-  const rings = xs.map(ring);
-  p.loft(rings, body, FX.paint);
-  void rgb;
-  // cabin: a narrow greenhouse with dark glass all round
-  const cx = [-1.75, -1.5, -1.1, -0.6, -0.1, 0.25, 0.55, 0.77];
-  const cring = x => {
-    const yB = along(SC_YS, x) - 0.05, yR = Math.max(along(SC_ROOF, x), yB + 0.02), w = 0.62 + 0.15 * Math.min(1, (x + 1.75) / 0.6) * Math.min(1, (0.8 - x) / 0.5);
-    const half = [[w, yB], [w * 0.9, yB + (yR - yB) * 0.7], [w * 0.55, yR], [0, yR + 0.01]];
-    return [...half.map(([z, y]) => [x, y, z]), ...half.slice(1, -1).reverse().map(([z, y]) => [x, y, -z])];
+  p.loft(xs.map(ring), body);
+  // the height of the body's top skin at x, z (for |z| under half the flank width): what the stripes and vents lie on
+  const top = (x, z) => along(SC_YS, x) + 0.08 - 0.02 * Math.min(1, Math.abs(z) / (along(SC_W, x) * 0.5));
+  // a flat strip on the top skin from x0 to x1 and za to zb, cut at every body station so it follows the shape
+  const skin = (x0, x1, za, zb, hex, lift = 0.008) => {
+    const cuts = [x0, ...xs.filter(x => x > x0 && x < x1), x1];
+    for (let k = 0; k + 1 < cuts.length; k++) {
+      const a = cuts[k], b = cuts[k + 1];
+      p.quad([a, top(a, za) + lift, za], [a, top(a, zb) + lift, zb], [b, top(b, zb) + lift, zb], [b, top(b, za) + lift, za], hex);
+    }
   };
-  p.loft(cx.map(cring), 0x20262d, 0);
-  // the roof strip in body colour between the glass
-  p.box(-1.2, 0.0, 1.17, 1.2, -0.3, 0.3, body, FX.paint);
-  // splitter, rear wing on two uprights, the livery
+  // cabin: a narrow greenhouse with tinted glass all round
+  const cx = [-1.75, -1.5, -1.1, -0.6, -0.1, 0.25, 0.55, 0.77];
+  const cabin = x => {
+    const yB = along(SC_YS, x) - 0.05, yR = Math.max(along(SC_ROOF, x), yB + 0.02), w = 0.62 + 0.15 * Math.min(1, (x + 1.75) / 0.6) * Math.min(1, (0.8 - x) / 0.5);
+    return { yB, yR, w, half: [[w, yB], [w * 0.9, yB + (yR - yB) * 0.7], [w * 0.55, yR], [0, yR + 0.01]] };
+  };
+  const cring = x => { const { half } = cabin(x); return [...half.map(([z, y]) => [x, y, z]), ...half.slice(1, -1).reverse().map(([z, y]) => [x, y, -z])]; };
+  p.loft(cx.map(cring), GLASS);
+  // the A, B and C pillars: dark bars up the glass from the sill to the roof edge, either side
+  for (const [xb, xt, t] of [[0.74, 0.34, 0.09], [-0.55, -0.55, 0.08], [-1.4, -1.5, 0.1]]) {
+    const lo = cabin(xb), hi = cabin(xt);
+    p.both(s => {
+      p.beam([xb, lo.yB, s * (lo.w + 0.008)], [(xb + xt) / 2, (lo.yB + (lo.yR - lo.yB) * 0.7 + hi.yB + (hi.yR - hi.yB) * 0.7) / 2, s * (lo.w * 0.9 + hi.w * 0.9) / 2 + s * 0.008], t, black);
+      p.beam([(xb + xt) / 2, (lo.yB + (lo.yR - lo.yB) * 0.7 + hi.yB + (hi.yR - hi.yB) * 0.7) / 2, s * (lo.w * 0.9 + hi.w * 0.9) / 2 + s * 0.008], [xt, hi.yR, s * (hi.w * 0.55 + 0.004)], t, black);
+    });
+  }
+  // the green stripe: along the roof, down the bonnet and over the tail, and along the sill between the wheels
+  for (let k = 0; k + 1 < cx.length - 2; k++) {
+    const a = cabin(cx[k + 1]), b = cabin(cx[k + 2]), x0 = cx[k + 1], x1 = cx[k + 2];
+    p.quad([x0, a.yR + 0.02, -0.17], [x0, a.yR + 0.02, 0.17], [x1, b.yR + 0.02, 0.17], [x1, b.yR + 0.02, -0.17], green);
+  }
+  skin(0.77, 2.3, -0.17, 0.17, green);
+  skin(-2.2, -1.78, -0.17, 0.17, green);
+  p.both(s => { for (let x = -0.9; x < 0.95; x += 0.3) p.panel(s, x, Math.min(0.95, x + 0.31), 0.26, 0.37, along(SC_W, x + 0.15) + 0.005, green); });
+  // bonnet vents, a mesh grille in the nose, the door cut lines
+  p.both(s => skin(1.05, 1.6, s * 0.22, s * 0.42, black, 0.01));
+  p.face(1, 2.344, -0.5, 0.5, 0.3, 0.43, black);
+  for (const y of [0.34, 0.39]) p.face(1, 2.347, -0.5, 0.5, y, y + 0.012, 0x59616a);
+  for (let z = -0.45; z <= 0.46; z += 0.15) p.face(1, 2.347, z - 0.006, z + 0.006, 0.3, 0.43, 0x59616a);
+  p.both(s => {
+    const z = 0.95, line = 0.012;
+    p.panel(s, 0.6, 0.6 + line, 0.3, 0.78, z, black); p.panel(s, -0.75, -0.75 + line, 0.3, 0.78, z, black); p.panel(s, -0.17, -0.17 + line, 0.3, 0.78, z, black);
+    p.panel(s, -0.75, 0.6, 0.78, 0.78 + line, z, black);
+    p.decal(s, -0.45, 0.45, 0.42, 0.72, 0.94, ROW.safety);
+  });
+  // splitter, rear wing on two uprights
   p.box(2.1, 2.42, 0.1, 0.16, -0.9, 0.9, 0x1b1e21);
   p.box(-2.34, -1.95, 1.1, 1.18, -0.95, 0.95, 0x1b1e21);
   p.both(s => { p.box(-2.2, -2.05, 0.95, 1.1, s * 0.6 - 0.03, s * 0.6 + 0.03, 0x1b1e21); p.box(-2.38, -1.9, 1.02, 1.3, s * 0.95 - 0.015, s * 0.95 + 0.015, 0x1b1e21); });
-  p.both(s => {
-    p.decal(s, -0.64, 0.64, 0.44, 0.66, 0.936, ROW.safety);
-    for (let x = -1.75; x < 1.5; x += 0.35) p.panel(s, x, Math.min(1.5, x + 0.36), 0.3, 0.36, along(SC_W, x + 0.18) + 0.004, 0xffd21f);   // a yellow sill line that follows the flank
-  });
-  p.box(-0.6, -0.1, 1.19, 1.3, -0.5, 0.5, 0x1b1e21);
-  p.box(-0.55, -0.15, 1.3, 1.36, -0.45, 0.45, 0xffa000, FX.amber);
-  p.box(2.3, 2.38, 0.4, 0.5, -0.5, 0.5, 0x15181b);
+  // the light bar: 1.1 m wide, 0.12 tall, lit amber, with a small beacon at each end
+  p.box(-0.62, -0.08, 1.185, 1.215, -0.56, 0.56, black);
+  p.box(-0.58, -0.12, 1.215, 1.335, -0.5, 0.5, 0xffa000, FX.amber);
+  p.both(s => p.box(-0.45, -0.25, 1.215, 1.3, s * 0.52, s * 0.62, 0xffa000, FX.amber));
   p.both(s => { p.box(2.22, 2.3, 0.58, 0.68, s * 0.62 - 0.16, s * 0.62 + 0.16, 0xf2f4ff, FX.head); p.box(-2.38, -2.3, 0.7, 0.8, s * 0.6 - 0.2, s * 0.6 + 0.2, 0xc0161c, FX.tail); });
-  for (const x of [1.4, -1.3]) p.both(s => p.wheel(x, s * 0.82, 0.34, 0.3, s));
+  // wheels outboard so the tyre face stands 0.14 proud of the flank, under flared arches (half discs of body colour, 0.1 m over the tyre)
+  for (const x of [1.4, -1.3]) p.both(s => {
+    p.wheel(x, s * 0.93, 0.34, 0.38, s);
+    const R0 = 0.37, R1 = 0.46, pt = (a, R) => [x + Math.cos(a) * R, 0.34 + Math.sin(a) * R];
+    for (let k = 0; k < 5; k++) {
+      const a0 = k * Math.PI / 5, a1 = (k + 1) * Math.PI / 5, A = pt(a0, R0), B = pt(a1, R0), Cc = pt(a1, R1), D = pt(a0, R1);
+      const ring = z => [[A[0], A[1], z], [B[0], B[1], z], [Cc[0], Cc[1], z], [D[0], D[1], z]];
+      p.loft([ring(s * 0.84), ring(s * 1.05)], body);
+    }
+  });
   return p;
 }
 
@@ -341,6 +385,11 @@ function buggy() {
   p.both(s => p.decal(s, -0.95, 0.65, 1.74, 1.84, 0.62 + 0.002, ROW.marshal));
   p.box(-1.0, -0.82, 1.9, 2.02, -0.09, 0.09, 0xffa000, FX.amber);
   p.both(s => { p.box(1.39, 1.45, 0.45, 0.62, s * 0.42 - 0.1, s * 0.42 + 0.1, 0xf2f4ff, FX.head); p.box(-1.43, -1.4, 0.6, 0.7, s * 0.5 - 0.06, s * 0.5 + 0.06, 0xc0161c, FX.tail); });
+  p.box(1.4, 1.52, 0.28, 0.5, -0.5, 0.5, BUMP);                                                               // the front bumper
+  p.box(-1.45, -1.38, 0.3, 0.46, -0.52, 0.52, BUMP);                                                          // the rear bumper
+  p.box(0.3, 0.6, 0.55, 0.92, -0.5, 0.5, 0x2a2e33);                                                           // the dash
+  p.both(s => { p.box(0.7, 1.35, 0.3, 0.38, s * 0.56 - 0.02, s * 0.56 + 0.02 + s * 0.06, 0x3a3f44); p.box(-1.0, 0.5, 0.28, 0.34, s * 0.56 - 0.02, s * 0.56 + 0.02 + s * 0.06, 0x3a3f44); });   // the running boards
+  for (const x of [1.0, -0.95]) p.both(s => p.box(x - 0.27, x + 0.27, 0.36, 0.41, s * 0.6 - 0.07, s * 0.6 + 0.07, W, FX.paint));   // the mudguards
   p.both(s => p.wheel(1.0, s * 0.5, 0.2, 0.16, s)); p.both(s => p.wheel(-0.95, s * 0.5, 0.2, 0.16, s));
   return p;
 }
@@ -361,6 +410,13 @@ function transport() {
   p.both(s => { p.box(6.34, 6.42, 0.8, 1.05, s * 0.85 - 0.1, s * 0.85 + 0.1, 0xf2f4ff, FX.head); p.box(-6.56, -6.5, 0.9, 1.3, s * 1.05 - 0.07, s * 1.05 + 0.07, 0xc0161c, FX.tail); });
   p.both(s => p.box(5.85, 6.0, 2.2, 2.6, s * 1.27 - 0.03, s * 1.27 + 0.2 * s, BUMP));
   p.box(5.0, 5.3, 3.3, 3.42, -0.9, 0.9, 0x23272b);                                                             // roof marker bar
+  p.both(s => {
+    p.box(-4.2, 3.3, 0.7, 1.0, s * 1.05 - 0.03, s * 1.05 + 0.03 + s * 0.17, 0x2a2e33);                         // the side skirt under the box
+    p.box(-6.0, 3.6, 3.46, 3.52, s * 1.3 - 0.02, s * 1.3 + 0.06 * s, 0x8c939a);                                // the awning rail along the top of the box
+    for (let x = -5.6; x < 3.5; x += 1.8) p.box(x - 0.03, x + 0.03, 3.4, 3.56, s * 1.28 - 0.03, s * 1.28 + 0.1 * s, 0x6a7077);   // its brackets
+    p.box(3.4, 3.9, 0.9, 1.1, s * 1.2 - 0.04, s * 1.2 + 0.04, 0x2a2e33);
+  });
+  p.box(3.5, 3.62, 1.2, 3.7, 1.0, 1.12, CHROME); p.box(3.46, 3.66, 3.7, 3.78, 0.96, 1.16, 0x3a3f44);              // the exhaust stack up the back of the cab
   for (const x of [5.6, 3.9, 2.7, -3.9, -5.1, -6.2]) p.both(s => p.wheel(x, s * 1.0, 0.5, 0.4, s));
   return p;
 }
@@ -386,7 +442,7 @@ const PAINT = {
   recovery: [0xffc20e, 0xf5b800],
   medical: [0xf1f2f2, 0xe9edef],
   sweeper: [0xf08a1c, 0xf5a01c],
-  safety: [0xdadde0, 0x1d6b4a, 0xdadde0],
+  safety: [0xdfe3e6],   // silver white with a green stripe, both fixed in safety()
   buggy: [0xf3f1ea, 0xf08a1c, 0x2f6f4a],
   transport: [0xe9eaec, 0x2a3140, 0x7c8186, 0xf1ebe0, 0x1d5f5a, 0x8d1f2e],
 };
@@ -395,7 +451,7 @@ const PAINT = {
 // One vehicle placed: position, heading and the ground's slope under it, applied to the part's vertices.
 function placeMatrix(v, ground) {
   const d = VEHICLES[v.type], c = Math.cos(v.yaw), s = Math.sin(v.yaw), l = d.len * 0.36, w = d.wid * 0.42;
-  const h = (u, z) => ground.meshHeight(v.x + u * c - z * s, v.z + u * s + z * c);
+  const h = (u, z) => ground.surfaceHeight(v.x + u * c - z * s, v.z + u * s + z * c);
   const hf = h(l, 0), hr = h(-l, 0), hl = h(0, -w), hrt = h(0, w);
   const gf = (hf - hr) / (2 * l), gr = (hrt - hl) / (2 * w);
   const gx = gf * c + gr * -s, gz = gf * s + gr * c;
@@ -497,7 +553,7 @@ function paintBrands(ctx, texture) {
 }
 
 // ---- the meshes ---------------------------------------------------------------------------------------------------------------
-// The planned vehicles as a group of merged meshes (one per 450 m cell of ground), standing on `ground` (its meshHeight).
+// The planned vehicles as a group of merged meshes (one per 450 m cell of ground), standing on `ground` (its surfaceHeight).
 // the mesh a vehicle is merged into: a 450 m cell of ground, so a view only draws the cells it can see
 export const cellKey = v => Math.floor(v.x / 450) + ',' + Math.floor(v.z / 450);
 

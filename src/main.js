@@ -131,6 +131,7 @@ env.set(urlEnv || settings, { instant: true });
 env.registerWorld(world);
 const marshal = createMarshalLights(track, ground, planMarshal(track, ground, scenery.userData.keepClear));   // LED panels at the minisector boundaries (src/marshal.js)
 scene.add(marshal.group);
+const marshalProps = propCuller(marshal.group);   // the marshals go beyond their draw distance like the crowds
 addServiceVehicles(scene, track, ground, scenery.userData.keepClear);   // parked ambulances, fire engines, the safety car and the rest (src/serviceVehicles.js)
 const marshalWatch = new MarshalWatch(marshal, track);
 const racingLine = createRacingLine(track);   // optional colour coded racing line (L key, Settings); the page ?line=1 turns it on
@@ -262,7 +263,7 @@ function resize() {
 let quality = null, lastDpr = devicePixelRatio;
 addEventListener('resize', () => { resize(); if (quality && devicePixelRatio !== lastDpr) { lastDpr = devicePixelRatio; quality.refresh(); } });
 // the sun shadow, the pixel ratio and Auto's render scale follow settings.quality (src/quality.js)
-quality = createQuality({ renderer, sun, settings, phone, onResize: resize, ready: tier => { limitAnisotropy(scene, tier.aniso); props.update(rig.camera, tier.propDist); } });
+quality = createQuality({ renderer, sun, settings, phone, onResize: resize, ready: tier => { limitAnisotropy(scene, tier.aniso); props.update(rig.camera, tier.propDist); marshalProps.update(rig.camera, tier.propDist); } });
 
 // --- menu, sessions and the start sequence (src/director.js) ---
 function openReport() {
@@ -459,7 +460,7 @@ function frame(now) {
   sun.target.position.set(shadowAt.x, shadowAt.y, shadowAt.z);
   sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 150);
   renderer.shadowMap.needsUpdate = quality.shadowDue(now);
-  if (frameNo === 1 || frameNo % 8 === 0) props.update(rig.camera, reportTool.opened ? Infinity : quality.tier.propDist);
+  if (frameNo === 1 || frameNo % 8 === 0) { const lim = reportTool.opened ? Infinity : quality.tier.propDist; props.update(rig.camera, lim); marshalProps.update(rig.camera, lim); }
 
   env.update(dt, rig.camera, { speed: car.speed, lightning: settings.lightning });
   audioDue += dt;

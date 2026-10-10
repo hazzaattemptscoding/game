@@ -303,7 +303,7 @@ export function planFences(T, ground, stands) {
     let prev = null, u = 0;
     for (let k = -Math.ceil(half); k <= Math.ceil(half); k += 2) {
       const j = wrapN(c.i + k, T.N), d = sg * (T.wall[st.side][j] + FENCE_AT);
-      const x = T.x[j] + T.nx[j] * d, z = T.z[j] + T.nz[j] * d, y = ground.meshHeight(x, z);
+      const x = T.x[j] + T.nx[j] * d, z = T.z[j] + T.nz[j] * d, y = ground.surfaceHeight(x, z);
       const cur = [x, y, z];
       if (prev) {
         const du = Math.hypot(x - prev[0], z - prev[2]) / 2;

@@ -61,6 +61,46 @@ function farGeometry() {
   return g;
 }
 
+// A standing person with legs, torso, arms, an octagonal head and a white helmet (about 90 triangles), 1.24 m tall as built; the
+// instance colour is the overalls, the skin attribute is 0 for overalls, 1 for skin and 2 for the helmet. Front is +z.
+export function standingPersonGeometry() {
+  const pos = [], skin = [], idx = [];
+  const quad = (a, b, c, d, k) => { const n = pos.length / 3; for (const q of [a, b, c, d]) { pos.push(...q); skin.push(k); } idx.push(n, n + 1, n + 2, n, n + 2, n + 3); };
+  // a box without a bottom, centred on x (cx), standing from y0 to y1, w wide, d deep
+  const box = (cx, y0, y1, w, d, cz, k) => {
+    const x0 = cx - w / 2, x1 = cx + w / 2, z0 = cz - d / 2, z1 = cz + d / 2;
+    quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], k);
+    quad([x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], k);
+    quad([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], k);
+    quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], k);
+    quad([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], k);
+  };
+  box(-0.085, 0, 0.45, 0.14, 0.16, 0, 0);                 // legs
+  box(0.085, 0, 0.45, 0.14, 0.16, 0, 0);
+  box(0, 0.45, 1.0, 0.4, 0.24, 0, 0);                     // torso
+  box(-0.25, 0.47, 0.97, 0.1, 0.1, 0, 0);                 // arms
+  box(0.25, 0.47, 0.97, 0.1, 0.1, 0, 0);
+  // an eight sided prism from y0 to y1 with a flat top, no bottom
+  const prism = (r, y0, y1, k) => {
+    const ring = Array.from({ length: 8 }, (_, i) => { const a = i * Math.PI / 4 + Math.PI / 8; return [Math.cos(a) * r, Math.sin(a) * r]; });
+    for (let i = 0; i < 8; i++) {
+      const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % 8];
+      quad([bx, y0, bz], [ax, y0, az], [ax, y1, az], [bx, y1, bz], k);
+    }
+    const n = pos.length / 3;
+    for (const [x, z] of ring) { pos.push(x, y1, z); skin.push(k); }
+    for (let i = 1; i < 7; i++) idx.push(n, n + i + 1, n + i);   // the top, seen from above
+  };
+  prism(0.11, 1.0, 1.12, 1);                              // head
+  prism(0.125, 1.12, 1.25, 2);                            // helmet
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('skin', new THREE.Float32BufferAttribute(skin, 1));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 let shared = null;
 function parts() {
   if (shared) return shared;
@@ -76,7 +116,7 @@ function parts() {
         float hh = fract(sin(float(gl_InstanceID) * 12.9898 + 4.1) * 43758.5453);
         int k = int(hh * ${SKIN.length}.0);
         vec3 tone = ${tones.slice(1).map((t, k) => `k == ${k + 1} ? ${t} : `).join('')}${tones[0]};
-        vColor.rgb = mix(vColor.rgb, tone, skin);
+        vColor.rgb = skin > 1.5 ? vec3(0.93) : mix(vColor.rgb, tone, skin);
       }
 #endif`);
   };
@@ -101,5 +141,27 @@ export function crowdMesh(spots) {
   im.userData.debug = 'building';
   im.userData.maxDist = CROWD_FAR;
   im.userData.nearGeometry = geo; im.userData.farGeometry = far; im.userData.nearDist = CROWD_NEAR;   // swapped by propCuller
+  return im;
+}
+
+// People in overalls standing about: one InstancedMesh of standingPersonGeometry. spots: [x, y, z, colour, random 0..1, yaw] with y the ground
+// they stand on and yaw the way they face (their front is +z, so yaw = atan2(dx, dz) towards what they look at). About 1.7 m tall.
+let standing = null;
+export function standingCrowd(spots) {
+  if (!spots.length) return null;
+  const { mat } = parts();
+  standing = standing || standingPersonGeometry();
+  const im = new THREE.InstancedMesh(standing, mat, spots.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), p = new THREE.Vector3(), s = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  spots.forEach(([x, y, z, colour, h, yaw], k) => {
+    const f = 1.3 + h * 0.12;
+    m4.compose(p.set(x, y, z), q.setFromAxisAngle(up, yaw), s.set(f, f, f));
+    im.setMatrixAt(k, m4);
+    im.setColorAt(k, c.setHex(colour));
+  });
+  im.instanceMatrix.needsUpdate = true;
+  im.castShadow = false;
+  im.userData.debug = 'building';
+  im.userData.maxDist = CROWD_FAR;
   return im;
 }
