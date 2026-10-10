@@ -13,7 +13,8 @@ import { buildGrandstands, trackBlockers } from './grandstands.js';
 import { buildProps } from './props.js';
 import { buildPitDetail } from './pitBuilding.js';
 import { planMasts, buildFloodlights } from './floodlights.js';
-import { planExtras, buildExtras, footBlockers } from './venueExtras.js';
+import { planExtras, buildExtras, footBlockers, smallBlockers } from './venueExtras.js';
+import { buildPitDressing } from './pitDressing.js';
 
 // Longer, rougher grass for everything beyond the containment wall: one texture, one tint, shared by the ground ribbon's
 // outer band and the terrain mesh, so the two meet without a seam. A second look at the same texture at another scale
@@ -384,8 +385,8 @@ export function buildScenery(T, ground) {
   const all = [...trackBlockers(T), ...blockers];
   const extras = planExtras(T, ground, all, stands.userData.stands);
   const obstacles = [...stands.userData.stands, ...extras.items];
-  const allB = [...all, ...footBlockers(extras.bridges)];
-  g.add(stands, buildExtras(T, ground, extras), buildProps(T, ground, allB, obstacles), buildPitDetail(T, ground));
+  const allB = [...all, ...footBlockers(extras.bridges), ...smallBlockers(extras.small)];
+  g.add(stands, buildExtras(T, ground, extras), buildProps(T, ground, allB, obstacles), buildPitDetail(T, ground), buildPitDressing(T, ground));
   g.add(buildFloodlights(T, ground, planMasts(T, allB, obstacles)));
   g.userData.keepClear = { obstacles, blockers: allB };   // for the marshal posts (src/marshal.js), planned after the scenery
 

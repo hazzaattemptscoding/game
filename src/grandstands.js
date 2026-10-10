@@ -3,13 +3,15 @@
 // planStands() picks the places (pure numbers, no meshes, so tools/venue.js can check them in node): behind the
 // containment wall with a clear gap, never on the track, run-off or pit lane, never on a building or another stand.
 // buildGrandstands() draws them: a solid concrete body with stepped, seat-textured tiers, a front hoarding, a roof on
-// columns, a spectator fence behind the barrier line, and the crowd as two InstancedMeshes per stand (torsos and heads).
+// columns, a spectator fence behind the barrier line, and the crowd as one InstancedMesh per stand (src/crowd.js).
 
 import * as THREE from 'three';
 import * as tex from './textures.js';
 import { Kit, metreUV, sponsorPanel, sponsorRow, trackPoint, hash01 } from './meshKit.js';
 import { entryRoadAt } from './track.js';
 import { lampMaterial, flagMaterial, addFlag } from './lamps.js';
+import { crowdMesh } from './crowd.js';
+import { vehicleBlockers } from './vehicleBays.js';
 
 export const GAP = 11;          // metres from the containment wall to the front of a stand
 export const FENCE_AT = 4.5;    // the spectator fence stands this far behind the wall
@@ -19,7 +21,7 @@ const SEAT = 0.55;              // seat spacing along a row
 
 // Where stands are wanted. `s` is the preferred place along the lap and `range` how far the search may drift from it.
 // kind: 'main' (covered, concrete), 'terrace' (open concrete terrace, a standing crowd), 'scaffold' (temporary steel scaffold stand with a
-// banner screen behind it), 'hospitality' (two storey building with a balcony; `depth` is its footprint depth). Twelve in all.
+// banner screen behind it), 'hospitality' (two storey building with a balcony; `depth` is its footprint depth). Fifteen in all.
 export const SITES = [
   { name: 'Main Grandstand', kind: 'main', s: 80, range: 60, sides: [1], len: 110, rows: 14, roof: true },
   { name: 'Scramble Stand', kind: 'main', s: 380, range: 110, sides: [1], len: 70, rows: 10, roof: true },
@@ -33,6 +35,10 @@ export const SITES = [
   { name: 'Lakeside Scaffold', kind: 'scaffold', s: 2760, range: 150, sides: [0, 1], len: 40, rows: 8, roof: false },
   { name: 'Esses Scaffold', kind: 'scaffold', s: 3200, range: 150, sides: [0, 1], len: 40, rows: 8, roof: false },
   { name: 'Bridge Viewing', kind: 'terrace', s: 1690, range: 140, sides: [0, 1], len: 40, rows: 8, roof: false },
+  // the left of Scramble and Hurricane Sweep, and the run to Windsock Hairpin: a long covered stand, an open terrace and a small hairpin stand
+  { name: 'Hurricane Grandstand', kind: 'main', s: 590, range: 80, sides: [0], len: 96, rows: 13, roof: true },
+  { name: 'Approach Terrace', kind: 'terrace', s: 770, range: 60, sides: [0], len: 56, rows: 10, roof: false },
+  { name: 'Hairpin Stand', kind: 'main', s: 1010, range: 50, sides: [0], len: 34, rows: 8, roof: true },
 ];
 
 export const standDepth = (site, rows = site.rows) => site.depth || rows * ROW + 3;
@@ -52,8 +58,9 @@ export function trackBlockers(T) {
     if (T.pitGarage[i] > 0) out.push({ x: T.x[i] - T.nx[i] * (T.pitOut[i] + 9), z: T.z[i] - T.nz[i] * (T.pitOut[i] + 9), r: 14, name: 'pit garages' });
     if (T.isBridge[i]) out.push({ x: T.x[i], z: T.z[i], r: Math.max(T.wall[0][i], T.wall[1][i]) + 3, name: 'bridge' });
   }
-  // the fill objects (track.js FILL_GAP) stand 1.5 m behind a barrier, well clear of any stand's 10 m zone: a small radius
-  for (const f of T.furniture || []) out.push({ x: f.x, z: f.z, r: f.fill ? 0.5 : 3, name: 'board' });
+  // the fill objects (track.js FILL_GAP) stand 1.5 m behind a barrier and reach no more than 3.5 m behind it, clear of a stand's
+  // walkway (5 m behind the wall at the nearest): a negative radius, so the 4 m margin the checks add leaves 3 m round the spot
+  for (const f of T.furniture || []) out.push({ x: f.x, z: f.z, r: f.fill ? -1 : 3, name: 'board' });
   return out;
 }
 
@@ -118,8 +125,8 @@ export function checkStand(T, ground, blockers, others, f, side, len, depth) {
 }
 
 // Choose the places. Returns [{ name, s, side, len, rows, roof, x, z, ex, ez, yaw, F, depth, y0, low }], and `why` for sites that failed.
-export function planStands(T, ground, blockers, sites = SITES) {
-  const placed = [], why = [];
+export function planStands(T, ground, blockers0, sites = SITES) {
+  const placed = [], why = [], blockers = [...blockers0, ...vehicleBlockers(T)];   // and the ground kept for the service vehicles
   for (const site of sites) {
     let best = null;
     const reason = {};
@@ -145,7 +152,6 @@ export function planStands(T, ground, blockers, sites = SITES) {
 // ---------------------------------------------------------------------------
 
 const PALETTE = [0xc8102e, 0xf2f2ee, 0x1d4e9e, 0xffd21f, 0x0e7c86, 0xff6a13, 0x2f3136, 0x3f9d4f, 0xd4145a, 0x8a5cd6];
-const SKIN = [0xf1c9a5, 0xe0ac88, 0xc68a62, 0x9a6540, 0x6b4328, 0xf6d6bd];
 
 // Draws one stand into `kit` (the stand's own frame: x along the front, y up from the platform, z away from the track) and
 // returns the places for its crowd: [x, tread y, z, colour, random, standing].
@@ -355,11 +361,8 @@ export function buildGrandstands(T, ground, extraBlockers = [], sponsorTex) {
     lamp: lampMaterial({ color: 0xdfe3e6, emissive: 0xfff2cf }, 5),
     flagR: flagMaterial({ color: 0xc8102e }),
     flagB: flagMaterial({ color: 0x1d4e9e }),
-    crowd: new THREE.MeshLambertMaterial({ color: 0xffffff }),
   };
   for (const k of ['concrete', 'seat', 'aisle', 'roof']) mats[k].userData.wet = 'surface';   // darker and glossier in the rain (src/environment.js)
-  const torso = new THREE.BoxGeometry(0.42, 0.5, 0.26); torso.translate(0, 0.25, 0);
-  const head = new THREE.OctahedronGeometry(0.13, 0);
   const all = new Kit(), M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler();
   let people = 0;
   for (const st of plan.stands) {
@@ -370,20 +373,8 @@ export function buildGrandstands(T, ground, extraBlockers = [], sponsorTex) {
     M.compose(new THREE.Vector3(st.x, st.y0, st.z), Q.setFromEuler(E), new THREE.Vector3(1, 1, 1));
     for (const [key, list] of kit.parts) for (const geo of list) { geo.applyMatrix4(M); all.push(key, geo); }
 
-    const cg = new THREE.Group();
-    const tm = new THREE.InstancedMesh(torso, mats.crowd, spots.length), hm = new THREE.InstancedMesh(head, mats.crowd, spots.length);
-    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), one = new THREE.Vector3(1, 1, 1);
-    spots.forEach(([a, y, z, colour, h, standing], k) => {
-      const lift = standing ? 0.42 : 0, sc = new THREE.Vector3(0.9 + h * 0.25, standing ? 1.25 : 1, 1);
-      m4.compose(new THREE.Vector3(a, y + 0.45 + lift, z), q.identity(), sc);
-      tm.setMatrixAt(k, m4); tm.setColorAt(k, c.setHex(colour));
-      m4.compose(new THREE.Vector3(a, y + 1.08 + lift + (standing ? 0.12 : 0) + (h - 0.5) * 0.04, z), q, one);
-      hm.setMatrixAt(k, m4); hm.setColorAt(k, c.setHex(SKIN[Math.floor(((h * 7919) % 1) * SKIN.length)]));
-    });
-    tm.instanceMatrix.needsUpdate = hm.instanceMatrix.needsUpdate = true;
-    tm.castShadow = hm.castShadow = false;
-    tm.userData.debug = hm.userData.debug = 'building';
-    cg.add(tm, hm);
+    const cg = new THREE.Group(), cm = crowdMesh(spots);
+    if (cm) cg.add(cm);
     cg.position.set(st.x, st.y0, st.z);
     cg.rotation.y = st.yaw;
     cg.name = st.name;

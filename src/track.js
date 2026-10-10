@@ -1584,7 +1584,7 @@ function buildFurniture(T, corners) {
 
   // bare stretches: where a side has no trackside furniture for more than FILL_GAP metres, a cluster goes in at the
   // middle of the gap, just behind the outer barrier line, and the gap is re-checked until none is left
-  const kinds = ['marshal', 'tyres', 'cabinet', 'banner', 'tyres', 'mast'];
+  const kinds = ['marshal', 'tyres', 'banner', 'cabinet', 'store', 'flag', 'tyres', 'mast', 'banner', 'flag'];
   let clusters = 0;
   for (const sd of [0, 1]) {
     const skipped = new Set();
@@ -1604,9 +1604,10 @@ function buildFurniture(T, corners) {
       for (let k = 6; k <= reach; k += 6) offs.push(k, -k);
       for (const off of offs) {
         const i0 = wrap(centre + off, N);
-        const spots = [0, 7, 14].map(k => wrap(i0 + k, N));   // three objects, a few metres apart, so it does not read as a fence
+        // three to six objects a few metres apart (more for every other cluster), so a group reads from the track and not as a fence
+        const spots = Array.from({ length: 3 + clusters % 4 }, (_, k) => wrap(i0 + k * 6, N));
         if (!spots.every(i => clusterSpot(T, i, sd, wl))) continue;
-        const cluster = spots.map((i, k) => place(kinds[(clusters * 3 + k) % kinds.length], 0, i, (sd ? 1 : -1) * (wl.outer[sd][i] + CLUSTER_BEHIND), { fill: true }));
+        const cluster = spots.map((i, k) => place(kinds[(clusters * 3 + k) % kinds.length], 0, i, (sd ? 1 : -1) * (wl.outer[sd][i] + CLUSTER_BEHIND), { fill: true, hue: (clusters + k) % 4 }));
         if (cluster.some(f => nearOther(f.x, f.z, 6))) continue;
         T.furniture.push(...cluster);
         clusters++;
