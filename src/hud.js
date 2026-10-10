@@ -168,8 +168,8 @@ export class Hud {
       const cls = ld <= 0 ? 'ahead' : 'behind';
       if (e.live.dataset.s !== cls) e.live.dataset.s = cls;
       const w = Math.min(1, Math.abs(ld) / 2) * 50;   // a full half-bar at 2 s
-      const style = ld <= 0 ? `left:${50 - w}%;width:${w}%` : `left:50%;width:${w}%`;
-      if (e.liveBar.getAttribute('style') !== style) e.liveBar.setAttribute('style', style);
+      const style = `translateX(${ld <= 0 ? 50 - w : 50}%) scaleX(${w / 100})`;
+      if (e.liveBar.style.transform !== style) e.liveBar.style.transform = style;
     }
 
     // sector splits for the current lap: best (the session's fastest, timing-best), pb (your personal best from the saved list,
@@ -247,7 +247,7 @@ export class Hud {
     if (e.live.hidden) e.live.hidden = false;
     if (e.live.dataset.s !== 'ahead') e.live.dataset.s = 'ahead';
     text(e.liveT, '-0.412');
-    if (e.liveBar.getAttribute('style') !== 'left:37.9%;width:20.6%') e.liveBar.setAttribute('style', 'left:37.9%;width:20.6%');
+    e.liveBar.style.transform = 'translateX(37.9%) scaleX(0.206)';
     const cells = SAMPLE_SECTORS.map(([t, k, d], i) => `<i class="${k}"><b>S${i + 1}</b><span>${t.toFixed(2)}</span><em class="${d < 0 ? 'neg' : 'pos'}">${fmtDelta(d)}</em></i>`).join('');
     if (cells !== this._secHtml) { e.sec.innerHTML = cells; this._secHtml = cells; }
     const key = 'sample';

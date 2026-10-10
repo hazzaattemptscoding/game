@@ -151,6 +151,7 @@ gantryTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 trackScene.userData.gantryScreenMaterial.map = gantryTex;
 trackScene.userData.gantryScreenMaterial.color.set(0xffffff);
 trackScene.userData.gantryScreenMaterial.needsUpdate = true;
+const menuEl = document.getElementById('menu');
 let gantryDrawn = -1;
 const gantryFrustum = new THREE.Frustum(), gantryBall = new THREE.Sphere(trackScene.userData.gantryPosition, 30), gantryPV = new THREE.Matrix4();
 function gantryInView() {
@@ -466,11 +467,13 @@ function frame(now) {
   board.update(simTime, now);
   const cursorOn = settings.steering === 'cursor';
   steerBar.hidden = !(cursorOn && hudOn(settings, 'steerBar'));
-  if (cursorOn) steerMark.style.left = `${(50 + playerInput.steer * 44).toFixed(1)}%`;
+  if (cursorOn) steerMark.style.transform = `translateX(${(playerInput.steer * 366.7).toFixed(0)}%)`;   // 12 % wide: 44 % of the bar is 366.7 % of the mark
   selfFx.x = view.root.position.x; selfFx.y = view.root.position.y; selfFx.z = view.root.position.z; selfFx.h = -view.root.rotation.y; selfFx.brk = car.brake; selfFx.len = car.cfg.length; selfFx.v = Math.max(0, car.fwdSpeed); selfFx.cls = car.cfg.id;
   rig.extraFov = slipFx.update(paused || topDown ? 0 : car.wake, dt, now);
   carFx.update(dt, rig.camera, lobby.ghosts.fx, selfFx, env.resolved, topDown);
-  renderer.render(scene, rig.camera);
+  // behind a menu that covers the world (every one but the main menu, .m-shade) at half the rate; in a room the world stays live
+  const covered = dir.menuOpen && !lobby.active && menuEl.dataset.home !== '1';
+  if (!(covered && frameNo % 2)) renderer.render(scene, rig.camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(now => { frame(now); bootDone(); });

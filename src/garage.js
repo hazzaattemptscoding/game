@@ -95,7 +95,7 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
   try {
     const canvas = el('canvas');
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));   // a second WebGL context beside the game's: no more than 1.5
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     viewBox.append(canvas);
     scene = new THREE.Scene();
@@ -113,12 +113,13 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
     };
     size();
     if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(size); ro.observe(viewBox); }
-    let t0 = performance.now(), ang = 0, spin = 0;
+    let t0 = performance.now(), ang = 0, spin = 0, drawn = 0;
     const loop = now => {
       if (disposed) return;
       raf = requestAnimationFrame(loop);
       const dt = Math.min(0.1, (now - t0) / 1000); t0 = now;
-      if (!document.hidden && viewBox.clientWidth > 0) {
+      if (!document.hidden && viewBox.clientWidth > 0 && now - drawn >= 28) {   // the sway is slow: 30 frames a second is smooth
+        drawn = now;
         // a slow sway to either side of the three-quarter front view, so the car never turns its back on the player
         ang += dt * 0.4; spin += dt * 0.7;
         const f = previewFrame(carById(settings.car), camera.aspect, PREVIEW_AZ + Math.sin(ang) * 14, car.hull.position.x);
