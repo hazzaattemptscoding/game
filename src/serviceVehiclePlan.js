@@ -19,7 +19,7 @@ export const VEHICLES = {
   recovery: { len: 8.1, wid: 2.5, label: 'recovery truck' },
   medical: { len: 5.1, wid: 2.3, label: 'medical car' },
   sweeper: { len: 6.3, wid: 2.4, label: 'track sweeper' },
-  safety: { len: 4.9, wid: 2.1, label: 'safety car' },
+  safety: { len: 4.9, wid: 2.3, label: 'safety car' },
   buggy: { len: 3.0, wid: 1.4, label: 'marshal buggy' },
   transport: { len: 13.4, wid: 3.0, label: 'team transporter' },
 };
