@@ -750,3 +750,10 @@ body.report-mode #touch { display: none !important; }
 .hud-learn-tag { font-style: normal; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--warn); }
 .hud-learn-btn { font: inherit; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text); background: var(--pit-3); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); padding: 3px 10px; cursor: pointer; }
 .hud-learn-btn:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; }
+
+/* the loading screen (index.html, src/boot.js) */
+#boot { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #0b0f14; color: #e8edf2; font: 600 15px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: 0.04em; }
+#boot .boot-name { font-size: 28px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+#boot .boot-bar { width: min(280px, 64vw); height: 3px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+#boot .boot-bar i { display: block; height: 100%; background: #e8edf2; transform: scaleX(0.02); transform-origin: left; transition: transform 0.25s ease-out; }
+#boot .boot-step { opacity: 0.7; min-height: 1.2em; }
