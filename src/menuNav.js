@@ -1,6 +1,6 @@
 // Menu navigation from the keyboard and a gamepad, so a menu works without a mouse (and with one at the same time).
 //
-//   const nav = createMenuNav(dir => { ... });   // dir: 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'tab-left' | 'tab-right' | 'start' | 'digit:1'..'digit:7'
+//   const nav = createMenuNav(dir => { ... });   // dir: 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'tab-left' | 'tab-right' | 'start' | 'digit:1'..'digit:6'
 //   each frame: nav.update(dt)                    // polls the gamepad (the keyboard is event driven and needs no update)
 //   nav.enabled = false                           // pause it while the game itself is being driven
 //   nav.dispose()
@@ -18,8 +18,9 @@ const PAD_BUTTONS = { 0: 'confirm', 1: 'back', 4: 'tab-left', 5: 'tab-right', 9:
 const PAD_DIRS = { 12: 'up', 13: 'down', 14: 'left', 15: 'right' };
 const KEY_DIRS = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
 const KEY_BUTTONS = { Enter: 'confirm', NumpadEnter: 'confirm', Space: 'confirm', Escape: 'back', Backspace: 'back', KeyQ: 'tab-left', PageUp: 'tab-left', KeyE: 'tab-right', PageDown: 'tab-right' };
-// number keys 1 to 7 (top row and keypad): emitted as 'digit:1' .. 'digit:7', the main menu opens that entry
-const KEY_DIGITS = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Digit6: 6, Digit7: 7, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5, Numpad6: 6, Numpad7: 7 };
+// number keys 1 to 6 (top row and keypad): emitted as 'digit:1' .. 'digit:6'. The main menu has four entries, the Race screen four
+// cards and the pause menu six actions; each screen takes the numbers it has and ignores the rest.
+const KEY_DIGITS = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Digit6: 6, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5, Numpad6: 6 };
 
 const isTyping = el => !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) && !(el.tagName === 'INPUT' && ['range', 'button', 'checkbox', 'radio', 'submit'].includes(el.type)));
 

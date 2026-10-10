@@ -12,7 +12,7 @@ const CHASE_AHEAD = 18;       // metres ahead along the road the camera aims at,
 const CHASE_CLEAR = 1.3;      // the camera stays at least this far above the ground under it
 const BASE_FOV = 60;
 const SPEED_FOV = 10;         // extra field of view at top speed
-// Free look (Settings > Display): drag with the mouse or push the right stick to look round the car; let go and it eases back.
+// Free look (Settings > Graphics): drag with the mouse or push the right stick to look round the car; let go and it eases back.
 const LOOK_YAW = Math.PI;     // as far round as it goes either way (behind to in front)
 const LOOK_PITCH = [-0.15, 0.7];
 const LOOK_RETURN = 4;        // how quickly it settles back behind the car

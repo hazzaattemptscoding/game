@@ -1,5 +1,5 @@
-// The screens of the menu: main menu, pause, race setup, settings (categories), online lobby, garage, global times and the
-// placeholders. Registered on the menu by registerScreens(menu). The game's side of each button is `ctx.api` (director.js).
+// The screens of the menu: main menu (Race, Garage, Leaderboard, Settings), the race mode cards, pause, setup, settings (categories),
+// online lobby, garage, leaderboard and the placeholders. Registered on the menu by registerScreens(menu). The game's side of each button is `ctx.api` (director.js).
 // The look is the Lakeside UI system (.interface-design/system.md): a rail on the left, groups of rows, one control per setting.
 
 import { LAP_CHOICES } from './session.js';
@@ -107,39 +107,72 @@ function trackSvg(track) {
 // --- the rail (main menu, and the other screens of the main menu and the pause menu) ------------------------------------
 
 const HOME = [
-  ['practice', 'Free practice'],
-  ['timetrial', 'Time trial'],
-  ['race', 'Race'],
-  ['online', 'Online'],
-  ['times', 'Global times'],
-  ['garage', 'Garage'],
-  ['settings', 'Settings'],
+  ['race', 'Race', 'Hot lap, free drive, solo or online'],
+  ['garage', 'Garage', 'Your car and its paint'],
+  ['times', 'Leaderboard', 'The fastest laps online'],
+  ['settings', 'Settings', 'Controls, graphics, sound'],
 ];
 
-// Opens one of the seven entries. Practice and race open their setup; time trial starts at once.
+// What each mode is called for the driver. Shared by the Race cards, the Continue button and the pause card.
+export const MODE_TITLE = { timetrial: 'Hot lap', practice: 'Free drive', race: 'Solo race', online: 'Online race' };
+
+// The cards of the Race screen: what happens and who with. `id` is the mode the card starts (or opens the setup of).
+export const RACE_CARDS = [
+  { id: 'timetrial', title: 'Hot lap', line: 'Just you and the clock. Every lap is timed and your best is saved.', chips: ['Solo', 'Timed', 'Starts at once'] },
+  { id: 'practice', title: 'Free drive', line: 'No timer and no rules. Drive as long as you like, forward or in reverse.', chips: ['Solo', 'Not timed', 'Pit lane or grid'] },
+  { id: 'race', title: 'Solo race', line: 'Standing start under the five lights, then a set number of laps. You are the only car.', chips: ['Solo', 'Lights and laps', 'Penalties'] },
+  { id: 'online', title: 'Online race', line: 'Race up to eight people. Host a room and share the code, or join a friend\'s.', chips: ['Up to 8 players', 'Needs internet'] },
+];
+
+// Opens one of the four entries of the main menu
 function openEntry(ctx, id) {
-  const m = ctx.menu;
-  if (id === 'practice') return m.jump('setup', { mode: 'practice' });
-  if (id === 'race') return m.jump('setup', { mode: 'race' });
-  if (id === 'timetrial') return ctx.api.startTimeTrial();
-  return m.jump(id);
+  return ctx.menu.jump(id);
 }
 
-// The main menu's nav. The entry for the last mode used (settings.lastMode, saved on each start) carries a quiet 'Last' tag, and
-// on the main menu it is the one that takes the focus when the menu opens.
+// Starts a mode (a card of the Race screen, or Continue): a hot lap starts at once, a free drive and a solo race open their setup,
+// an online race opens the lobby where the host or join choice comes next.
+function openMode(ctx, id) {
+  const m = ctx.menu;
+  if (id === 'timetrial') return ctx.api.startTimeTrial();
+  if (id === 'practice') return m.push('setup', { mode: 'practice' });
+  if (id === 'race') return m.push('setup', { mode: 'race' });
+  return m.push('online');
+}
+
+// Continue: start the last mode again with the settings it was last started with. Online has no one-press start (a room needs a
+// host or a code), so it takes you to the lobby.
+function continueMode(ctx, id) {
+  const { api, settings } = ctx;
+  if (id === 'timetrial') return api.startTimeTrial();
+  if (id === 'practice') return api.startPractice({ start: settings.practiceStart === 'standing' ? 'standing' : 'pit', reverse: settings.practiceReverse === true });
+  if (id === 'race') {
+    const cur = raceSetup(settings), hasLine = !!(api.hasRacingLine && api.hasRacingLine());
+    return api.startRace({ laps: cur.laps, assists: cur.assists, racingLine: hasLine ? cur.racingLine : true, trackLimits: cur.trackLimits, slipstream: cur.slipstream !== false });
+  }
+  return ctx.menu.push('online');
+}
+
+// The main menu's nav: Continue above (only when a mode was started before, labelled with what it will do), then the four entries
+// with their number keys. On the main menu the Continue button takes the focus; with none, the first entry does.
 function navList(ctx, activeId) {
   const nav = h('nav', 'nav');
   nav.setAttribute('aria-label', 'Main menu');
-  const last = ctx.settings.lastMode || 'practice';
-  HOME.forEach(([id, label], i) => {
-    // Online shows a lake dot while the driver is in a room (live state)
-    const live = id === 'online' && ctx.api.inRoom && ctx.api.inRoom() ? h('i', 'live-dot') : null;
-    const isLast = id === last ? h('em', 'nav-last', 'Last') : null;
-    const b = h('button', 'nav-item', h('span', 'nav-text', h('span', '', label, live), isLast), h('kbd', '', String(i + 1)));
+  const last = ctx.settings.lastMode;
+  if (activeId === 'main' && MODE_TITLE[last]) {
+    const c = h('button', 'nav-continue', h('span', '', `Continue: ${MODE_TITLE[last]}`));
+    c.type = 'button';
+    c.dataset.first = '1';
+    c.dataset.action = 'continue';
+    c.addEventListener('click', () => continueMode(ctx, last));
+    nav.append(c);
+  }
+  HOME.forEach(([id, label, hint], i) => {
+    const b = h('button', 'nav-item', h('span', 'nav-text', h('span', '', label), activeId === 'main' ? h('small', 'nav-hint', hint) : null), h('kbd', '', String(i + 1)));
     b.type = 'button';
+    b.dataset.entry = id;
     b.style.setProperty('--i', String(i));
     if (id === activeId) b.setAttribute('aria-current', 'page');
-    if (isLast && activeId === 'main') b.dataset.first = '1';   // the main menu opens with the focus on it
+    if (activeId === 'main' && !MODE_TITLE[last] && i === 0) b.dataset.first = '1';   // with no Continue, the main menu opens on Race
     b.addEventListener('click', () => openEntry(ctx, id));
     nav.append(b);
   });
@@ -163,7 +196,7 @@ function railNodes(ctx, top) {
   if (main) { brand.type = 'button'; brand.addEventListener('click', () => ctx.menu.jump('main')); }
   const out = [brand];
   if (main) {
-    const active = top.id === 'setup' ? ((top.params && top.params.mode) || 'race') : top.id;
+    const active = top.id === 'setup' || top.id === 'online' ? 'race' : top.id;   // a mode's setup and the lobby sit under Race
     out.push(navList(ctx, active));
   } else {
     const card = sessionCard(ctx);
@@ -186,15 +219,37 @@ function homeScreen() {
   };
 }
 
+// --- race: the modes as cards ---------------------------------------------------------------------------------------------
+
+function raceScreen() {
+  return {
+    rail: true, title: 'Race',
+    onDigit: (n, mounted, ctx) => { const c = RACE_CARDS[n - 1]; if (c) openMode(ctx, c.id); },
+    mount(c, ctx) {
+      c.append(h('p', 'm-sub', 'How do you want to drive?'));
+      const grid = h('div', 'cards');
+      RACE_CARDS.forEach((card, i) => {
+        const b = h('button', 'card', h('span', 'card-head', h('b', 'card-title', card.title), h('kbd', '', String(i + 1))), h('span', 'card-line', card.line), h('span', 'chips', ...card.chips.map(t => h('em', '', t))));
+        b.type = 'button';
+        b.dataset.mode = card.id;
+        if (card.id === (MODE_TITLE[ctx.settings.lastMode] ? ctx.settings.lastMode : 'timetrial')) b.dataset.first = '1';   // the focus starts on the mode played last
+        b.addEventListener('click', () => openMode(ctx, card.id));
+        grid.append(b);
+      });
+      c.append(grid);
+      return null;
+    },
+  };
+}
+
 // --- pause ------------------------------------------------------------------------------------------------------------
 
 // the session as the pause screen shows it: the mode, the laps driven, the best lap and the lap in progress (frozen while paused)
-const MODE_LABEL = { practice: 'Free practice', timetrial: 'Time trial', race: 'Race', online: 'Online race' };
 function sessionCard(ctx) {
   const st = ctx.api.sessionStats ? ctx.api.sessionStats() : null;
   if (!st || !st.mode) return null;
   const race = st.mode === 'race' || st.mode === 'online';
-  const name = MODE_LABEL[st.mode] + (race && st.laps ? `, ${st.laps} laps` : '') + (st.reverse ? ', reverse' : '');
+  const name = MODE_TITLE[st.mode] + (race && st.laps ? `, ${st.laps} laps` : '') + (st.reverse ? ', reverse' : '');
   const laps = race && st.laps ? `${Math.min(st.done, st.laps)} of ${st.laps}` : String(st.done);
   return h('div', 'session-card',
     h('p', 'gtitle', 'Session'),
@@ -205,13 +260,15 @@ function sessionCard(ctx) {
       h('span', '', 'Lap now'), h('b', '', st.current != null ? fmtTime(st.current) : '-:--.---')));
 }
 
-// the pause actions, numbered 1 to 4 (number keys): Resume, Restart session, Settings, Global times. The pane shows them.
-function pauseActions(ctx) {
+// the pause actions, numbered 1 to 6 (number keys): Resume, Restart, Garage, Settings, Leaderboard, Quit to menu. Quit asks first.
+function pauseActions(ctx, quit = () => ctx.api.toMainMenu()) {
   return [
     ['Resume', () => ctx.api.resume()],
-    ['Restart session', () => ctx.api.restart()],
+    ['Restart', () => ctx.api.restart()],
+    ['Garage', () => ctx.menu.push('garage')],
     ['Settings', () => ctx.menu.push('settings')],
-    ['Global times', () => ctx.menu.push('times')],
+    ['Leaderboard', () => ctx.menu.push('times')],
+    ['Quit to menu', quit],
   ];
 }
 
@@ -219,12 +276,15 @@ function pauseActions(ctx) {
 const kbdBadge = n => (n ? h('kbd', '', String(n)) : null);
 
 function pauseScreen() {
+  let quit = null;   // set by mount: Quit to menu asks first
   return {
     title: 'Paused', backable: false, rail: true,
-    onDigit: (n, mounted, ctx) => { const a = pauseActions(ctx)[n - 1]; if (a) a[1](); },
+    onDigit: (n, mounted, ctx) => { const a = pauseActions(ctx, quit || undefined)[n - 1]; if (a) a[1](); },
     mount(c, ctx) {
       c.classList.add('pause-body');   // the first control sits below the title with room to breathe
-      const [[, resumeFn], ...keyed] = pauseActions(ctx);
+      quit = () => confirmLeave();
+      const [[, resumeFn], ...rest] = pauseActions(ctx, quit);
+      const quitAction = rest.pop();
       const resume = h('button', 'btn primary pause-resume', h('span', '', 'Resume'), kbdBadge(1));
       resume.type = 'button';
       resume.addEventListener('click', resumeFn);
@@ -236,14 +296,14 @@ function pauseScreen() {
         b.addEventListener('click', fn);
         return b;
       };
-      list.append(...keyed.map(([label, fn], i) => row(label, fn, i + 2)));
+      list.append(...rest.map(([label, fn], i) => row(label, fn, i + 2)));
       if (ctx.api.screen && ctx.api.screen.canControl()) list.append(row('Screen control', () => ctx.menu.push('screen')));
-      list.append(row('Report a problem', () => ctx.api.report()), row('Back to main menu', () => confirmLeave(), 0, 'danger quiet'));
+      list.append(row('Report a problem', () => ctx.api.report()), row(quitAction[0], quitAction[1], 6, 'danger quiet'));
       const sure = h('div', 'confirm'); sure.hidden = true;
       function confirmLeave() {
         list.hidden = true; resume.hidden = true; sure.hidden = false;
-        sure.replaceChildren(h('p', '', 'Leave this session and go back to the main menu? Your laps in this session are not kept except the ones already saved in Times.'),
-          h('div', 'actions', btn('Stay', 'btn', () => { sure.hidden = true; list.hidden = false; resume.hidden = false; ctx.menu.focusFirst(); }), btn('Leave', 'btn danger', () => ctx.api.toMainMenu())));
+        sure.replaceChildren(h('p', '', 'Quit to the main menu? This session ends. Your best laps are already saved on this device.'),
+          h('div', 'actions', btn('Stay', 'btn', () => { sure.hidden = true; list.hidden = false; resume.hidden = false; ctx.menu.focusFirst(); }), btn('Quit to menu', 'btn danger', () => ctx.api.toMainMenu())));
         sure.querySelector('button').dataset.first = '1';
         ctx.menu.focusFirst();
       }
@@ -260,27 +320,27 @@ function pauseScreen() {
 function setupScreen() {
   return {
     rail: true,
-    title: p => (p && p.mode === 'practice' ? 'Free practice' : 'Race setup'),
+    title: p => (p && p.mode === 'practice' ? 'Free drive' : 'Solo race'),
     mount(c, ctx) {
       const { settings, save, api } = ctx, mode = (ctx.params && ctx.params.mode) || 'race';
       const grid = h('div', 'setup'), groups = h('div', 'setup-groups'), summary = h('div', 'summary');
       const big = h('div', 'big'), facts = h('div', 'facts'), map = h('div', 'track-map');
       map.append(trackSvg(api.track));
       grid.append(groups, summary);
-      c.append(h('p', 'm-sub', mode === 'practice' ? 'Drive as long as you like. Reset puts you back on the track anywhere.' : 'Standing start from the grid with the five lights.'), grid);
+      c.append(h('p', 'm-sub', mode === 'practice' ? 'No timer, no rules. Drive as long as you like. Reset puts you back on the track anywhere.' : 'Standing start from the grid under the five lights. You are the only car on track.'), grid);
       const fact = (k, v) => [h('span', '', k), h('b', '', v)];
       const conditions = () => { const e = api.environment ? api.environment() : { weather: settings.weather, time: settings.timeOfDay }; return `${TIME_NAMES[e.time] || ''} · ${WEATHER_NAMES[e.weather] || ''}`; };
 
       if (mode === 'practice') {
         const refresh = () => {
-          big.replaceChildren('Free practice', h('small', '', 'no results'));
+          big.replaceChildren('Free drive', h('small', '', 'not timed'));
           facts.replaceChildren(...fact('Start', settings.practiceStart === 'standing' ? 'Starting grid' : 'Pit lane'), ...fact('Direction', settings.practiceReverse === true ? 'Reverse' : 'Normal'), ...fact('Conditions', conditions()));
         };
         groups.append(primary(group('Start',
           segRow('Start from', [['pit', 'Pit lane'], ['standing', 'Starting grid']], () => settings.practiceStart || 'pit', v => { settings.practiceStart = v; save(settings); refresh(); }),
           segRow('Direction', [[false, 'Normal'], [true, 'Reverse']], () => settings.practiceReverse === true, v => { settings.practiceReverse = v; save(settings); refresh(); }))));
         groups.append(...weatherRows(ctx, segRow, h, 'Conditions'));
-        const go = btn('Start practice', 'btn primary', () => api.startPractice({ start: settings.practiceStart === 'standing' ? 'standing' : 'pit', reverse: settings.practiceReverse === true }));
+        const go = btn('Start free drive', 'btn primary', () => api.startPractice({ start: settings.practiceStart === 'standing' ? 'standing' : 'pit', reverse: settings.practiceReverse === true }));
         go.dataset.first = '1';
         summary.append(big, facts, map, go);
         refresh();
@@ -326,7 +386,7 @@ function setupScreen() {
 // --- settings ---------------------------------------------------------------------------------------------------------
 
 function settingsScreen() {
-  const TABS = ['Driving', 'Controls', 'Display', 'Interface', 'Weather', 'Sound', 'Online'];
+  const TABS = ['Driving', 'Controls', 'Graphics', 'HUD', 'Weather', 'Sound', 'Online'];
   return {
     rail: true,
     title: 'Settings',
@@ -352,7 +412,7 @@ function settingsScreen() {
         Driving(p) {
           if (forced) p.append(h('p', 'm-note warn', 'This race has all assists off. Your own assist settings come back afterwards.'));
           p.append(group('Units and steering',
-            segRow('Speed', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }),
+            segRow('Speed units', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }),
             ...(() => {
               const sens = sliderRow('Cursor sensitivity', { min: 50, max: 200, step: 5, get: () => Math.round(settings.steerSens * 100), set: v => { settings.steerSens = Math.max(0.5, Math.min(2, v / 100)); persist(); }, fmt: v => `${Math.round(v)}%` });
               const steer = segRow('Steering', [['keyboard', 'Keyboard'], ['cursor', 'Cursor']], () => settings.steering, v => { settings.steering = v; persist(); sens.input.disabled = v !== 'cursor'; },
@@ -370,33 +430,33 @@ function settingsScreen() {
             assists.push(onOff('Racing line', () => settings.racingLine, v => { settings.racingLine = v; }, allowed ? 'Colours show where to brake, lift and push. The L key switches it too.' : 'This race does not allow the racing line.'));
           }
           p.append(group('Driver assists', ...assists));
-          p.append(group('Racing', onOff('Slipstream', () => settings.slipstream !== false, v => { settings.slipstream = v; }, 'Less drag close behind another car, and a little less front grip in its dirty air. Free practice only: a race uses its own setup, a time trial never has it.')));
+          p.append(group('Racing', onOff('Slipstream', () => settings.slipstream !== false, v => { settings.slipstream = v; }, 'Less drag close behind another car, and a little less front grip in its dirty air. Free drive only: a race uses its own setup, a hot lap never has it.')));
         },
-        Display(p) {
+        Graphics(p) {
           p.append(group('View',
-            segRow('View', [[false, 'Driving'], [true, 'Top-down debug']], () => api.getTopDown(), v => api.setTopDown(v)),
+            segRow('Camera', [[false, 'Normal'], [true, 'Top-down (debug)']], () => api.getTopDown(), v => api.setTopDown(v)),
             onOff('Free look', () => settings.freeLook !== false, v => { settings.freeLook = v; }, 'Drag with the mouse (right button with cursor steering) or push the right stick to look round the car. Let go and the camera settles back.'),
-            track(segRow('Detail', [[false, 'Full'], [true, 'Blockout']], () => !!settings.blockout, v => { settings.blockout = v; persist(); api.applyLook(); })),
+            track(segRow('Scenery', [[false, 'Full'], [true, 'Plain blocks']], () => !!settings.blockout, v => { settings.blockout = v; persist(); api.applyLook(); })),
             track(segRow('Graphics quality', QUALITY_SETTINGS.map(k => [k, QUALITY_LABELS[k]]), () => settings.quality, v => { settings.quality = v; persist(); api.qualityChanged(); },
               { note: 'Auto keeps the frame rate up by lowering the render scale when the screen is too demanding. High is the full look; Medium and Low use a smaller shadow map and a lower pixel density.' }))));
           // the autopilot drives the forward line only: in a reverse session it is switched off (main.js) and cannot be turned on
           const reverseNow = !!(api.session && api.session() && api.session().reverse);
-          const ap = track(boolRow('Autopilot demo lap', () => api.getAutopilot(), v => api.setAutopilot(v),
-            { note: reverseNow ? 'Not in a reverse session: the autopilot drives the forward line only.' : undefined }));
+          const ap = track(boolRow('Autopilot', () => api.getAutopilot(), v => api.setAutopilot(v),
+            { note: reverseNow ? 'Not in a reverse session: the autopilot drives the forward line only.' : 'The car drives a demo lap by itself.' }));
           if (reverseNow) for (const b of ap.buttons) b.disabled = true;
-          p.append(group('Readouts',
+          p.append(group('Readouts and tools',
             onOff('FPS readout', () => !!settings.hud.fps, v => { settings.hud.fps = v; }, 'Frame rate and frame time in the top corner. The F key switches it too.'),
-            onOff('Handling readout', () => !!settings.debug, v => { settings.debug = v; }),
+            onOff('Handling readout', () => !!settings.debug, v => { settings.debug = v; }, 'Tyre and grip numbers for testing the car.'),
             ap));
         },
-        Interface(p) {
+        HUD(p) {
           // every switch writes into settings.hud / settings.trackMap; the HUD reads them each frame. `rows` are re-synced after any
           // change because a preset changes many switches at once.
           p.append(group('HUD',
             track(segRow('HUD preset', PRESET_ORDER.map(k => [k, PRESET_NAMES[k]]), () => detectPreset(settings), v => { applyPreset(settings, v); persist(); sync(); },
               { note: 'The H key steps through Full, Minimal and Off. Switching a single part below makes it Custom.' })),
             track(sliderRow('HUD scale', { min: SCALE_MIN, max: SCALE_MAX, step: 5, get: () => settings.hudScale, set: v => { settings.hudScale = v; persist(); }, fmt: v => `${Math.round(v)}%` })),
-            track(segRow('Speed', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }))));
+            track(segRow('Speed units', [['mph', 'mph'], ['kmh', 'km/h']], () => settings.units, v => { settings.units = v; persist(); }))));
           const info = Object.fromEntries(HUD_ELEMENTS.map(e => [e[0], e]));
           const groups = [['Readouts', ['speed', 'lapTimer', 'sectors', 'minisectors', 'delta']], ['Warnings and messages', ['limits', 'assists', 'slipstream', 'flags']], ['Inputs', ['steerBar', 'pedals', 'inputOverlay']], ['Other', ['fps']]];
           for (const [title, keys] of groups) p.append(group(title, ...keys.map(k => onOff(info[k][1], () => settings.hud[k], v => { settings.hud[k] = v; }, info[k][2]))));
@@ -437,9 +497,9 @@ function settingsScreen() {
           nameInput.addEventListener('change', () => { if (lobbyName) { lobbyName.value = nameInput.value; lobbyName.dispatchEvent(new Event('change', { bubbles: true })); } });
           const info = h('p', 'm-note');
           const via = document.getElementById('mp-via');
-          const t = () => { info.textContent = (via && via.textContent) || 'Not in a room. Rooms use a relay server when the site has one set, and peer to peer otherwise. Both work the same in the game.'; };
+          const t = () => { info.textContent = (via && via.textContent) || 'Not in a room. Rooms connect through a relay server when the site has one, and straight between players otherwise. Both play the same.'; };
           t();
-          p.append(group('Online', fieldRow('Name in online rooms', nameInput)), info, h('p', 'm-note', 'Host a room or join one from Online in the main menu.'));
+          p.append(group('Online', fieldRow('Your name online', nameInput)), info, h('p', 'm-note', 'Host a room or join one from Race, then Online race.'));
         },
       };
 
@@ -473,7 +533,7 @@ function onlineScreen() {
   let timer = 0, holder = null, room = null;
   return {
     rail: true,
-    title: 'Online',
+    title: 'Online race',
     mount(c, ctx) {
       const { settings, save, api } = ctx;
       const mp = document.querySelector('#online-src .mp, .mp');
@@ -481,6 +541,7 @@ function onlineScreen() {
       room = mp ? mp.querySelector('#mp-room') : null;
       const lobby = api.lobby;
       c.append(h('p', 'm-sub', 'Race up to eight people. One person hosts a room and shares the five letter code.'));
+      const state = h('p', 'room-state'); state.setAttribute('role', 'status');   // what is happening right now, in one line
       const grid = h('div', 'setup online');
       // left: the connect form (name, host, join, the status lines); under it the host's race setup, shown only in a room
       const form = h('div', 'online-form');
@@ -505,18 +566,24 @@ function onlineScreen() {
       if (room) roomSlot.append(room);
       const startBtn = btn('Start race', 'btn primary', () => api.hostStartRace({ laps: cur.laps, assists: cur.assists, racingLine: api.hasRacingLine && api.hasRacingLine() ? cur.racingLine : true, slipstream: cur.slipstream !== false }));
       const card = h('div', 'summary online-card');
-      card.append(how, roomSlot, startBtn);
+      card.append(state, how, roomSlot, startBtn);
       grid.append(form, card);
       c.append(grid);
-      const drive = btn('Drive around while you wait', 'btn', () => api.startPractice({ start: 'pit' }));
+      const drive = btn('Free drive while you wait', 'btn', () => api.startPractice({ start: 'pit' }));
       c.append(h('div', 'm-actions', drive));
       const upd = () => {
         const m = lobby && lobby.mp;
         const inRoom = !!(m && (m.phase === 'hosting' || m.phase === 'joined'));
         hostBox.hidden = !inRoom;
+        drive.hidden = !inRoom;   // the free drive is for passing the time in a room
         how.hidden = inRoom;
         roomSlot.hidden = !inRoom;
         wait.hidden = !(inRoom && !m.isHost);
+        const n = (lobby && lobby.mp && lobby.mp.players) || 1;
+        state.hidden = !m || !(inRoom || m.phase === 'connecting');
+        state.textContent = !m ? '' : m.phase === 'connecting' ? 'Connecting to the room...'
+          : inRoom && m.isHost ? `You are hosting room ${m.code}. ${n} of 8 in the room. Pick the laps, then start the race.`
+          : inRoom ? `You are in room ${m.code} with ${n} of 8. The host starts the race.` : '';
         for (const g of hostBox.querySelectorAll('.group')) g.hidden = !(inRoom && m.isHost);   // the host's setup only
         startBtn.hidden = !inRoom;   // the Start button is in the room card only
         startBtn.disabled = !(inRoom && m.isHost);
@@ -536,7 +603,7 @@ function onlineScreen() {
   };
 }
 
-// --- global times ----------------------------------------------------------------------------------------------------
+// --- leaderboard ----------------------------------------------------------------------------------------------------
 // The relay's boards (src/globalTimes.js): four filters pick one of the 16 boards, opening on the one the player is driving
 // for now. Rows with a stored ghost have a Race button: the ghost drives that lap on the player's lap clock (src/boardGhost.js).
 
@@ -544,10 +611,10 @@ function timesScreen() {
   let seq = 0;
   return {
     rail: true,
-    title: 'Global times',
+    title: 'Leaderboard',
     mount(c, ctx) {
       const gt = ctx.api.globalTimes, client = gt && gt.client();
-      const wait = h('p', 'm-sub', 'Finding the times server...');
+      const wait = h('p', 'm-sub', 'Finding the leaderboard...');
       c.append(wait);
       const my = ++seq;
       Promise.resolve(gt && gt.ready ? gt.ready() : null).then(() => { if (my === seq) { wait.remove(); build(); } });
@@ -555,12 +622,12 @@ function timesScreen() {
 
       function build() {
       if (!client || !client.available()) {
-        c.append(h('p', 'm-sub', 'Global times need the game on its website, where it can reach the times server.'),
-          h('p', 'm-note', 'Laps you drive here are still kept on this device (hold Tab for your times).'));
+        c.append(h('p', 'm-sub', 'The leaderboard needs the game on its website, where it can reach the times server.'),
+          h('p', 'm-note', 'Laps you drive here are still kept on this device. Hold Tab while driving to see them.'));
         return;
       }
       const board = { ...gt.currentBoard() };
-      c.append(h('p', 'm-sub', 'Every valid lap is posted on its own: no track limit warnings, no reset, no autopilot. One row per driver, their best.'));
+      c.append(h('p', 'm-sub', 'Every clean lap is posted on its own: no track limit warnings, no reset, no autopilot. One row per driver, their best.'));
       const nameIn = h('input', 'field'); nameIn.type = 'text'; nameIn.maxLength = 16; nameIn.autocomplete = 'off'; nameIn.spellcheck = false;
       nameIn.value = gt.name(); nameIn.setAttribute('aria-label', 'Your name on the boards');
       const nameNote = h('p', 'm-note'); nameNote.hidden = true;
@@ -569,7 +636,7 @@ function timesScreen() {
         if (!v) { nameIn.value = gt.name(); return; }
         gt.setName(v); nameIn.value = gt.name();
         nameNote.hidden = gt.name() === v;
-        nameNote.textContent = 'The name painted on your car is used while it is set (Garage).';
+        nameNote.textContent = 'Your name on the car (Garage) is used while it is set.';
         load();
       });
       c.append(group('Your name', fieldRow('Name on the boards', nameIn)), nameNote);
@@ -596,7 +663,7 @@ function timesScreen() {
         const r = h('div', 't-row' + (you ? ' you' : ''), h('span', 't-rank', String(e.rank)), h('span', 't-name', e.name), h('span', 't-time', fmtTime(e.time)),
           h('span', 't-sec', (e.sectors || []).map(x => x.toFixed(1)).join('  ')));
         const cell = h('span', 't-act');
-        if (e.ghost) cell.append(btn('Race', 'btn quiet', async () => {
+        if (e.ghost) cell.append(btn('Race ghost', 'btn quiet', async () => {
           status.textContent = `Loading the ghost of ${e.name}...`;
           const got = await client.ghost(board, e.name);
           if (!got || !gt.loadGhost({ ...got, board: { ...board } })) { status.textContent = 'That ghost could not be loaded.'; return; }
@@ -721,6 +788,7 @@ export function registerScreens(menu) {
   menu.buildRail = (ctx, top) => railNodes(ctx, top);
   menu.addScreen('screen', screenPanel());
   menu.addScreen('main', homeScreen());
+  menu.addScreen('race', raceScreen());
   menu.addScreen('pause', pauseScreen());
   menu.addScreen('setup', setupScreen());
   menu.addScreen('settings', settingsScreen());

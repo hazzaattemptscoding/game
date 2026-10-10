@@ -361,7 +361,7 @@ console.log('MENU NAV');
   key('Enter', { repeat: true }); check(take() === '', 'a held Enter does not confirm again');
   key('ArrowDown', { repeat: true }); check(take() === 'down', 'a held arrow repeats');
   key('KeyR'); key('KeyC'); check(take() === '', 'game keys are not menu keys');
-  check(key('Digit3') === true && take() === 'digit:3' && key('Numpad7') === true && take() === 'digit:7', 'number keys 1 to 7 (top row and keypad) send digit:N, which the main menu opens as entries');
+  check(key('Digit3') === true && take() === 'digit:3' && key('Numpad6') === true && take() === 'digit:6' && key('Digit7') === false && take() === '', 'number keys 1 to 6 (top row and keypad) send digit:N, which the menus take as entries, cards and pause actions; 7 is not a menu key');
   key('Digit3', { repeat: true }); check(take() === '', 'a held number key does not open its entry again and again');
   focus = { tagName: 'INPUT', type: 'text' }; key('Digit2'); check(take() === '', 'a number typed in a text field is not a menu key');
   focus = { tagName: 'BUTTON' };

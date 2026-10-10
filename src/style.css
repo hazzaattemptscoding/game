@@ -279,7 +279,7 @@ body.hx-no-liveDelta .hud-live { display: none !important; }
 #menu .m-note { margin: 0; font-size: 13px; line-height: 1.4; color: var(--lake); }
 #menu .m-note.warn { color: var(--warn); }
 
-/* the rail: wordmark, the seven entries with their number keys, the driver at the bottom */
+/* the rail: wordmark, the four entries with their number keys, the driver at the bottom */
 #menu .rail { display: flex; flex-direction: column; gap: var(--s-5); min-height: 0; padding: var(--s-7) var(--s-5) var(--s-6); overflow-y: auto; background: color-mix(in srgb, var(--pit-1) 96%, transparent); border-right: 1px solid var(--line); }
 #menu .rail-brand { display: block; padding: 0; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
 #menu .rail-brand b { display: block; font-family: var(--f-display); font-weight: 700; font-size: 20px; line-height: 1; letter-spacing: .14em; text-transform: uppercase; }
@@ -293,11 +293,28 @@ body.hx-no-liveDelta .hud-live { display: none !important; }
 #menu .nav-item[aria-current=page]::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
 #menu kbd { display: inline-block; min-width: 22px; padding: 1px 6px; border: 1px solid var(--line-strong); border-radius: 3px; font-family: var(--f-body); font-size: 11px; font-weight: 600; line-height: 1.5; text-align: center; color: var(--text-faint); }
 #menu .nav-item[aria-current=page] kbd { border-color: var(--accent); color: var(--text); }
-/* the last mode used: a quiet tag under its label (the rail is narrow, so it does not sit beside the label) */
+/* Continue: the one solid button above the entries, labelled with what it starts */
+#menu .nav-continue { display: flex; align-items: center; min-height: 48px; margin-bottom: var(--s-3); padding: 0 var(--s-4); border: 0; border-radius: var(--r-ctl); background: var(--accent-fill); color: var(--text); font-size: 15px; font-weight: 600; text-align: left; cursor: pointer; transition: background-color var(--dur-press) var(--ease-out); }
+#menu .nav-continue:hover { background: color-mix(in srgb, var(--accent-fill) 88%, var(--text)); }
+#menu .nav-continue:active { transform: scale(.98); }
+/* the front screen: four big entries, in the display face */
+#menu[data-home="1"] .nav-item { min-height: 52px; padding: var(--s-2) var(--s-4); font-family: var(--f-display); font-size: 22px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+#menu[data-home="1"] .nav { gap: var(--s-1); }
 #menu .nav-text { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
-#menu .nav-text > span { white-space: nowrap; }
-#menu .nav-last { font-size: 11px; font-weight: 600; line-height: 1.2; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
-#menu .nav-item[aria-current=page] .nav-last { color: var(--text-dim); }
+#menu .nav-hint { font-family: var(--f-body); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--text-faint); }
+/* the Race screen: one card for each way to drive */
+#menu .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-4); }
+#menu .card { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-3); min-height: 168px; padding: var(--s-5); border: 1px solid var(--line); border-radius: var(--r-card); background: var(--pit-1); color: var(--text); text-align: left; cursor: pointer; transition: background-color var(--dur-press) var(--ease-out), border-color var(--dur-press) var(--ease-out); }
+#menu .card:hover { background: var(--pit-2); border-color: var(--line-strong); }
+#menu .card:active { transform: scale(.99); }
+#menu .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); width: 100%; }
+#menu .card-title { font-family: var(--f-display); font-weight: 600; font-size: 26px; line-height: 1.1; letter-spacing: .04em; text-transform: uppercase; }
+#menu .card-line { font-size: 14px; line-height: 1.45; color: var(--text-dim); }
+#menu .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: auto; }
+#menu .chips em { padding: 2px var(--s-2); border: 1px solid var(--line-strong); border-radius: 3px; font-style: normal; font-size: 12px; font-weight: 600; line-height: 1.5; color: var(--text-dim); }
+/* the lobby's one line of what is happening */
+#menu .room-state { margin: 0; font-size: 14px; line-height: 1.45; color: var(--text); }
+#menu .room-state[hidden] { display: none; }
 #menu .driver { display: flex; align-items: center; gap: var(--s-3); margin-top: auto; padding-top: var(--s-4); border-top: 1px solid var(--line); color: var(--text-dim); font-size: 13px; }
 #menu .driver b.no { flex: none; min-width: 34px; padding: 2px 6px; background: var(--pit-3); border: 1px solid var(--line-strong); border-radius: 3px; color: var(--text); font-family: var(--f-display); font-weight: 700; font-size: 18px; line-height: 1.2; text-align: center; font-variant-numeric: tabular-nums; }
 #menu .driver strong { display: block; font-size: 14px; font-weight: 600; color: var(--text); }
@@ -455,6 +472,8 @@ body.hx-no-liveDelta .hud-live { display: none !important; }
 }
 @media (max-width: 860px) and (min-width: 641px) {
   #menu { --rail-w: 188px; }
+  #menu .cards { grid-template-columns: minmax(0, 1fr); }
+  #menu[data-home="1"] .nav-item { font-size: 19px; }
   #menu .rail { padding: var(--s-5) var(--s-3); }
   #menu .rail-brand b { font-size: 18px; }
   #menu .nav-item { padding: var(--s-2) var(--s-3); font-size: 14px; }
@@ -473,7 +492,14 @@ body.hx-no-liveDelta .hud-live { display: none !important; }
   #menu .rail-brand span, #menu .driver { display: none; }
   #menu .nav { flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; gap: 4px; }
   #menu .nav-item { flex: 0 1 auto; min-height: 44px; padding: 0 var(--s-3); font-size: 14px; white-space: nowrap; }
-  #menu .nav-item kbd { display: none; }
+  #menu .nav-item kbd, #menu .card kbd, #menu .nav-hint { display: none; }
+  #menu .nav-continue { flex: 1 1 100%; min-height: 44px; margin-bottom: 0; }
+  #menu[data-home="1"] .nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2); }
+  #menu[data-home="1"] .nav-continue { grid-column: 1 / -1; }
+  #menu[data-home="1"] .nav-item { min-height: 52px; padding: 0 var(--s-4); font-size: 18px; background: var(--pit-2); }
+  #menu .cards { grid-template-columns: minmax(0, 1fr); gap: var(--s-3); }
+  #menu .card { min-height: 0; padding: var(--s-4); }
+  #menu .card-title { font-size: 22px; }
   #menu .m-head { padding: var(--s-3) var(--s-4) var(--s-2); }
   #menu .m-head h2 { font-size: 20px; }
   #menu .m-body { padding: 0 var(--s-4) var(--body-pb); }
@@ -505,7 +531,7 @@ body.menu-main #hud, body.menu-main #sess { display: none; }
 #menu .session-mode { font-family: var(--f-display); font-weight: 600; font-size: 22px; line-height: 1.1; }
 #menu .session-card .facts { padding-top: var(--s-3); font-size: 13px; }
 #menu .session-card .facts b { font-variant-numeric: tabular-nums; }
-/* pause: 'Back to main menu' is a quiet destructive row: dim text with a thin red edge, red text on hover only */
+/* pause: 'Quit to menu' is a quiet destructive row: dim text with a thin red edge, red text on hover only */
 #menu .btn-row.danger.quiet { position: relative; color: var(--text-dim); }
 #menu .btn-row.danger.quiet::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; background: var(--bad); }
 #menu .btn-row.danger.quiet:hover { color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }

@@ -240,8 +240,10 @@ export function createDirector(g) {
   const booting = startParam === 'race' || startParam === 'timetrial' || startParam === 'practice' || skipMenu;
   if (!booting) {
     if (params.has('garage')) showMain('garage');
-    else if (menuParam === 'race' || menuParam === 'practice') showMain([{ id: 'setup', params: { mode: menuParam } }]);
-    else if (['settings', 'garage', 'online', 'times'].includes(menuParam)) showMain(menuParam);
+    else if (menuParam === 'race') showMain('race');
+    else if (menuParam === 'practice' || menuParam === 'solo') showMain(['race', { id: 'setup', params: { mode: menuParam === 'solo' ? 'race' : 'practice' } }]);
+    else if (menuParam === 'online') showMain(['race', 'online']);
+    else if (['settings', 'garage', 'times'].includes(menuParam)) showMain(menuParam);
     else if (menuParam === 'results' && import.meta.env.DEV) menu.open('results', 'pause', { data: sampleResults() });   // dev only: the screen with sample rows (tools/shot.mjs "menu=results")
     else showMain();
   }

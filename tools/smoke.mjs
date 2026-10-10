@@ -22,7 +22,7 @@ const views = [
   // track map options
   ['?menu=0', { store: map({ on: true, size: 'large', position: 'tl', opacity: 0.5, rotate: true, zoom: 'local', labels: 'numbers' }) }],
   ['?menu=0', { store: map({ on: true, size: 'small', position: 'bl', rotate: false, zoom: 'circuit', labels: 'numbers' }) }],
-  ['?menu=settings', { click: 'Interface' }],
+  ['?menu=settings', { click: 'HUD' }],
   // phone: driving with the on-screen controls, portrait and landscape, day and wet night
   ['?menu=0&mute', { ctx: PHONE, touch: true }], ['?menu=0&mute', { ctx: LAND, touch: true }],
   ['?menu=0&mute&weather=heavyrain&time=night', { ctx: PHONE, touch: true }],

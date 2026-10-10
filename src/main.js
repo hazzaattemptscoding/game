@@ -374,7 +374,7 @@ function frame(now) {
     rig.camera.lookAt(p.x, p.y, p.z);
   } else if (fixedView) { rig.camera.position.set(fixedView[0], fixedView[1], fixedView[2]); rig.camera.lookAt(fixedView[3], fixedView[4], fixedView[5]); }
   else {
-    // free look (Settings > Display): the right stick here, mouse drags in the listeners below
+    // free look (Settings > Graphics): the right stick here, mouse drags in the listeners below
     if (settings.freeLook !== false && !dir.menuOpen) rig.setStick(playerInput.look[0], playerInput.look[1]); else rig.setStick(0, 0);
     rig.camera.up.set(0, 1, 0); rig.update(view, car, dt);
   }
