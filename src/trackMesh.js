@@ -360,50 +360,76 @@ function attenuator(pts, nrm, material) {
 // ---------------------------------------------------------------------------
 // Distance boards and signs, as placed by track.js.
 
-// trackside objects placed in track.js to fill the bare stretches (track.js FILL_GAP): every part is one box or cylinder with
-// a vertex colour, merged into a single mesh, so the whole fill costs one draw call
-const FILL_TYPES = new Set(['marshal', 'tyres', 'cabinet', 'mast', 'banner']);
-const FILL_COLOURS = { metal: 0xdddddd, rubber: 0x1e1e20, red: 0xc8102e, yellow: 0xffd21f };
+// trackside objects placed in track.js to fill the bare stretches (track.js FILL_GAP), three to six to a group: a marshal shelter,
+// a bank of tyre stacks, a fire point, a sponsor banner, a storage box, a flag pole, a light mast. They are sized to read from the
+// track at speed (a shelter 2.4 m tall, a banner 6 m long). Every part is a box or a cylinder with a vertex colour, merged into one
+// mesh; the banner faces are one more mesh with the sponsor atlas. So the whole fill costs two draw calls.
+const FILL_TYPES = new Set(['marshal', 'tyres', 'cabinet', 'mast', 'banner', 'store', 'flag']);
+const FILL_COLOURS = { metal: 0xdddddd, rubber: 0x1e1e20, red: 0xc8102e, yellow: 0xffd21f, white: 0xeeeeea, orange: 0xff6a13, grey: 0x5b6168, concrete: 0xa9a59c, dark: 0x2a2d31 };
+const FILL_HUES = [0xc8102e, 0x1d4e9e, 0xffd21f, 0x3f9d4f];
 function fillObjects(T, g) {
-  const kit = new Kit(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  const kit = new Kit(), faces = new Kit(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
   const part = (colour, geo, x, y, z, rotY = 0) => {
     e.set(0, rotY, 0, 'YXZ');
     m4.compose(v.set(x, y, z), q.setFromEuler(e), one);
     geo.applyMatrix4(m4);
-    const c = new THREE.Color(FILL_COLOURS[colour]);
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(new Array(geo.attributes.position.count * 3).fill(0).map((_, k) => [c.r, c.g, c.b][k % 3]), 3));
+    const c = new THREE.Color(typeof colour === 'number' ? colour : FILL_COLOURS[colour]), n = geo.attributes.position.count, col = new Float32Array(n * 3);
+    for (let k = 0; k < n; k++) col.set([c.r, c.g, c.b], k * 3);
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.deleteAttribute('uv');
     kit.push('fill', geo);
   };
-  const box = (colour, w, h, d, x, y, z, rotY) => part(colour, new THREE.BoxGeometry(w, h, d), x, y, z, rotY);
   for (const f of T.furniture) {
     if (!FILL_TYPES.has(f.type)) continue;
-    const i = f.i, heading = Math.atan2(T.tz[i], T.tx[i]), rot = -heading;   // local x runs along the track, the broad face looks across it
-    const { x, y, z } = f;
+    const i = f.i, heading = Math.atan2(T.tz[i], T.tx[i]), rot = -heading;   // local x runs along the track, local z across it
+    const g1 = f.d < 0 ? -1 : 1, ax = Math.cos(heading), az = Math.sin(heading), ox = T.nx[i] * g1, oz = T.nz[i] * g1;   // along, and away from the track
+    // a box `along` x `up` x `across`, centred `a` along and `b` further from the track than the object's spot, from y0 up
+    const box = (colour, along, up, across, a, b, y0) => part(colour, new THREE.BoxGeometry(along, up, across), f.x + ax * a + ox * b, f.y + y0 + up / 2, f.z + az * a + oz * b, rot);
+    const cyl = (colour, r, h, a, b, y0, n = 8) => part(colour, new THREE.CylinderGeometry(r, r, h, n), f.x + ax * a + ox * b, f.y + y0 + h / 2, f.z + az * a + oz * b);
+    const hue = FILL_HUES[f.hue || 0];
     if (f.type === 'marshal') {
-      // a marshal post with a yellow flag at the top
-      box('metal', 0.07, 1.6, 0.07, x, y + 0.8, z);
-      box('yellow', 0.5, 0.36, 0.03, x, y + 1.42, z, rot);
+      // a marshal shelter: open to the track, an orange roof, the yellow flag on its pole
+      box('concrete', 2.6, 0.15, 1.8, 0, 0.4, -0.05);
+      box('white', 2.4, 2.2, 0.08, 0, 1.2, 0.1); box('white', 0.08, 2.2, 1.5, -1.16, 0.45, 0.1); box('white', 0.08, 2.2, 1.5, 1.16, 0.45, 0.1);
+      box('white', 2.4, 0.9, 0.06, 0, -0.3, 0.1);
+      box('orange', 2.8, 0.14, 1.9, 0, 0.45, 2.3);
+      box('metal', 0.07, 3.8, 0.07, 1.5, -0.2, 0); box('yellow', 0.9, 0.6, 0.03, 1.97, -0.2, 3.1);
     } else if (f.type === 'tyres') {
-      // a stack of three tyres
-      for (let k = 0; k < 3; k++) part('rubber', new THREE.CylinderGeometry(0.42, 0.42, 0.28, 14), x, y + 0.14 + k * 0.28, z);
+      // a bank of tyre stacks, five high, a white tyre on top of each
+      for (const a of [-0.95, 0, 0.95]) { cyl('rubber', 0.45, 1.1, a, 0.2, 0); cyl('white', 0.45, 0.22, a, 0.2, 1.1); }
     } else if (f.type === 'cabinet') {
-      // a fire extinguisher cabinet on a short post
-      box('metal', 0.05, 0.6, 0.05, x, y + 0.3, z);
-      box('red', 0.5, 0.9, 0.22, x, y + 1.05, z, rot);
+      // a fire point: a red cabinet on two posts, two extinguishers and a white board with the sign
+      box('metal', 0.06, 2.45, 0.06, -0.3, 0.2, 0); box('metal', 0.06, 2.45, 0.06, 0.3, 0.2, 0);
+      box('red', 0.8, 1.2, 0.4, 0, 0.3, 0.6);
+      cyl('red', 0.12, 0.6, -0.75, 0, 0); cyl('red', 0.12, 0.6, 0.75, 0, 0);
+      box('white', 1.0, 0.5, 0.04, 0, 0.3, 1.95);
     } else if (f.type === 'mast') {
-      // a light mast with the lamp head at the top
-      part('metal', new THREE.CylinderGeometry(0.1, 0.14, 9, 8), x, y + 4.5, z);
-      box('metal', 1.6, 0.35, 0.5, x, y + 9.1, z, rot);
+      // a light mast with a three lamp head
+      part('metal', new THREE.CylinderGeometry(0.1, 0.16, 12, 8), f.x, f.y + 6, f.z);
+      box('metal', 2.2, 0.4, 0.5, 0, 0, 12);
     } else if (f.type === 'banner') {
-      // a sponsor banner between two posts, along the track
-      const ax = Math.cos(heading), az = Math.sin(heading);
-      box('metal', 0.08, 2.4, 0.08, x - ax * 1.5, y + 1.2, z - az * 1.5);
-      box('metal', 0.08, 2.4, 0.08, x + ax * 1.5, y + 1.2, z + az * 1.5);
-      box('red', 3.0, 0.9, 0.05, x, y + 1.85, z, rot);
+      // a 6 m sponsor banner on three posts, its printed face towards the track and a dark back
+      for (const a of [-3, 0, 3]) box('metal', 0.08, 2.6, 0.08, a, 0.25, 0);
+      box('dark', 6.0, 1.3, 0.04, 0, 0.27, 1.25);
+      const hw = 3, y0 = f.y + 1.25, y1 = f.y + 2.55, cx = f.x + ox * 0.24, cz = f.z + oz * 0.24;
+      const row = tex.MODERN_SPONSORS[(Math.round(f.s) * 7) % tex.MODERN_SPONSORS.length], vb = 1 - (row + 1) / tex.SPONSORS.length, vt = 1 - row / tex.SPONSORS.length;
+      // seen from the track, the viewer's left is further along the lap on the right side, back along it on the left side
+      const L = [cx + ax * hw * g1, cz + az * hw * g1], R = [cx - ax * hw * g1, cz - az * hw * g1];
+      faces.quad('sponsor', [L[0], y0, L[1]], [R[0], y0, R[1]], [R[0], y1, R[1]], [L[0], y1, L[1]], [[0, vb], [1, vb], [1, vt], [0, vt]]);
+    } else if (f.type === 'store') {
+      // a storage box for the marshals' kit, in the group's colour, with a darker door
+      box('concrete', 3.2, 0.15, 1.8, 0, 0.5, -0.05);
+      box(hue, 3.0, 2.1, 1.4, 0, 0.6, 0.1);
+      box('dark', 1.1, 1.8, 0.04, 0.6, -0.12, 0.1);
+    } else if (f.type === 'flag') {
+      // a tall flag pole with a flag in the group's colour
+      box('metal', 0.08, 7.0, 0.08, 0, 0, 0);
+      box(hue, 1.8, 1.1, 0.03, 0.92, 0, 5.7);
     }
   }
   if (!kit.parts.size) return;
   g.add(kit.build({ fill: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }) }));
+  if (faces.parts.size) g.add(faces.build({ sponsor: new THREE.MeshStandardMaterial({ map: tex.sharedSponsorAtlas(), roughness: 0.55 }) }, { sponsor: { cast: false } }));
 }
 
 // Boards, bollards and signs are merged into a few meshes (one per material), not one mesh each: the same geometry,

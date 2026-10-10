@@ -7,9 +7,9 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { trackPoint, hash01 } from './meshKit.js';
+import { trackPoint, hash01, Kit } from './meshKit.js';
 import { wallClearance } from './grandstands.js';
-import { lampMaterial, onLampLevel, onTopDown, light } from './lamps.js';
+import { lampMaterial, onLampLevel, onTopDown, light, flagMaterial, addFlag } from './lamps.js';
 
 export const MAST_H = 26;        // metres to the lamp frame
 export const MAST_BEHIND = 7;    // metres behind the containment wall, at least
@@ -107,6 +107,14 @@ export function buildFloodlights(T, ground, masts) {
   });
   poles.castShadow = false; poles.userData.debug = heads.userData.debug = 'sign';
   g.add(poles, heads);
+  // a long banner flag on every other mast, half way up, flying along the track (wind material, one draw call a colour)
+  const flags = new Kit(), keys = ['flagR', 'flagB', 'flagY'];
+  masts.forEach((m, k) => {
+    if (k % 2) return;
+    const y = ground.meshHeight(m.x, m.z) - 0.2, dx = Math.sin(m.yaw), dz = Math.cos(m.yaw);
+    addFlag(flags, keys[(k / 2) % 3], m.x + dx * 0.4, y + MAST_H * 0.45, m.z + dz * 0.4, dx, dz, 1.6, 4.5, 4);
+  });
+  if (flags.parts.size) g.add(flags.build({ flagR: flagMaterial({ color: 0xc8102e }), flagB: flagMaterial({ color: 0x1d4e9e }), flagY: flagMaterial({ color: 0xffd21f }) }, { debug: 'sign' }));
 
   const gg = new THREE.BufferGeometry();
   gg.setAttribute('position', new THREE.Float32BufferAttribute(glowPos, 3));
