@@ -13,7 +13,7 @@
 
 const MAX_PIECE = 8;
 const BANDS = 10;                      // kerb, sausage up, sausage down, apron, grass before gravel, gravel, grass A, pit, grass B, outer grass
-const U_SCALE = { kerb: 2, sausage: 1.6, apron: 8, concrete: 15, gravel: 6, grass: 40, meadow: 24, pit: 16, road: 8, island: 4, islandPlain: 4 };
+const U_SCALE = { kerb: 2, sausage: 1.6, apron: 8, concrete: 15, gravel: 6, grass: 12, meadow: 12, pit: 16, road: 8, island: 4, islandPlain: 4 };
 const PIT_FADE = 10, TARMAC_TONE = 0.76;   // the pit asphalt takes its own tone over 10 m after the mouth
 const CHEVRON_RUN = 12;   // metres of painted chevrons at the start of the pit entry island (3 repeats); the rest of the island is plain
 
@@ -151,7 +151,7 @@ export function buildEntryRoad(T, strips, G, decal) {
   band('grass', ks, k => R.w[k], k => R.w[k] + ENTRY_VERGE, U_SCALE.grass);
   band('meadow', ks, k => R.w[k] + ENTRY_VERGE, k => R.w[k] + ENTRY_VERGE + ENTRY_MEADOW, U_SCALE.meadow);
   const far = k => R.w[k] + ENTRY_VERGE + ENTRY_MEADOW;
-  strips('meadow').strip(ks, k => at(k, far(k), -1.5), k => at(k, far(k)), k => u(k) / 24, 0, 0.1);
+  strips('meadow').strip(ks, k => at(k, far(k), -1.5), k => at(k, far(k)), k => u(k) / 12, 0, 0.1);
   // white lines along both edges of the road
   strips('line').strip(ks.filter(k => R.u[k] >= 15), k => at(k, 0.2, decal), k => at(k, 0.4, decal), () => 0, 0, 1);
   strips('line').strip(ks, k => at(k, R.w[k] - 0.4, decal), k => at(k, R.w[k] - 0.2, decal), () => 0, 0, 1);

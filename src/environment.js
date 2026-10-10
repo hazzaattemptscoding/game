@@ -17,6 +17,7 @@ import { resolveEnv, blendEnv, shadowsOn, DEFAULT_ENV, cleanEnv, sameEnv } from 
 import { setLampLevel, setTopDown as setTopDownLight, light, wind } from './lamps.js';
 
 const FADE_S = 1.2;
+const CLEAR_CLOUD = 0.18;   // sky cover shown at clear weather
 const RAIN_MAX = 14000;
 const RAIN_BOX = 40;
 
@@ -88,6 +89,36 @@ function makeSky() {
   mesh.frustumCulled = false; mesh.renderOrder = -10;
   mesh.userData.debug = 'sky';
   return { mesh, u };
+}
+
+// ---- the far hills ------------------------------------------------------------------------------------------------
+// Four overlapping silhouettes in a ring round the camera, 1,100 to 1,300 m out, 30 to 80 m high: one mesh, one draw call, about 770
+// triangles, lit by nothing (the colour follows the time of day) and blended into the distance by the scene fog, so rain, fog and
+// the night swallow them the way they do the rest of the view.
+const HILL_SEG = 96, HILL_BASE = [0.43, 0.54, 0.48];
+function makeHills() {
+  const pos = [], col = [], ind = [];
+  const layers = [{ r: 1300, h: 80, tint: [1.12, 1.16, 1.22], k: [3, 7, 13], ph: [0.4, 2.1, 5.0] }, { r: 1240, h: 66, tint: [1.06, 1.1, 1.14], k: [4, 9, 17], ph: [1.7, 0.3, 3.9] },
+    { r: 1180, h: 52, tint: [0.98, 1.02, 1.04], k: [5, 11, 19], ph: [4.2, 2.8, 0.9] }, { r: 1120, h: 38, tint: [0.88, 0.95, 0.92], k: [6, 13, 23], ph: [2.5, 5.5, 1.3] }];
+  for (const L of layers) {
+    const base = pos.length / 3;
+    for (let i = 0; i <= HILL_SEG; i++) {
+      const a = (i % HILL_SEG) / HILL_SEG * Math.PI * 2;
+      const n = 0.5 + 0.5 * (0.55 * Math.sin(a * L.k[0] + L.ph[0]) + 0.3 * Math.sin(a * L.k[1] + L.ph[1]) + 0.15 * Math.sin(a * L.k[2] + L.ph[2]));
+      const top = L.h * (0.6 + 0.4 * n), x = Math.cos(a) * L.r, z = Math.sin(a) * L.r;
+      pos.push(x, top, z, x, -60, z); col.push(...L.tint, ...L.tint);
+      if (i < HILL_SEG) { const q = base + i * 2; ind.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(ind);
+  const m = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: true });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.frustumCulled = false; mesh.castShadow = mesh.receiveShadow = false;
+  mesh.userData.debug = 'sky';
+  return { mesh, m };
 }
 
 // ---- rain ---------------------------------------------------------------------------------------------------------
@@ -195,8 +226,8 @@ export function boltShape(t) {
 
 // o.onLightning(delaySeconds, strength): called at each flash, so the sound can follow after the time sound takes to arrive.
 export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, onLightning }) {
-  const sky = makeSky(), rain = makeRain(), spray = makeSpray(160);
-  scene.add(sky.mesh, rain.mesh, spray.mesh);
+  const sky = makeSky(), hills = makeHills(), rain = makeRain(), spray = makeSpray(160);
+  scene.add(sky.mesh, hills.mesh, rain.mesh, spray.mesh);
   const bgCanvas = document.createElement('canvas');
   bgCanvas.width = 2; bgCanvas.height = 256;
   const bgCtx = bgCanvas.getContext('2d');
@@ -236,7 +267,7 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
     // sky dome
     const u = sky.u;
     u.uSunDir.value.set(r.dir[0], r.dir[1], r.dir[2]);
-    u.uCloud.value = r.cloud; u.uStars.value = r.stars;
+    u.uCloud.value = Math.max(r.cloud, CLEAR_CLOUD); u.uStars.value = r.stars;   // a few thin clouds even when it is clear
     const dark = r.cloudDark, dayK = 1 - r.night, lit = 0.35 + 0.65 * dayK;
     const sb = r.skyBottom, base = [0.55 + sb[0] * 0.45, 0.55 + sb[1] * 0.45, 0.58 + sb[2] * 0.42];
     u.uCloudLight.value.setRGB(base[0] * lit * (1 - dark * 0.55) + r.sun[0] * 0.08 * dayK, base[1] * lit * (1 - dark * 0.55), base[2] * lit * (1 - dark * 0.5), THREE.LinearSRGBColorSpace);
@@ -246,7 +277,10 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
     if (r.time === 'night') u.uDiscCol.value.setRGB(0.82, 0.88, 1.0, THREE.LinearSRGBColorSpace); else u.uDiscCol.value.setRGB(r.sun[0], r.sun[1] * 0.97 + 0.03, r.sun[2] * 0.9 + 0.1, THREE.LinearSRGBColorSpace);
     u.uGlowCol.value.setRGB(r.sun[0], r.sun[1] * 0.85, r.sun[2] * 0.6, THREE.LinearSRGBColorSpace);
     u.uGlow.value = (r.time === 'night' ? 0.12 : r.time === 'midday' ? 0.18 : 0.75) * (1 - r.cloud * 0.55);
-    sky.mesh.visible = !topDown && (r.cloud > 0.001 || r.stars > 0.001 || u.uGlow.value > 0.001 || u.uDisc.value > 0.001) && !(r.time === 'midday' && r.weather === 'clear');
+    sky.mesh.visible = !topDown && (r.cloud > 0.001 || r.stars > 0.001 || u.uGlow.value > 0.001 || u.uDisc.value > 0.001);
+    // far hills: dark and blue at night and dusk, a little of the fog colour in them by day
+    hills.mesh.visible = !topDown;
+    { const dk = Math.max(0.06, Math.pow(1 - r.night, 1.6)) * (1 - 0.28 * (1 - r.night)), f = 0.35 * r.night; hills.m.color.setRGB((HILL_BASE[0] * (1 - f) + r.fog[0] * f) * dk, (HILL_BASE[1] * (1 - f) + r.fog[1] * f) * dk, (HILL_BASE[2] * (1 - f) + r.fog[2] * f) * dk, THREE.SRGBColorSpace); }
     // rain
     rain.mesh.visible = !topDown && r.rain > 0.001;
     const count = Math.round(RAIN_MAX * Math.pow(r.rain, 0.9));
@@ -354,6 +388,8 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
       }
       const c = cam || camera;
       sky.mesh.position.copy(c.position);
+      hills.mesh.position.x = c.position.x; hills.mesh.position.z = c.position.z;
+      hills.mesh.position.y += (c.position.y - 2 - hills.mesh.position.y) * Math.min(1, dt * 0.6);   // the foot of the hills follows the height of the ground the car is on
       // lightning: only in heavy rain, never in the top-down view, and only when the setting allows it
       const wantBolt = !topDown && cur.rain >= 0.95 && !(carState && carState.lightning === false);
       if (wantBolt && bolt.t < 0) { bolt.next -= dt; if (bolt.next <= 0) { bolt.t = 0; bolt.next = 9 + Math.random() * 26; if (onLightning) onLightning(0.4 + Math.random() * 3.1, 0.35 + Math.random() * 0.65); } }

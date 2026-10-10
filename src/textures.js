@@ -514,60 +514,70 @@ function wrapped(w, h, px, py, reach, fn) {
   }
 }
 
-// Mown grass beside the circuit. One tile is 40 m along by 40 m across (u along, v across), eight 5 m stripes across,
-// alternating light and dark, with fine blades and soft mottling on top. Rows of the canvas are across the track.
+// Mown grass beside the circuit. One tile is 12 m along by 12 m across (u along, v across): two 6 m mowing stripes across, a
+// lighter and a darker one (about a fifth apart in tone), each with a faint lean in the nap, then two scales of mottling and
+// fine blades on top. Rows of the canvas are across the track.
 export function mownGrassTexture(seed = 3) {
   const W = 512, H = 512, [c, x] = canvas(W, H), r = rng(seed);
-  const stripe = H / 8;
-  for (let i = 0; i < 8; i++) {
+  const stripe = H / 2;
+  for (let i = 0; i < 2; i++) {
     const g = x.createLinearGradient(0, i * stripe, 0, (i + 1) * stripe);
-    const a = i % 2 ? ['#63923f', '#5a8838'] : ['#548733', '#4b7c2e'];
+    const a = i % 2 ? ['#76a64b', '#6b9b43'] : ['#5a8c38', '#4d8030'];
     g.addColorStop(0, a[0]); g.addColorStop(1, a[1]);
     x.fillStyle = g; x.fillRect(0, i * stripe, W, stripe);
   }
-  // soft mottling
-  for (let i = 0; i < 90; i++) {
-    const px = r() * W, py = r() * H, rad = 18 + r() * 40, dark = r() < 0.5;
-    wrapped(W, H, px, py, rad, (qx, qy) => {
-      const g = x.createRadialGradient(qx, qy, 0, qx, qy, rad);
-      g.addColorStop(0, dark ? 'rgba(30,60,20,.10)' : 'rgba(140,175,80,.09)'); g.addColorStop(1, 'rgba(0,0,0,0)');
-      x.fillStyle = g; x.fillRect(qx - rad, qy - rad, rad * 2, rad * 2);
-    });
-  }
+  // soft mottling at two scales: patches of a metre or two, and fine speckle of a hand's width
+  const blobs = (n, r0, r1, dark, light) => {
+    for (let i = 0; i < n; i++) {
+      const px = r() * W, py = r() * H, rad = r0 + r() * (r1 - r0), d = r() < 0.5;
+      wrapped(W, H, px, py, rad, (qx, qy) => {
+        const g = x.createRadialGradient(qx, qy, 0, qx, qy, rad);
+        g.addColorStop(0, d ? dark : light); g.addColorStop(1, 'rgba(0,0,0,0)');
+        x.fillStyle = g; x.fillRect(qx - rad, qy - rad, rad * 2, rad * 2);
+      });
+    }
+  };
+  blobs(36, 60, 130, 'rgba(30,60,20,.10)', 'rgba(140,175,80,.09)');
+  blobs(160, 7, 18, 'rgba(30,60,20,.11)', 'rgba(150,185,90,.10)');
   // blades, lying along the direction of the cut (along the track)
   const tones = ['#41702a', '#6aa045', '#3a6626', '#78ad4f', '#5f9540'];
-  for (let i = 0; i < 9000; i++) {
-    const px = r() * W, py = r() * H, len = 2 + r() * 3.5;
-    x.strokeStyle = tones[(r() * tones.length) | 0]; x.globalAlpha = 0.5; x.lineWidth = 0.9;
-    wrapped(W, H, px, py, len, (qx, qy) => { x.beginPath(); x.moveTo(qx, qy); x.lineTo(qx + len, qy + (r() - 0.5) * 1.4); x.stroke(); });
+  for (let i = 0; i < 6000; i++) {
+    const px = r() * W, py = r() * H, len = 3 + r() * 5;
+    x.strokeStyle = tones[(r() * tones.length) | 0]; x.globalAlpha = 0.5; x.lineWidth = 1.1;
+    wrapped(W, H, px, py, len, (qx, qy) => { x.beginPath(); x.moveTo(qx, qy); x.lineTo(qx + len, qy + (r() - 0.5) * 2); x.stroke(); });
   }
   x.globalAlpha = 1;
-  return finish(c, { aniso: 8 });
+  return finish(c, { aniso: 16 });
 }
 
-// Longer, rougher meadow grass for the ground further out. 24 m a tile, no stripes: clumps, seed heads and bare patches.
+// Longer, rougher meadow grass for the ground further out. 12 m a tile, no stripes: big patches, clumps, seed heads and bare patches.
 export function meadowTexture(seed = 31) {
   const W = 512, H = 512, [c, x] = canvas(W, H), r = rng(seed);
   x.fillStyle = '#5d8240'; x.fillRect(0, 0, W, H);
-  for (let i = 0; i < 160; i++) {
-    const px = r() * W, py = r() * H, rad = 20 + r() * 55, k = r();
-    const col = k < 0.35 ? 'rgba(36,66,26,.16)' : k < 0.7 ? 'rgba(150,170,80,.13)' : 'rgba(120,100,50,.08)';
-    wrapped(W, H, px, py, rad, (qx, qy) => {
-      const g = x.createRadialGradient(qx, qy, 0, qx, qy, rad);
-      g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
-      x.fillStyle = g; x.fillRect(qx - rad, qy - rad, rad * 2, rad * 2);
-    });
-  }
+  const blob = (n, r0, r1) => {
+    for (let i = 0; i < n; i++) {
+      const px = r() * W, py = r() * H, rad = r0 + r() * (r1 - r0), k = r();
+      const col = k < 0.35 ? 'rgba(36,66,26,.15)' : k < 0.7 ? 'rgba(150,170,80,.12)' : 'rgba(120,100,50,.08)';
+      wrapped(W, H, px, py, rad, (qx, qy) => {
+        const g = x.createRadialGradient(qx, qy, 0, qx, qy, rad);
+        g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)');
+        x.fillStyle = g; x.fillRect(qx - rad, qy - rad, rad * 2, rad * 2);
+      });
+    }
+  };
+  blob(40, 90, 190);     // broad patches
+  blob(110, 22, 70);     // clumps
+  blob(150, 6, 16);      // fine speckle
   const tones = ['#3b6427', '#6f9a45', '#4a7a30', '#86a655', '#a39c58', '#2f5520'];
-  for (let i = 0; i < 16000; i++) {
-    const px = r() * W, py = r() * H, len = 3 + r() * 7, ang = -Math.PI / 2 + (r() - 0.5) * 1.5;
-    x.strokeStyle = tones[(r() * tones.length) | 0]; x.globalAlpha = 0.55; x.lineWidth = 0.8 + r() * 0.7;
+  for (let i = 0; i < 9000; i++) {
+    const px = r() * W, py = r() * H, len = 4 + r() * 7, ang = -Math.PI / 2 + (r() - 0.5) * 2.6;
+    x.strokeStyle = tones[(r() * tones.length) | 0]; x.globalAlpha = 0.55; x.lineWidth = 0.9 + r() * 0.8;
     wrapped(W, H, px, py, len, (qx, qy) => {
       x.beginPath(); x.moveTo(qx, qy); x.quadraticCurveTo(qx + Math.cos(ang) * len * 0.5, qy + Math.sin(ang) * len * 0.5, qx + Math.cos(ang) * len + (r() - 0.5) * 2, qy + Math.sin(ang) * len); x.stroke();
     });
   }
   x.globalAlpha = 1;
-  return finish(c, { aniso: 8 });
+  return finish(c, { aniso: 16 });
 }
 
 // Chequered start line: two rows of squares. One tile is 2 squares wide (u) and 2 deep (v).

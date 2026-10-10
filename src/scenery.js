@@ -133,7 +133,7 @@ export function createGround(T) {
       // grass, never sky, and the terrain can never poke through the tarmac.
       pos[n * 3] = x; pos[n * 3 + 1] = drawn(x, z, info); pos[n * 3 + 2] = z;
       const dist = info.dist;
-      uv[n * 2] = x / 24; uv[n * 2 + 1] = z / 24;
+      uv[n * 2] = x / 12; uv[n * 2 + 1] = z / 12;
       lowest = Math.min(lowest, pos[n * 3 + 1]);
       // the same tint as the meadow beside the circuit, drifting further out into patches of lush and dry grass
       const away = Math.min(1, Math.max(0, (dist - 50) / 90)), wide = vnoise(x / 110, z / 110) * 0.6 + vnoise(x / 320 + 9, z / 320) * 0.4;
