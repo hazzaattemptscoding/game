@@ -176,6 +176,8 @@ export function createDirector(g) {
     setTopDown: v => g.setTopDown(v),
     getAutopilot: () => g.getAutopilot(),
     setAutopilot: v => g.setAutopilot(v),
+    learn: g.learn || null,   // the learning autopilot (src/learnClient.js), experimental
+    autopilotStyleChanged: () => g.autopilotStyleChanged && g.autopilotStyleChanged(),
     livery: () => g.liveryChanged(),
     car: id => g.setCar(id),   // the garage's car class (src/cars.js)
     globalTimes: g.globalTimes || null,

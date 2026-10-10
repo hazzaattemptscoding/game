@@ -30,6 +30,7 @@
     "globaltimes": "node tools/globaltimes.js",
     "session": "node tools/session.js",
     "slipstream": "node tools/slipstream.js",
+    "learn": "node tools/learn.js",
     "results": "node tools/results.mjs",
     "finish-live": "node tools/finish-live.mjs",
     "hudsettings": "node tools/hudsettings.js",

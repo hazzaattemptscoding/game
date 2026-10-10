@@ -25,6 +25,12 @@ export function computeRacingLine(T, edgeMargin = 1.4) {
       }
     }
   }
+  return lineFromOffsets(T, off);
+}
+
+// The line points and curvature for a set of sideways offsets (the tail of computeRacingLine, shared with src/learn.js).
+export function lineFromOffsets(T, off) {
+  const { N, x, z, nx, nz } = T;
   const lx = new Float64Array(N), lz = new Float64Array(N), curv = new Float64Array(N);
   for (let i = 0; i < N; i++) { lx[i] = x[i] + nx[i] * off[i]; lz[i] = z[i] + nz[i] * off[i]; }
   for (let i = 0; i < N; i++) {
@@ -40,7 +46,7 @@ export function computeRacingLine(T, edgeMargin = 1.4) {
 // Target speed at every sample: as fast as the grip allows in corners, and
 // slow enough to brake in time for the next one. `skill` scales the grip the
 // driver dares to use (1 = on the limit).
-export function speedProfile(T, line, cfg, skill) {
+export function speedProfile(T, line, cfg, skill, scale) {
   const { N, ds } = T;
   const v = new Float64Array(N);
   const mu = cfg.grip * Math.min(cfg.frontGrip, cfg.rearGrip) * skill;
@@ -51,6 +57,7 @@ export function speedProfile(T, line, cfg, skill) {
     // camber: a bank towards the inside of the bend adds to the grip, off-camber takes from it (T.curv < 0 turns towards -d)
     const help = T.bank ? Math.max(-0.5 * mu, -T.bank[i] * Math.sign(T.curv[i])) : 0;
     v[i] = k > (mu + help) * q ? Math.min(85, Math.sqrt((mu + help) * G / (k - (mu + help) * q))) : 85;
+    if (scale && v[i] < 85) v[i] = Math.min(85, v[i] * scale[i]);   // the learning autopilot's per corner speed factor (src/learn.js)
   }
   // braking zones, worked backwards from each corner
   const brakeShare = 0.82 * skill;
@@ -66,12 +73,18 @@ export function speedProfile(T, line, cfg, skill) {
 }
 
 export class Autopilot {
-  constructor(track, cfg, { skill = 1, line } = {}) {
+  constructor(track, cfg, { skill = 1, line, vmax, tune, assistPlan, baseAssists } = {}) {
     this.track = track;
     this.cfg = cfg;
     this.line = line || computeRacingLine(track);
     this.skill = skill;
-    this.vmax = speedProfile(track, this.line, cfg, skill);
+    this.vmax = vmax || speedProfile(track, this.line, cfg, skill);
+    // the learning autopilot's knobs (src/learn.js); 1 everywhere is the plain autopilot, exactly
+    this.tune = tune || { throttle: 1, brake: 1, look: 1 };
+    // assist plan: per lap segment, per assist, 0 keep the player's state, 1 off, 2 on (src/learn.js); baseAssists is the player's state
+    this.assistPlan = assistPlan || null;
+    this.baseAssists = baseAssists || { tc: true, abs: true, esc: true };
+    this.planOn = true;    // the game switches the plan off when a race sets its own assists
     this.input = { steer: 0, throttle: 0, brake: 0, drs: true };
     this.brakeCap = 1;
     this.throttleCap = 1;
@@ -79,12 +92,13 @@ export class Autopilot {
   }
 
   drive(car) {
+    if (this.assistPlan && this.planOn) this.applyAssistPlan(car);
     const T = this.track, L = this.line, i = car.loc.i, v = Math.max(car.fwdSpeed, 0);
 
     // steering: aim at a point on the line ahead (pure pursuit), measured
     // from the direction the car is travelling, then ask for the cornering
     // force that arc needs as a share of what the tyres can give
-    const look = 6 + v * 0.4;
+    const look = (6 + v * 0.4) * this.tune.look;
     const j = wrap(i + Math.round(look / T.ds), T.N);
     const dx = L.x[j] - car.x, dz = L.z[j] - car.z;
     const dirA = car.speed > 4 ? Math.atan2(car.vz, car.vx) : car.heading;
@@ -107,9 +121,9 @@ export class Autopilot {
     const k = wrap(i + Math.round((2 + v * 0.15) / T.ds), T.N);
     const kb = wrap(i + Math.max(1, Math.round((2 + v * 0.15 + this.brakeEarly) / T.ds)), T.N);
     const err = (this.brakeEarly > 0 ? Math.min(this.vmax[k], this.vmax[kb]) : this.vmax[kb]) - v;
-    if (err > 0) { this.input.throttle = Math.min(1, 0.55 + err * 0.4); this.input.brake = 0; }
+    if (err > 0) { this.input.throttle = Math.min(1, 0.55 + err * 0.4 * this.tune.throttle); this.input.brake = 0; }
     else if (err > -1.5) { this.input.throttle = Math.max(0, 0.45 + err * 0.3); this.input.brake = 0; }
-    else { this.input.throttle = 0; this.input.brake = Math.min(1, -err * 0.25); }
+    else { this.input.throttle = 0; this.input.brake = Math.min(1, -err * 0.25 * this.tune.brake); }
     // squeeze the throttle out of corners, and come off the brake, if the rear is near its limit
     this.input.throttle *= Math.max(0.15, Math.min(1, 1.8 - car.slipR));
     this.input.brake *= Math.max(0, Math.min(1, 2 - car.slipR));
@@ -119,5 +133,13 @@ export class Autopilot {
     this.input.brake = Math.min(this.input.brake, this.brakeCap);
     this.input.throttle = Math.min(this.input.throttle, this.throttleCap);
     return this.input;
+  }
+
+  // Switch the car's assists the way a player would (Car.setAssists, the same call the settings menu makes), per segment of the lap.
+  applyAssistPlan(car) {
+    const n = this.assistPlan.length / 3, seg = Math.min(n - 1, Math.floor(car.loc.s / this.track.length * n));
+    const pick = (k, base) => { const v = this.assistPlan[seg * 3 + k]; return v === 0 ? base : v === 2; };
+    const b = this.baseAssists;
+    car.setAssists({ tc: pick(0, b.tc), abs: pick(1, b.abs), esc: pick(2, b.esc) });
   }
 }

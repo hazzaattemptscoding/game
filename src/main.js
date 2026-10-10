@@ -15,6 +15,8 @@ import { optimiseWorld, freezeWorld, propCuller } from './cull.js';
 import { carById } from './cars.js';
 import { LapTimer } from './timing.js';
 import { Autopilot } from './autopilot.js';
+import { createLearning } from './learnClient.js';
+import { createLearnChip } from './learnUi.js';
 import { createGlobalTimes, LapWatch, timesBase, boardFor, boardLabel } from './globalTimes.js';
 import { createBoardGhost } from './boardGhost.js';
 import { makeProjector } from './ghosts.js';
@@ -62,7 +64,20 @@ const car = new Car(carById(settings.car), track);   // the car class (settings.
 car.setAssists({ tc: settings.assistTc, abs: settings.assistAbs, esc: settings.assistEsc });
 car.placeAt(params.has('at') ? +params.get('at') : -20, 0);  // ?at=1500 starts the car 1500 m into the lap
 const timer = new LapTimer(track);
-let autopilot = params.has('autopilot') ? new Autopilot(track, car.cfg, { skill: 0.9 }) : null;
+// the learning autopilot (experimental, src/learn.js): with the style set to 'learn' and a learned genome the autopilot drives that
+const learn = createLearning({ track, getCarId: () => car.cfg.id, phone: isPhone() });
+const playerAssists = () => ({ tc: settings.assistTc, abs: settings.assistAbs, esc: settings.assistEsc });
+let learnVersion = -1;   // the stored genome that the running autopilot was built from
+function newAutopilot() {
+  if (settings.autopilotMode === 'learn') {
+    const ap = learn.makeAutopilot(car.cfg, playerAssists());
+    if (ap) { learnVersion = learn.version; return ap; }
+  }
+  learnVersion = -1;
+  return new Autopilot(track, car.cfg, { skill: 0.9 });
+}
+let autopilot = params.has('autopilot') ? newAutopilot() : null;
+let assistsTaken = false;   // the learned autopilot has switched the car's assists; the player's own come back when it stops
 
 // --- rendering ---
 const canvas = document.getElementById('view');
@@ -175,6 +190,7 @@ const input = createInput(settings, { boardAllowed: () => !dir.menuOpen && !repo
 const audio = new CarAudio(settings, { muted: params.has('mute') });   // synthesised sound, starts at the first key press or touch
 audio.attach(window, document);
 const hud = new Hud(document.getElementById('hud'), settings);
+const learnChip = createLearnChip(document.getElementById('hud'), learn, { settings, autopilotOn: () => !!autopilot });
 hud.personalOf = reverse => personalSectors(loadBest(undefined, bestKey(reverse, car.cfg.id)));   // each car class has its own list (src/board.js)
 const lobby = createLobby({ scene, camera: rig.camera, car, timer, track, search: location.search, getLivery: myLivery, poseTime: () => poseAt });   // multiplayer: idle until a room is opened
 hud.pingOf = () => lobby.rtt;     // the relay round trip for the HUD readout (null when not online)
@@ -255,8 +271,15 @@ function applyCarClass() {
   view.setFlat(settings.blockout);
   scene.add(view.root);
   env.attachCar(view);
-  if (autopilot) autopilot = new Autopilot(track, cfg, { skill: 0.9 });
+  if (autopilot) autopilot = newAutopilot();
   if (window.lakeside) window.lakeside.view = view;
+}
+
+// the player's own assists back (settings, or all off in a race that sets that); never written by the autopilot
+function releaseAssists() {
+  if (!assistsTaken) return;
+  assistsTaken = false;
+  dir.api.applyAssists();
 }
 
 const dir = createDirector({
@@ -268,7 +291,9 @@ const dir = createDirector({
   applyLook: () => { applyLook(); view.setFlat(settings.blockout); },
   getTopDown: () => topDown, setTopDown: v => { topDown = v; applyLook(); },
   qualityChanged: () => quality.refresh(),
-  getAutopilot: () => !!autopilot, setAutopilot: v => { autopilot = v ? new Autopilot(track, car.cfg, { skill: 0.9 }) : null; },
+  getAutopilot: () => !!autopilot, setAutopilot: v => { autopilot = v ? newAutopilot() : null; if (!v) releaseAssists(); },
+  autopilotStyleChanged: () => { if (autopilot) autopilot = newAutopilot(); },
+  learn,
   liveryChanged: () => { view.setLivery(myLivery()); lobby.liveryChanged(); },
   globalTimes: {
     client: () => globalTimes,
@@ -326,8 +351,17 @@ function frame(now) {
   dir.frame(now, dt, playerInput);
   const paused = dir.inMenu || (dir.menuOpen && !lobby.active) || reportTool.opened;     // in a room the car keeps rolling behind the menu
   // the autopilot only drives the forward line (src/autopilot.js): it is off in a reverse session
-  if (autopilot && dir.session && dir.session.reverse) autopilot = null;
+  if (autopilot && dir.session && dir.session.reverse) { autopilot = null; releaseAssists(); }
+  if (autopilot) {
+    // learning: a better genome is picked up just after the line; a race that sets its own assists keeps them
+    if (learnVersion >= 0 && learn.version !== learnVersion && car.loc.s < 120) autopilot = newAutopilot();
+    autopilot.planOn = !(dir.session && dir.session.assists === 'off');
+    Object.assign(autopilot.baseAssists, playerAssists());
+  }
+  learn.allow(!reportTool.opened && (dir.menuOpen || dir.phase === 'run' || dir.phase === 'start' || dir.phase === 'paused'));
+  learnChip.draw();
   const drive = autopilot && !dir.hold ? () => autopilot.drive(car) : () => (dir.hold ? HOLD : dir.menuOpen ? IDLE : playerInput);
+  if (autopilot && autopilot.assistPlan && (paused || dir.hold)) releaseAssists();
   if (!paused) {
     loop.add(dt);
     let keysNow = null, stepped = false;
@@ -340,6 +374,7 @@ function frame(now) {
         const w = wakeFor(car, solids, { enabled: dir.api.slipstreamOn(), length: car.cfg.length });
         car.setWake(w.strength, w.distance);
       }
+      if (autopilot && autopilot.assistPlan && autopilot.planOn && !dir.hold) assistsTaken = true;
       car.step(drive());
       audio.latch(car);
       simTime += STEP;
