@@ -1,48 +1,21 @@
-// The car as shapes: an extruded side profile for the GT, smooth lofted skins for the GT1 and the CITY (src/carShapes.js), a
-// glasshouse, wing, wheels that spin and steer, lamps. Each car class (src/cars.js, by cfg.id) has its own shape, set out below and
-// in src/carShapes.js. GT is the original car and is unchanged.
+// The car as shapes: a smooth lofted skin for each class (src/carShapes.js: the GT is a GT4 coupe, the GT1 after the DBR9, the
+// CITY a Peugeot 108), a glasshouse, wing, wheels that spin and steer, lamps. Each car class (src/cars.js, by cfg.id) has its own
+// shape in src/carShapes.js; the fields every shape gives are listed below.
 //
 // Local axes: +x forward, +y up, +z right (matches the physics).
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { normaliseLivery, liveryEquals, DEFAULT_LIVERY } from './livery.js';
 import { light, reflections } from './lamps.js';
 import { addNightLight } from './nightLight.js';
 import { ease } from './loop.js';
 import { acquireTextures, releaseTextures, SIDE_W, SIDE_H } from './liveryTex.js';
 import { stepFlap, flapAngle } from './drsFlap.js';
-import { cityShape, gt1Shape } from './carShapes.js';
+import { cityShape, gt1Shape, gt4Shape } from './carShapes.js';
+import { GT } from './cars.js';
 
 const VIBRATION = 0.006;   // metres of body movement per unit of surface roughness (rumble is 1.2, gravel 0.6)
-
-// A side outline as a path: a start point, then steps. ['L', x, y] is a straight line to (x, y). ['Q', cx, cy, x, y] is a curve
-// to (x, y) with control point (cx, cy). A sixth number on a curve is how many points to sample for the livery stripes; the
-// extruded body uses the true curve.
-function pathShape(p) {
-  const s = new THREE.Shape();
-  s.moveTo(p.start[0], p.start[1]);
-  for (const op of p.ops) {
-    if (op[0] === 'L') s.lineTo(op[1], op[2]);
-    else s.quadraticCurveTo(op[1], op[2], op[3], op[4]);
-  }
-  return s;
-}
-
-// The points of a path, for the stripes: the start, then each step's points.
-function samplePath(p) {
-  const pts = [p.start];
-  let x0 = p.start[0], y0 = p.start[1];
-  for (const op of p.ops) {
-    if (op[0] === 'L') { x0 = op[1]; y0 = op[2]; pts.push([x0, y0]); continue; }
-    const [, cx, cy, x1, y1, n = 8] = op;
-    for (let i = 1; i <= n; i++) {
-      const t = i / n, v = 1 - t;
-      pts.push([v * v * x0 + 2 * v * t * cx + t * t * x1, v * v * y0 + 2 * v * t * cy + t * t * y1]);
-    }
-    x0 = x1; y0 = y1;
-  }
-  return pts;
-}
 
 // A ribbon of width w centred at z = zc following the stripe pieces ({ pts, off }), lifted 8 mm off the surface.
 function stripeGeometry(pieces, zc, w) {
@@ -64,56 +37,27 @@ function stripeGeometry(pieces, zc, w) {
   return g;
 }
 
-// A pair of lamps, one each side: p is the right one ([x, y, z]), s its size, rz its tilt about the z axis.
-const pair = (p, s, rz = 0) => [{ p, s, rz }, { p: [p[0], p[1], -p[2]], s, rz }];
-
-// The shape of each class. Every one returns the same fields:
-//   half      half the body's width (the body's bevel is inside it)
-//   cabHalf   half the glasshouse's width
-//   body      the closed side outline, extruded across the body. Its bevel makes the car 0.1 m longer than the outline,
-//             so outlines stop 0.1 m short of the ends of the car.
-//   cab       the closed outline of the glasshouse
-//   stripes   the top lines for the livery stripes: { path, off }, off being how far the surface stands out from the line
+// The shape of each class (src/carShapes.js). Every one returns the same fields:
+//   half      half the body's width at the doors, where the side panel sits
+//   loft      the body, the greenhouse and the glass as ready-made skins (and loftLow, the same in fewer triangles)
+//   stripes   the top lines for the livery stripes: { pts, off }, off being how far the surface stands out from the line
 //   side      the side panel: its centre (x, y) and width (its height follows from the texture)
 //   plate     the bonnet number plate: the quadratic bonnet curve (c0, c1, c2), its size and how far it stands off
 //   wing      the rear wing: x of the flap's hinge, y, the main plane and flap chords, span, and posts { x, y, z, h }; or null
-//   arches    wheel arch flares, each { x, r }: a half disc of radius r about the axle at wheel height, on each side (old style)
-//   loft      (CITY, GT1) the body, the greenhouse and the glass as ready-made skins, in place of body and cab (src/carShapes.js)
 //   dark      dark parts of the body, each { p, s }: splitter, diffuser, trims
 //   tails     the rear lamps, { p, s, rz }, both sides; heads the front lamps, the same shape
+//   liners    the dark liner behind each wheel; tyreW, rim and glass: the wheels and the glass
 // Local x runs from the tail (negative) to the nose (positive), and y is up from the road.
 
-// GT: the original car. Its numbers are unchanged.
-function gtShape(c) {
-  const L = c.length, W = c.width, f = L / 2, b = -L / 2, h = 1.0;
-  return {
-    half: W / 2, cabHalf: (W - 0.7) / 2,
-    body: { start: [b, 0.18], ops: [['L', f - 0.15, 0.18], ['Q', f, 0.2, f, 0.42], ['Q', f - 0.25, 0.62, f - 1.0, 0.72], ['L', b + 0.4, 0.82], ['Q', b, 0.84, b, 0.6], ['L', b, 0.18]] },
-    cab: { start: [0.9, 0.7], ops: [['Q', 0.3, 1.15, -0.3, h + 0.2], ['L', -1.2, h + 0.18], ['Q', -1.6, 1.05, -1.7, 0.8], ['L', 0.9, 0.7]] },
-    stripes: [
-      { path: { start: [f - 0.15, 0.18], ops: [['Q', f, 0.2, f, 0.42, 6], ['Q', f - 0.25, 0.62, f - 1.0, 0.72, 12], ['L', 0.9, 0.7325]] }, off: 0.1 },
-      { path: { start: [0.9, 0.7], ops: [['Q', 0.3, 1.15, -0.3, 1.2, 12], ['L', -1.2, 1.18], ['Q', -1.6, 1.05, -1.7, 0.8, 8]] }, off: 0.08 },
-      { path: { start: [-1.7, 0.815], ops: [['L', b + 0.4, 0.82], ['Q', b, 0.84, b, 0.6, 8]] }, off: 0.1 },
-    ],
-    side: { x: 0.1, y: 0.45, w: 1.8 },
-    plate: { c0: [f, 0.42], c1: [f - 0.25, 0.62], c2: [f - 1.0, 0.72], size: 0.44, off: 0.114 },
-    wing: { x: b + 0.27, y: 1.22, main: 0.2, flap: 0.22, span: W - 0.1, post: { x: b + 0.3, y: 1.02, z: 0.5, h: 0.38 } },
-    arches: [],
-    dark: [{ p: [f - 0.1, 0.16, 0], s: [0.4, 0.04, W] }],
-    tails: pair([b - 0.08, 0.62, 0.62], [0.05, 0.08, 0.45]),
-    heads: pair([f - 0.12, 0.5, 0.6], [0.05, 0.08, 0.38], -0.5),
-  };
-}
-
-const SHAPES = { GT: gtShape, GT1: gt1Shape, CITY: cityShape };
+const SHAPES = { GT: gt4Shape, GT1: gt1Shape, CITY: cityShape };
 
 // The shape of a car class. A config with no id, or an id with no shape of its own, is the GT. One shape per config is kept (the
-// shapes are plain numbers and the lofted skins of the GT1 and the CITY, built once however many cars of the class there are).
+// shapes are plain numbers and lofted skins, built once however many cars of the class there are).
 const specs = new WeakMap();
 export function bodySpec(cfg) {
-  if (!cfg || typeof cfg !== 'object') return gtShape(cfg);
+  if (!cfg || typeof cfg !== 'object') cfg = GT;
   let sp = specs.get(cfg);
-  if (!sp) specs.set(cfg, sp = (Object.hasOwn(SHAPES, cfg.id) ? SHAPES[cfg.id] : gtShape)(cfg));
+  if (!sp) specs.set(cfg, sp = (Object.hasOwn(SHAPES, cfg.id) ? SHAPES[cfg.id] : gt4Shape)(cfg));
   return sp;
 }
 
@@ -157,6 +101,59 @@ function slotColours(g, wing) {
 }
 const HINGE_SINK = 0.03;     // how far the flap's hinge sits inside the main plane, metres
 
+// A geometry moved into place: at p, turned ry about the vertical and then rz about the car's width (the order the shapes give).
+const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _one = new THREE.Vector3(1, 1, 1), _v = new THREE.Vector3();
+function placed(g, p, ry = 0, rz = 0) {
+  return g.applyMatrix4(_m4.compose(_v.set(p[0], p[1], p[2]), _q.setFromEuler(_e.set(0, ry, rz, 'YXZ')), _one));
+}
+// A part from a shape's list ({ p, s, ry, rz }): a box, or with `disc` an oval lamp with its axis along the car.
+function part(d) {
+  let g;
+  if (d.disc) { g = new THREE.CylinderGeometry(1, 1, 1, 20); g.rotateZ(Math.PI / 2); g.scale(d.s[0], d.s[1] / 2, d.s[2] / 2); }
+  else g = new THREE.BoxGeometry(d.s[0], d.s[1], d.s[2]);
+  return placed(g, d.p, d.ry || 0, d.rz || 0);
+}
+// The dark liner behind a wheel: from the floor up round the arch.
+function linerGeometry(l) {
+  const shape = new THREE.Shape();
+  shape.moveTo(-l.R, l.floor - l.y);
+  shape.lineTo(-l.R, 0);
+  shape.absarc(0, 0, l.R, Math.PI, 0, true);
+  shape.lineTo(l.R, l.floor - l.y);
+  return new THREE.ShapeGeometry(shape, 16).translate(l.x, l.y, l.z);
+}
+
+// One wheel's geometry (the four wheels of a car share it), its axle along z and the outside towards +z.
+//   tyre     a lathe: bead, sidewall, rounded shoulder, tread, and back
+//   rim      the barrel, the lip, the spokes, the hub and the centre lock, and the brake disc behind them, coloured by vertex
+//   caliper  a block over the rear top of the disc, between the disc and the spokes
+// `low`: a remote car's wheels, in fewer segments (they are seldom close).
+function wheelParts(sp, r, tw, low = false) {
+  const hw = tw / 2, ri = r * 0.64, seg = low ? 18 : 32, round = low ? 16 : 28;
+  const prof = [[ri, -hw * 0.86], [r * 0.8, -hw], [r * 0.93, -hw * 0.97], [r * 0.985, -hw * 0.82], [r, -hw * 0.55], [r, hw * 0.55], [r * 0.985, hw * 0.82], [r * 0.93, hw * 0.97], [r * 0.8, hw], [ri, hw * 0.86]];
+  const tyre = new THREE.LatheGeometry(prof.map(([x, y]) => new THREE.Vector2(x, y)), seg).rotateX(Math.PI / 2);
+  const rimCol = new THREE.Color(sp.rim.color), disc = new THREE.Color(0x6e7175), dim = rimCol.clone().multiplyScalar(0.45), nut = new THREE.Color(sp.rim.nut ?? 0x1c1d20);
+  const paint = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
+  const face = hw * 0.72, n = sp.spokes || 5, rr = ri * 0.98;
+  const pieces = [
+    paint(new THREE.CylinderGeometry(rr, rr, tw * 0.8, round, 1, true).rotateX(Math.PI / 2), dim),                           // the barrel
+    paint(new THREE.RingGeometry(rr * 0.84, rr, round).translate(0, 0, face + 0.012), rimCol),                               // the lip
+    paint(new THREE.CylinderGeometry(rr * 0.25, rr * 0.28, 0.05, 16).rotateX(Math.PI / 2).translate(0, 0, face), rimCol),   // the hub
+    paint(new THREE.CylinderGeometry(rr * 0.11, rr * 0.11, 0.05, 6).rotateX(Math.PI / 2).translate(0, 0, face + 0.02), nut), // the centre lock
+    paint(new THREE.CylinderGeometry(rr * 0.8, rr * 0.8, 0.03, round).rotateX(Math.PI / 2).translate(0, 0, -hw * 0.1), disc),  // the brake disc
+  ];
+  const sw = (sp.spokeW || 0.12) * rr;
+  for (let k = 0; k < n; k++) {
+    const g = new THREE.BoxGeometry(rr * 0.66, sw, 0.035).translate(rr * 0.55, 0, face);
+    g.rotateZ(k / n * Math.PI * 2);
+    pieces.push(paint(g, rimCol));
+  }
+  const rim = mergeGeometries(pieces.map(g => g.index ? g.toNonIndexed() : g));
+  const ang = Math.PI * 0.78, cr = rr * 0.66;
+  const caliper = new THREE.BoxGeometry(rr * 0.42, rr * 0.2, Math.min(0.06, hw * 0.3)).rotateZ(ang - Math.PI / 2).translate(Math.cos(ang) * cr, Math.sin(ang) * cr, hw * 0.18);
+  return { tyre, rim, caliper };
+}
+
 export class CarView {
   // `livery` is a livery object (src/livery.js), or a plain colour number as before.
   // `ghost` is for a remote car: it casts no shadow and swaps to a simple skin at a distance.
@@ -181,32 +178,17 @@ export class CarView {
     this.wingMat = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.5, metalness: 0.2 });
     this.wingFaceMat = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.5, metalness: 0.2, vertexColors: true });   // the main plane and the flap
     const dark = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.6 });
-    const glass = new THREE.MeshStandardMaterial(sp.glass || { color: 0x14181d, roughness: 0.1, metalness: 0.6 });
+    const glass = new THREE.MeshStandardMaterial(sp.glass);
 
-    // Body: the side profile extruded across the width with rounded edges, or (CITY, GT1) a lofted skin
-    let shell, cabMesh, glassMesh = null;
-    this._sharedSkin = null; this._skinGeos = new Set();   // the skins this car takes from its class (freed by the class, not by the car)
-    if (sp.loft) {
-      takeSkin(sp);
-      this._sharedSkin = sp;
-      for (const g of Object.values(sp.loft)) this._skinGeos.add(g);
-      shell = new THREE.Mesh(sp.loft.body, paint);
-      cabMesh = new THREE.Mesh(sp.loft.cab, paint);
-      glassMesh = new THREE.Mesh(sp.loft.glass, glass);
-    } else {
-      const depth = 2 * sp.half - 0.24;
-      const bodyGeo = new THREE.ExtrudeGeometry(pathShape(sp.body), { depth, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.1, bevelSegments: 3, curveSegments: 8 });
-      bodyGeo.translate(0, 0, -depth / 2);
-      shell = new THREE.Mesh(bodyGeo, paint);
-      // Glasshouse
-      const cabDepth = 2 * sp.cabHalf;
-      const cabGeo = new THREE.ExtrudeGeometry(pathShape(sp.cab), { depth: cabDepth, bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.08, bevelSegments: 2 });
-      cabGeo.translate(0, 0, -cabDepth / 2);
-      cabMesh = new THREE.Mesh(cabGeo, glass);
-    }
+    // Body: the class's lofted skins, shared by every car of the class
+    this._skinGeos = new Set();   // the skins this car takes from its class (freed by the class, not by the car)
+    takeSkin(sp);
+    this._sharedSkin = sp;
+    for (const g of Object.values(sp.loft)) this._skinGeos.add(g);
+    const shell = new THREE.Mesh(sp.loft.body, paint), cabMesh = new THREE.Mesh(sp.loft.cab, paint), glassMesh = new THREE.Mesh(sp.loft.glass, glass);
     shell.castShadow = true;
     cabMesh.castShadow = true;
-    if (ghost && sp.loftLow) {
+    if (ghost) {
       // near: the full skin; beyond GHOST_LOD_DISTANCE: the same shape in a sixth of the triangles, in the same materials
       const lod = new THREE.LOD(), near = new THREE.Group(), far = new THREE.Group();
       for (const g of Object.values(sp.loftLow)) this._skinGeos.add(g);
@@ -216,9 +198,7 @@ export class CarView {
       lod.addLevel(far, GHOST_LOD_DISTANCE);
       hull.add(lod);
     } else {
-      hull.add(shell);
-      hull.add(cabMesh);
-      if (glassMesh) hull.add(glassMesh);
+      hull.add(shell, cabMesh, glassMesh);
     }
 
     // Rear wing, when the class has one (the flap is the DRS flap: the flapPivot takes its angle in update)
@@ -239,92 +219,59 @@ export class CarView {
       flap.position.set(-wg.flap / 2, 0, 0);
       this.flapPivot.add(flap);
       this.wing.add(this.flapPivot);
-      if (wg.plate) {                  // end plates on the main plane
-        for (const sd of [-1, 1]) {
-          const ep = new THREE.Mesh(new THREE.BoxGeometry(wg.plate.len, wg.plate.h, 0.02), this.wingMat);
-          ep.position.set(wg.x - wg.flap / 2 + wg.plate.len / 2 - 0.05, wg.y + 0.02, sd * (wg.span / 2));
-          this.wing.add(ep);
-        }
-      }
-      for (const s of [-1, 1]) {
-        const post = new THREE.Mesh(new THREE.BoxGeometry(WING_POST_W, wg.post.h, WING_POST_T), dark);
-        post.position.set(wg.post.x, wg.post.y, s * wg.post.z);
-        this.wing.add(post);
+      if (wg.plate) {                  // end plates on the main plane, both in one mesh
+        const ends = [-1, 1].map(sd => placed(new THREE.BoxGeometry(wg.plate.len, wg.plate.h, 0.02), [wg.x - wg.flap / 2 + wg.plate.len / 2 - 0.05, wg.y + 0.02, sd * (wg.span / 2)]));
+        this.wing.add(new THREE.Mesh(mergeGeometries(ends), this.wingMat));
       }
     }
     this._flap = 0;     // 0 at rest (angled), 1 open and flat (src/drsFlap.js)
 
-    // Wheel arch flares: a half disc on each side over the wheel, in the body colour, standing out from the flatter body side
-    for (const a of sp.arches || []) {
-      const shape = new THREE.Shape();
-      shape.moveTo(-a.r, 0);
-      shape.absarc(0, 0, a.r, Math.PI, 0, true);     // the top half, from one side to the other
-      const z0 = sp.half - 0.16, zd = W / 2 - z0;     // out to the car's full width, so the tyre sits inside the flare
-      for (const s of [-1, 1]) {
-        const geo = new THREE.ExtrudeGeometry(shape, { depth: zd, bevelEnabled: false });
-        geo.translate(a.x, r, s > 0 ? z0 : -W / 2);
-        const flare = new THREE.Mesh(geo, paint);
-        flare.castShadow = true;
-        hull.add(flare);
-      }
-    }
-
-    // Dark parts: splitter, diffuser and trims
-    for (const d of sp.dark) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(d.s[0], d.s[1], d.s[2]), d.paint ? paint : dark);
-      m.position.set(d.p[0], d.p[1], d.p[2]);
-      m.rotation.set(0, d.ry || 0, d.rz || 0, 'YXZ');
+    // The small parts, one mesh a material: the dark trim (splitter, diffuser, vents, the wing's posts), the body coloured bits
+    // (mirrors), the liners behind the wheels and the lamps. A car is drawn several times a frame (its own and other players'),
+    // so a part that is not a mesh of its own is a draw call saved.
+    const merged = (geos, mat, cast = false) => {
+      if (!geos.length) return null;
+      const m = new THREE.Mesh(mergeGeometries(geos), mat);
+      m.castShadow = cast;
       hull.add(m);
-    }
-    // Wheel liners: the dark inside of each wheel arch, behind the tyre
+      return m;
+    };
+    const darkGeos = [], paintGeos = [];
+    if (sp.wing) for (const s of [-1, 1]) darkGeos.push(placed(new THREE.BoxGeometry(WING_POST_W, sp.wing.post.h, WING_POST_T), [sp.wing.post.x, sp.wing.post.y, s * sp.wing.post.z]));
+    for (const d of sp.dark) (d.paint ? paintGeos : darkGeos).push(part(d));
+    merged(darkGeos, dark);
+    merged(paintGeos, paint, true);
     const linerMat = new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.9, side: THREE.DoubleSide });
-    for (const l of sp.liners || []) {
-      const shape = new THREE.Shape();
-      shape.moveTo(-l.R, l.floor - l.y);
-      shape.lineTo(-l.R, 0);
-      shape.absarc(0, 0, l.R, Math.PI, 0, true);
-      shape.lineTo(l.R, l.floor - l.y);
-      const m = new THREE.Mesh(new THREE.ShapeGeometry(shape, 16), linerMat);
-      m.position.set(l.x, l.y, l.z);
-      hull.add(m);
-    }
+    this.liners = merged((sp.liners || []).map(linerGeometry), linerMat);
+    this.brakeMat = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff1010, emissiveIntensity: 0.2, roughness: 0.25 });
+    this.headMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2d0, emissiveIntensity: 1.5, roughness: 0.2 });
+    merged(sp.tails.map(part), this.brakeMat);
+    merged(sp.heads.map(part), this.headMat);
 
-    // Lights
-    this.brakeMat = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff1010, emissiveIntensity: 0.2 });
-    this.headMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2d0, emissiveIntensity: 1.5 });
-    for (const t of sp.tails) {
-      const tail = new THREE.Mesh(new THREE.BoxGeometry(t.s[0], t.s[1], t.s[2]), this.brakeMat);
-      tail.position.set(t.p[0], t.p[1], t.p[2]);
-      tail.rotation.set(0, t.ry || 0, t.rz || 0, 'YXZ');
-      hull.add(tail);
-    }
-    for (const hd of sp.heads) {
-      let geo = new THREE.BoxGeometry(hd.s[0], hd.s[1], hd.s[2]);
-      if (hd.disc) { geo = new THREE.CylinderGeometry(1, 1, 1, 20); geo.rotateZ(Math.PI / 2); geo.scale(hd.s[0], hd.s[1] / 2, hd.s[2] / 2); }     // an oval lamp, its axis along the car
-      const head = new THREE.Mesh(geo, this.headMat);
-      head.position.set(hd.p[0], hd.p[1], hd.p[2]);
-      head.rotation.set(0, hd.ry || 0, hd.rz || 0, 'YXZ');
-      hull.add(head);
-    }
-
-    // Wheels: tyre with a light rim so the spin is visible
+    // Wheels: a tyre with rounded shoulders, a rim (lip, spokes, centre lock) with the brake disc behind it, and on your own car a
+    // caliper that turns with the steering but does not spin. The rim's colours are vertex colours, so rim and disc are one draw.
     const tw = sp.tyreW || 0.3;
-    const tyreGeo = new THREE.CylinderGeometry(r, r, tw, 24);
-    tyreGeo.rotateX(Math.PI / 2);
-    const rimGeo = new THREE.CylinderGeometry(r * 0.62, r * 0.62, sp.tyreW ? tw + 0.01 : 0.31, 6);
-    rimGeo.rotateX(Math.PI / 2);
-    const tyreMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.9 });
-    const rimMat = new THREE.MeshStandardMaterial(sp.rim || { color: 0x9aa0a6, roughness: 0.3, metalness: 0.8 });
+    const wp = wheelParts(sp, r, tw, ghost);
+    const tyreMat = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.88 });
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: sp.rim.roughness ?? 0.35, metalness: sp.rim.metalness ?? 0.6, vertexColors: true });
+    const caliperMat = new THREE.MeshStandardMaterial({ color: sp.caliper ?? 0xc8102e, roughness: 0.4, metalness: 0.2 });
     this.wheels = [];
     const a = cfg.wheelbase * (1 - cfg.frontWeight), bb = cfg.wheelbase * cfg.frontWeight;
     for (const [x, z, front] of [[a, -1, true], [a, 1, true], [-bb, -1, false], [-bb, 1, false]]) {
       const steer = new THREE.Group();
       steer.position.set(x, r, z * cfg.trackWidth / 2);
       const spin = new THREE.Group();
-      const tyre = new THREE.Mesh(tyreGeo, tyreMat);
+      const tyre = new THREE.Mesh(wp.tyre, tyreMat);
       tyre.castShadow = true;
-      spin.add(tyre, new THREE.Mesh(rimGeo, rimMat));
+      const rim = new THREE.Mesh(wp.rim, rimMat);
+      if (z < 0) rim.rotation.y = Math.PI;     // the spokes face outwards on both sides
+      spin.add(tyre, rim);
       steer.add(spin);
+      if (!ghost) {
+        const cal = new THREE.Mesh(wp.caliper, caliperMat);
+        if (z < 0) cal.rotation.y = Math.PI;
+        steer.add(cal);
+      }
       this.slope.add(steer);  // wheels stay on the road while the body rolls
       this.wheels.push({ steer, spin, front });
     }
@@ -358,7 +305,7 @@ export class CarView {
       this.plate = plate;
       this.decals.add(plate);
     }
-    this._pieces = sp.stripes.map(({ path, pts, off }) => ({ pts: pts || samplePath(path), off }));
+    this._pieces = sp.stripes.map(({ pts, off }) => ({ pts, off }));
     this.stripes = [new THREE.Mesh(new THREE.BufferGeometry(), this.stripeMat), new THREE.Mesh(new THREE.BufferGeometry(), this.stripeMat)];
     for (const m of this.stripes) { m.visible = false; this.decals.add(m); }
     this._style = -1;

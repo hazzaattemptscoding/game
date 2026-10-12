@@ -106,7 +106,7 @@ function cityShapeRaw(c) {
   const tailPts = [[-1.70, roof(-1.70)], [-1.72, ys(-1.72) + crown(-1.72)], [-1.7375 + 0.004, ys(-F + 0.01)], [-F, ys(-F) - 0.04], [-F, 0.45]];
   return {
     half, dx, tyreW: 0.165, hull: hullDef, liners: liners(c, arches, c.trackWidth, 0.165),
-    rim: { color: 0x8f969d, roughness: 0.4, metalness: 0.3 },
+    rim: { color: 0xc9cdd1, roughness: 0.35, metalness: 0.6 }, spokes: 8, spokeW: 0.13, caliper: 0x55595e,
     glass: { color: 0x4a5c72, roughness: 0.16, metalness: 0.1, emissive: 0x0a1018 },
     stripes: [{ pts: bonnetPts, off: 0.0 }, { pts: roofPts, off: 0.0 }, { pts: tailPts, off: 0.0 }],
     side: { x: -0.2, y: 0.7, w: 1.5 },
@@ -166,7 +166,7 @@ function gt1ShapeRaw(c) {
   const wx = -F + 0.35;
   return {
     half, dx: 0, tyreW, hull: hullDef, liners: liners(c, arches, c.trackWidth, tyreW),
-    rim: { color: 0x8f969d, roughness: 0.4, metalness: 0.3 },
+    rim: { color: 0xb8bcc0, roughness: 0.3, metalness: 0.8, nut: 0x1d4e9e }, spokes: 6, spokeW: 0.16, caliper: 0xc8102e,
     glass: { color: 0x4a5c72, roughness: 0.16, metalness: 0.1, emissive: 0x0a1018 },
     stripes: [{ pts: bonnetPts, off: 0 }, { pts: roofPts, off: 0 }, { pts: tailPts, off: 0 }],
     side: { x: 0, y: 0.52, w: 1.4 },
@@ -181,5 +181,71 @@ function gt1ShapeRaw(c) {
     ],
     tails: pair([-F + 0.005, 0.68, 0.58], [0.05, 0.07, 0.42]),
     heads: pair([F - 0.01, 0.4, 0.52], [0.06, 0.09, 0.4], 0, -0.25).map(h => ({ ...h, disc: true })),
+  };
+}
+
+// GT: a GT4 coupe, front engined, on the proportions of the AMG GT4 (4.6 m long, 2.0 m wide, 2.65 m wheelbase, like the class's
+// numbers in src/cars.js). A long bonnet between front fenders that stand a little proud of it, the cabin set well back, a fastback
+// running down to a short ducktail, the rear haunches the widest part of the car. Race parts: a splitter, canards, bonnet vents, side
+// skirts, a diffuser with fins, and a wing on swan-neck mounts (with the DRS flap).
+export const gt4Shape = c => withLofts(gt4ShapeRaw(c));
+function gt4ShapeRaw(c) {
+  const L = c.length, F = L / 2, W = c.width, r = c.wheelRadius, tyreW = 0.265;
+  const fx = c.wheelbase * (1 - c.frontWeight), rx = fx - c.wheelbase;
+  const R = r + 0.06, half = 0.945;
+  const arches = [{ x: fx, cy: r, R, floor: 0.13 }, { x: rx, cy: r, R, floor: 0.13 }];
+  const ys = curve([[-F, 0.86], [-2.2, 0.93], [-2.0, 0.965], [-1.6, 0.975], [-1.2, 0.965], [-0.8, 0.93], [-0.3, 0.88], [0.3, 0.85], [0.9, 0.83], [fx, 0.805], [1.8, 0.75], [2.05, 0.665], [2.2, 0.57], [F, 0.47]]);
+  const yb = curve([[-F, 0.32], [-2.18, 0.24], [-2.0, 0.15], [-1.8, 0.12], [1.85, 0.12], [2.1, 0.13], [2.25, 0.16], [F, 0.22]]);
+  const w = curve([[-F, 0.86], [-2.22, 0.93], [-2.05, 0.98], [-1.75, W / 2], [-1.0, W / 2], [-0.8, 0.952], [-0.72, half], [0.72, half], [0.95, 0.965], [fx, 0.986], [1.85, 0.975], [2.1, 0.93], [2.25, 0.86], [F, 0.8]]);
+  const crown = curve([[-F, 0.0], [-2.1, 0.02], [-1.6, 0.03], [-1.0, 0.02], [-0.3, 0.02], [0.4, 0.045], [1.0, 0.03], [fx, 0.0], [1.9, -0.012], [F, 0.0]]);
+  const roof = curve([[-1.9, 0.99], [-1.75, 1.03], [-1.5, 1.09], [-1.2, 1.15], [-0.9, 1.19], [-0.6, 1.215], [-0.35, 1.225], [-0.15, 1.215], [0.02, 1.18], [0.18, 1.1], [0.32, 1.0], [0.42, 0.92]]);
+  const cab = {
+    x0: -1.9, x1: 0.42, roof, crown: 0.02,
+    yB: x => ys(x) - 0.04,
+    wb: curve([[-1.9, 0.6], [-1.6, 0.72], [-1.1, 0.8], [-0.5, 0.8], [0.1, 0.79], [0.42, 0.74]]),
+    wr: curve([[-1.9, 0.42], [-1.6, 0.48], [-1.1, 0.53], [-0.5, 0.54], [0.1, 0.52], [0.42, 0.5]]),
+  };
+  const windows = [
+    { side: true, j0: 0.4, j1: 8, front: [0.36, 0.0], rear: [-1.32, -1.0] },         // the side glass, to the slope of the fastback
+    { x0: 0.4, x1: -0.02, j0: 12.6, j1: 23.4 },                                     // the windscreen
+    { x0: -0.78, x1: -1.86, j0: 12.8, j1: 23.2 },                                    // the fastback glass
+  ];
+  const hullDef = { F, ys, yb, w, crown, arches, rt: 0.15, rb: 0.07, z0: 0.35, cab, windows };
+  const yc = x => ys(x) + crown(x);
+  const P = x => [x, yc(x)], p0 = P(1.9), p2 = P(1.2), pm = P(1.55), p1 = [2 * pm[0] - (p0[0] + p2[0]) / 2, 2 * pm[1] - (p0[1] + p2[1]) / 2];
+  const roofPts = [];
+  for (let x = 0.42; x >= -1.9; x -= 0.04) roofPts.push([x, roof(x)]);
+  roofPts.push([-1.9, roof(-1.9)]);
+  const bonnetPts = [[F, 0.34], [F, 0.46]];
+  for (let x = F - 0.01; x >= 0.43; x -= 0.04) bonnetPts.push([x, yc(x)]);
+  const tailPts = [];
+  for (let x = -1.9; x >= -F + 0.02; x -= 0.04) tailPts.push([x, yc(x)]);
+  tailPts.push([-F, yc(-F)], [-F, 0.5]);
+  const wx = -F + 0.32, deck = yc(wx + 0.12), wy = 1.15;
+  const slope = x => Math.atan2(yc(x + 0.05) - yc(x - 0.05), 0.1);   // the bonnet's slope at x, for the vents lying on it
+  return {
+    half, dx: 0, tyreW, hull: hullDef, liners: liners(c, arches, c.trackWidth, tyreW),
+    rim: { color: 0x2b2e33, roughness: 0.32, metalness: 0.7, nut: 0xc8102e }, spokes: 10, spokeW: 0.09, caliper: 0xf2c200,
+    glass: { color: 0x3d4c5f, roughness: 0.08, metalness: 0.1, emissive: 0x070b10 },
+    stripes: [{ pts: bonnetPts, off: 0 }, { pts: roofPts, off: 0 }, { pts: tailPts, off: 0 }],
+    side: { x: 0, y: 0.5, w: 1.4 },
+    plate: { c0: p0, c1: p1, c2: p2, size: 0.3, off: 0.016 },
+    wing: { x: wx, y: wy, main: 0.26, flap: 0.2, span: W - 0.3, post: { x: wx + 0.12, y: (deck + wy) / 2, z: 0.42, h: wy - deck }, plate: { len: 0.55, h: 0.16 } },
+    dark: [
+      { p: [F - 0.12, 0.12, 0], s: [0.42, 0.025, W - 0.14] },                                // the splitter
+      { p: [F - 0.035, 0.35, 0], s: [0.06, 0.17, 0.86] },                                    // the grille, set into the nose
+      ...pair([F - 0.05, 0.24, 0.62], [0.06, 0.12, 0.3]),                                     // the corner intakes
+      ...pair([F - 0.2, 0.42, 0.9], [0.24, 0.015, 0.13], 0.12),                               // the canards
+      ...pair([1.62, yc(1.62) + 0.004, 0.32], [0.34, 0.012, 0.2], slope(1.62)),             // the bonnet vents
+      ...pair([0.1, 0.15, 0.952], [2.1, 0.07, 0.03]),                                          // the side skirts
+      { p: [-F + 0.34, 0.21, 0], s: [0.64, 0.025, 1.3], rz: -0.18 },                          // the diffuser
+      ...[-0.55, -0.18, 0.18, 0.55].map(z => ({ p: [-F + 0.34, 0.27, z], s: [0.64, 0.12, 0.015], rz: -0.18 })),
+      { p: [-F + 0.015, 0.36, 0], s: [0.05, 0.13, 1.36] },                                    // the rear valance
+      { p: [-F + 0.012, 0.72, 0], s: [0.04, 0.05, 0.62] },                                    // the black band between the tail lamps
+      ...pair([-F + 0.01, 0.31, 0.3], [0.08, 0.075, 0.075]).map(d => ({ ...d, disc: true })),  // the exhausts
+      ...pair([0.3, 0.97, 0.88], [0.14, 0.07, 0.13]).map(d => ({ ...d, paint: true })),       // the mirrors
+    ],
+    tails: [...pair([-F + 0.01, 0.72, 0.56], [0.05, 0.07, 0.5], 0, 0.28), { p: [-F + 0.03, 0.22, 0], s: [0.04, 0.06, 0.12] }],   // the lamps and the rain light
+    heads: pair([F - 0.14, 0.585, 0.66], [0.07, 0.1, 0.44], 0.32, -0.58).map(h => ({ ...h, disc: true })),
   };
 }

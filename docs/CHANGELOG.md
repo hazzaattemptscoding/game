@@ -1,5 +1,25 @@
 # Changelog
 
+## Cars: the GT is a GT4, real wheels on every class, fewer draw calls a car
+
+- **The GT is a GT4 coupe** (`gt4Shape` in `src/carShapes.js`), asked for by the owner. The old GT was a flat side profile pushed
+  out across the car, with no wheel arches, and its tyres sat exactly on its sides, so the two surfaces flickered against each
+  other. It is now a lofted body like the GT1 and the 108, on the proportions of a front-engined GT4 (the AMG GT4 is almost exactly
+  the class's 4.6 by 2.0 m and 2.65 m wheelbase): a long bonnet between front fenders that stand a little proud of it, the cabin set
+  well back, a fastback down to a short tail, rear haunches the widest part of the car, real arches with liners. Race parts: splitter,
+  canards, bonnet vents, side skirts, a diffuser with fins, twin exhausts, a rain light, the tail lamps joined by a black band, and a
+  wing on posts (the DRS flap as before). Size, handling and lap times are unchanged; only the model is new.
+- **Wheels** (`wheelParts` in `src/car.js`), every class: a tyre with a sidewall and rounded shoulders, a rim with a lip, spokes (10
+  thin on the GT, 6 on the GT1, 8 on the 108), a hub and a coloured centre lock, the brake disc behind the spokes, and on your own car
+  a caliper that turns with the steering but does not spin. The old rim was a hexagon. Remote cars get the same wheels in fewer
+  segments.
+- **Draw calls.** The small parts of a car (trim, mirrors, lamps, liners, wing end plates) are one mesh a material instead of one each.
+  A remote GT1 is 24 draws (39 before), a 108 20 (30), a GT 24 (24, with the new body). Your own car adds the four calipers.
+- The tail and head light glows (`src/carFx.js`) sit on each class's own lamps; they were placed for the old GT's.
+
+Tests: `tools/carmodels.js` no longer pins the old GT; it checks the GT4 (a lofted skin, a long bonnet, a wing on posts), liners on
+every class, the tyre gap on every class, and the same far skin for remote cars of every class.
+
 ## Graphics: sky reflections, clear coat paint, a rubbered-in line, and the whole circuit lit at night
 
 - **Floodlights light the whole track** (`src/nightLight.js`, `src/floodlights.js`). The owner reported that at night most of the

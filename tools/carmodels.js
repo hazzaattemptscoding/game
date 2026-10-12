@@ -1,22 +1,19 @@
 // Car model test. Run with `npm run carmodels`. No browser needed.
 //   1. each class builds (src/car.js, bodySpec) from its real config in src/cars.js: the GT, the GT1 and the CITY (a config with
 //      no id, or an unknown id, builds the GT)
-//   2. bounding box within 5 % of the class's length, height and width. The GT's glasshouse bevel adds 0.08 m to its roof
-//      (an existing part of the model, kept as it was), so the GT's height is checked against 1.2 + 0.08
+//   2. bounding box within 5 % of the class's length, height and width
 //   3. the wheels touch the road (lowest point of each tyre at y = 0 within 1 cm), sit under the body, and their outer face is inside
-//      the body's width with a gap, so tyres and body never share a surface
+//      the body's width with a gap, so tyres and body never share a surface (the old GT's did, and flickered)
 //   4. the GT and GT1 have a rear wing and a DRS flap that opens; the CITY has no wing group and no flap
 //   5. the GT1's fenders are part of its body skin (no pasted flares): the rear haunches are wider than the doors and the front
-//      fenders stand lower than the rear haunches; the GT1 and CITY have a liner behind each wheel
-//   6. materials: a sane count, every mesh has one; the GT1 and CITY glass is tinted blue grey and lighter than the GT's black glass
+//      fenders stand lower than the rear haunches; every class has liners behind the wheels
+//   6. materials: a sane count, every mesh has one; the glass is tinted blue grey with some lightness
 //   7. livery: body, wing, stripe style, side panel, number plate and flat mode all apply on all three classes
 //   8. stripes run over the car: their points stay within its height
 //  10. the garage preview camera (src/preview.js) keeps the whole car in frame for each class, at both a wide and a narrow box,
 //      and looks at it from the front three-quarter
-//   9. the GT's model is exactly the original one: every mesh's vertex data, position and material colours match a fingerprint taken
-//      before the other classes were added
+//   9. the GT is a GT4 coupe: a lofted skin like the other classes, the cabin set back on a long bonnet, a wing on posts
 
-import crypto from 'node:crypto';
 import * as THREE from 'three';
 import { CarView, bodySpec } from '../src/car.js';
 import { CARS } from '../src/cars.js';
@@ -65,7 +62,7 @@ for (const [name, cfg] of Object.entries(CONFIGS)) {
 
   // 2. bounding box
   const bb = boxOf(v.root), size = bb.getSize(new THREE.Vector3());
-  const height = cfg.height + (name === 'GT' ? 0.08 : 0);
+  const height = cfg.height;
   check(near(size.x, cfg.length, cfg.length * 0.05), `${name} length ${size.x.toFixed(3)} m within 5 % of ${cfg.length}`);
   check(near(size.y, height, height * 0.05), `${name} height ${size.y.toFixed(3)} m within 5 % of ${height.toFixed(2)}`);
   check(near(size.z, cfg.width, cfg.width * 0.05), `${name} width ${size.z.toFixed(3)} m within 5 % of ${cfg.width}`);
@@ -98,7 +95,7 @@ for (const [name, cfg] of Object.entries(CONFIGS)) {
 
   // 5. fenders: the GT1's are part of the skin. Its width and height along the car, read from the body's own vertices.
   check((bodySpec(cfg).arches || []).length === 0, `${name} has no pasted wheel arch flares`);
-  check(v.hull.children.filter(m => m.geometry && m.geometry.type === 'ShapeGeometry').length === (name === 'GT' ? 0 : 4), `${name} has a liner behind each wheel (${name === 'GT' ? 'none' : 'four'})`);
+  check(!!v.liners && v.liners.geometry.getAttribute('position').count >= 4 * 30, `${name} has a liner behind each wheel (one mesh for the four)`);
   if (name === 'GT1') {
     const pos = bodyOf(v).geometry.getAttribute('position'), a = cfg.wheelbase * (1 - cfg.frontWeight), b = a - cfg.wheelbase;
     const around = x => { let z = 0, y = 0; for (let i = 0; i < pos.count; i++) if (Math.abs(pos.getX(i) - x) < 0.05) { z = Math.max(z, Math.abs(pos.getZ(i))); y = Math.max(y, pos.getY(i)); } return { z, y }; };
@@ -111,7 +108,7 @@ for (const [name, cfg] of Object.entries(CONFIGS)) {
     for (let x = a; x >= b; x -= 0.05) { const z = around(x).z; step = Math.max(step, Math.abs(z - prev)); prev = z; }
     check(step < 0.03, `GT1 fender surface is continuous from the front arch to the rear arch (largest step ${step.toFixed(3)} m per 5 cm)`);
   }
-  if (name !== 'GT') {
+  {
     const tyreW = bodySpec(cfg).tyreW, outer = cfg.trackWidth / 2 + tyreW / 2;
     check(outer < cfg.width / 2 - 0.01, `${name} tyre outer face ${outer.toFixed(3)} m is inside the body width ${(cfg.width / 2).toFixed(3)} m`);
   }
@@ -124,8 +121,7 @@ for (const [name, cfg] of Object.entries(CONFIGS)) {
   check(bare === 0, `${name} every mesh has a material`);
 
   // glass
-  if (name === 'GT') check(v.materials().some(m => m.color.getHexString() === '14181d' && m.metalness === 0.6), 'GT glass is the original black');
-  else check(v.materials().some(m => m.roughness === 0.16 && m.color.b > m.color.r && lightness(m.color) > 0.2 && lightness(m.color) < 0.5), `${name} glass is a dark blue grey with some lightness`);
+  check(v.materials().some(m => m.roughness <= 0.16 && m.color.b > m.color.r && lightness(m.color) > 0.2 && lightness(m.color) < 0.5), `${name} glass is a dark blue grey with some lightness`);
 
   // 7. livery
   v.setLivery({ body: '#2f8fe0', stripe: '#f4f4f0', wing: '#d3202b', style: 1, number: 7, sponsor: '', name: '' });
@@ -154,52 +150,17 @@ for (const [name, cfg] of Object.entries(CONFIGS)) {
   v.dispose();
 }
 
-// 9. the GT is the original model: a fingerprint of every mesh (geometry type, vertex count, a hash of the vertices, its position,
-// and its material colours, roughness, metalness and emissive colour), taken from the car before the other classes existed. The wing's main
-// plane and flap now draw in one material each (the dark slot faces are vertex colours): their material is the wing's, not six.
-const GT_FINGERPRINT = [
-  "BoxGeometry 24 00b13db1768bdf7acbfed4d2916c1f10 2.2,0.16,0 1b1d20:0.6:0:000000",
-    "BoxGeometry 24 016f0dbb33e578141d37bb45df7c41e1 -0.11,0,0 1b1d20:0.5:0.2:000000",
-    "BoxGeometry 24 07a16b0854a572aab88e8732e30d5f27 -2.38,0.62,-0.62 400000:1:0:ff1010",
-    "BoxGeometry 24 07a16b0854a572aab88e8732e30d5f27 -2.38,0.62,0.62 400000:1:0:ff1010",
-    "BoxGeometry 24 66170f477fc1bf8d062fab0783f4e72f 2.18,0.5,-0.6 ffffff:1:0:fff2d0",
-    "BoxGeometry 24 66170f477fc1bf8d062fab0783f4e72f 2.18,0.5,0.6 ffffff:1:0:fff2d0",
-    "BoxGeometry 24 6be779015c13a6ebf03458ad49cf3ab1 -2,1.02,-0.5 1b1d20:0.6:0:000000",
-    "BoxGeometry 24 6be779015c13a6ebf03458ad49cf3ab1 -2,1.02,0.5 1b1d20:0.6:0:000000",
-    "BoxGeometry 24 f74309680df0723bf7ef66e1684ef47d -1.93,1.22,0 1b1d20:0.5:0.2:000000",
-    "CylinderGeometry 148 29cc2175df10ef26d4a7f13323762d59 0,0,0 151515:0.9:0:000000",
-    "CylinderGeometry 148 29cc2175df10ef26d4a7f13323762d59 0,0,0 151515:0.9:0:000000",
-    "CylinderGeometry 148 29cc2175df10ef26d4a7f13323762d59 0,0,0 151515:0.9:0:000000",
-    "CylinderGeometry 148 29cc2175df10ef26d4a7f13323762d59 0,0,0 151515:0.9:0:000000",
-    "CylinderGeometry 40 fe7e62a6e7d8c97c18d2d26b999c2add 0,0,0 9aa0a6:0.3:0.8:000000",
-    "CylinderGeometry 40 fe7e62a6e7d8c97c18d2d26b999c2add 0,0,0 9aa0a6:0.3:0.8:000000",
-    "CylinderGeometry 40 fe7e62a6e7d8c97c18d2d26b999c2add 0,0,0 9aa0a6:0.3:0.8:000000",
-    "CylinderGeometry 40 fe7e62a6e7d8c97c18d2d26b999c2add 0,0,0 9aa0a6:0.3:0.8:000000",
-    "ExtrudeGeometry 1284 75be83889bce905ae39eea9550e9d6a7 0,0,0 ffd21f:0.42:0.2:000000",
-    "ExtrudeGeometry 924 bb10cf53d54a40250ac0c89b0e37265f 0,0,0 14181d:0.1:0.6:000000",
-    "PlaneGeometry 4 24241e2b7a1a169665023dd0c98d2699 1.9578,0.7042,0 ffffff:0.4:0.1:000000",
-    "PlaneGeometry 4 f432b9630078a9668da214b1888d71d5 0.1,0.45,-1.004 ffffff:0.4:0.1:000000",
-    "PlaneGeometry 4 f432b9630078a9668da214b1888d71d5 0.1,0.45,1.004 ffffff:0.4:0.1:000000",
-    "empty",
-    "empty",
-];
+// 9. the GT is a GT4 coupe: a lofted skin, its cabin well back on a long bonnet (the windscreen's foot behind the middle of the
+// wheelbase's front half), and a wing standing on posts above the tail.
 {
-  const gt = new CarView(GT), got = [];
-  gt.root.traverse(o => {
-    if (!o.isMesh) return;
-    const pos = o.geometry.getAttribute('position');
-    if (!pos) { got.push('empty'); return; }
-    const hash = crypto.createHash('md5').update(Buffer.from(pos.array.buffer)).digest('hex');
-    const mats = (Array.isArray(o.material) ? o.material : [o.material]).map(m => `${m.color.getHexString()}:${m.roughness}:${m.metalness}:${m.emissive ? m.emissive.getHexString() : ''}`).join('|');
-    got.push([o.geometry.type, pos.count, hash, o.position.toArray().map(x => +x.toFixed(4)).join(','), mats].join(' '));
-  });
-  const want = GT_FINGERPRINT.slice().sort(), have = got.sort();
-  check(want.length === have.length && want.every((r, i) => r === have[i]), `the GT model is unchanged (${have.length} meshes match the original fingerprint)`);
-  gt.dispose();
+  const sp = bodySpec(GT), fx = GT.wheelbase * (1 - GT.frontWeight);
+  check(!!sp.loft && sp.loft.body.getAttribute('position').count > 1000, 'the GT has a lofted body skin');
+  check(sp.hull.cab.x1 < fx / 2, `the GT's windscreen starts behind ${(fx / 2).toFixed(2)} m (at ${sp.hull.cab.x1} m): a long bonnet`);
+  check(!!sp.wing && sp.wing.post.h > 0.1, 'the GT has a wing on posts');
 }
 
 // 11. shared skins and remote cars: every GT1 (or CITY) uses one lofted skin, freed when the last car of the class is disposed; a remote car
-// casts no shadow and has a simple skin beyond 60 m (a THREE.LOD) on the classes with a lofted skin, the GT has no such skin
+// casts no shadow and has a simple skin beyond 60 m (a THREE.LOD)
 {
   check(bodySpec(CARS.GT1) === bodySpec(CARS.GT1), 'a class has one shape however many cars use it');
   const a = new CarView(CARS.GT1), b = new CarView(CARS.GT1, 0xff0000, { ghost: true });
@@ -222,7 +183,7 @@ const GT_FINGERPRINT = [
   c.dispose();
   const g = new CarView(CARS.GT, 0xff0000, { ghost: true });
   let gl = 0, gs = 0; g.root.traverse(o => { if (o.isLOD) gl++; if (o.isMesh && o.castShadow) gs++; });
-  check(gl === 0 && gs === 0, 'a remote GT casts no shadow and keeps its own cheap body (no LOD)');
+  check(gl === 1 && gs === 0, 'a remote GT casts no shadow and has the same far skin switch');
   g.dispose();
 }
 

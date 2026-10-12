@@ -10,11 +10,11 @@
 //   const fx = createCarFx(scene);
 //   fx.update(dt, camera, others, self, env.resolved);   // every frame; others: [{ x, y, z, h, v, brk, o, len }], self the same shape or null
 // h is the heading (radians, +x forward at 0), v the speed in m/s, brk the brake 0..1, o the opacity of the car 0..1,
-// len the car's length in metres (its class, src/cars.js; the GT's when missing), which places its lamps; id a key that stays with the car
-// (the streaks remember its path) and cls its class id, for where its wing is.
+// len the car's length in metres; id a key that stays with the car (the streaks remember its path) and cls its class id (src/cars.js,
+// the GT when missing), which places its lamps and its wing.
 
 import * as THREE from 'three';
-import { GT, carById } from './cars.js';
+import { carById } from './cars.js';
 import { bodySpec } from './car.js';
 import { light } from './lamps.js';
 import { makeSpray } from './environment.js';
@@ -31,15 +31,16 @@ const TRAIL_N = 13;         // points kept: 12 steps of 2 m is the 25 m the stre
 const STREAK_ALPHA = 0.5;   // brightness of a streak at its start, at full speed
 const EMITTERS = 4;         // per car: the two wing tips, the roof and the diffuser
 
-// lamp positions in the car frame: x forward, z right. They depend on the car's length (its class).
+// lamp positions in the car frame (x forward, y up, z right): the first pair of head and tail lamps of the class's shape, a little
+// in front of the lens, so the glow sits on the lamp the model draws
 const lampCache = new Map();
-function lampsFor(len) {
-  const key = Math.round(len * 100);
-  let l = lampCache.get(key);
+function lampsFor(cid) {
+  let l = lampCache.get(cid);
   if (!l) {
-    const F = len / 2;
-    l = { head: [[F - 0.12, 0.5, -0.6], [F - 0.12, 0.5, 0.6]], tail: [[-F - 0.08, 0.62, -0.62], [-F - 0.08, 0.62, 0.62]] };
-    lampCache.set(key, l);
+    const sp = bodySpec(carById(cid)), dx = sp.dx || 0;
+    const at = (lamp, out) => [lamp.p[0] + dx + out, lamp.p[1], lamp.p[2]];
+    l = { head: sp.heads.slice(0, 2).map(h => at(h, 0.06)), tail: sp.tails.slice(0, 2).map(t => at(t, -0.05)) };
+    lampCache.set(cid, l);
   }
   return l;
 }
@@ -151,7 +152,7 @@ export function createCarFx(scene) {
         const car = list[c];
         if (Math.hypot(car.x - cx, car.z - cz) > FAR) continue;
         const fx = Math.cos(car.h), fz = Math.sin(car.h), o = car.o === undefined ? 1 : car.o;
-        const { head: HEAD, tail: TAIL } = lampsFor(car.len || GT.length);
+        const { head: HEAD, tail: TAIL } = lampsFor(car.cls || 'GT');
         const place = lp => [car.x + fx * lp[0] - fz * lp[2], car.y + lp[1], car.z + fz * lp[0] + fx * lp[2]];
         // tail lights: a faint red glow in the dark, stronger and wider when braking (also a small one in daylight under braking)
         const brake = car.brk > 0.05 ? 1 : 0;
