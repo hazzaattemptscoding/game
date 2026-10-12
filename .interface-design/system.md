@@ -107,6 +107,7 @@ The HUD (`src/hud.js`, `src/sessionHud.js`, the HUD blocks of `src/style.css`, t
 - Timing keeps its tokens: best magenta, personal best green, slower yellow, as solid sector plates. The live delta is green ahead and `--bad` red behind.
 - Gear, lit items (DRS open, pit limiter, a lit start) and the DRS-available text are yellow (`--hud-yel`). An assist that is working is a paper fill with dark text, and an assist switched off is struck through and dim.
 - Track limits are amber (`--hud-amber`). Start lights are red and glow when lit. This is the only glow allowed.
+- The revs are a strip of 15 shift lights, green, yellow then red (`--timing-pb`, `--hud-yel`, `--bad`), lit one by one up to the upshift point, an unlit light faint; at the upshift the whole strip flashes `--accent-soft` (steady with reduced motion). No glow.
 - The brand purple (`--accent-fill`) fills the best and personal-best lap message, so the HUD belongs with the settings menu. The slipstream dot and bar use `--accent-soft`.
 - Pedal readouts and the touch pedals: throttle green, brake red, a pressed key paper.
 

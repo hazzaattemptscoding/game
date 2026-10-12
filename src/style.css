@@ -111,9 +111,17 @@ html, body {
 .hud-slip-bar i { display: block; height: 100%; background: var(--accent-soft); transform-origin: left; }
 /* speed lines at the screen edges while drafting (src/slipFx.js): a canvas under the HUD, drawn only with motion allowed */
 #slipfx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.hud-rev { height: 6px; margin-bottom: 10px; background: var(--hud-well); overflow: hidden; }
-.hud-rev i { display: block; height: 100%; background: var(--hud-paper); transform-origin: left; }
-.hud-rev i.hot { background: var(--bad); }
+/* revs: a strip of 15 shift lights, green, yellow then red, lit one by one up to the upshift point; at the upshift they all flash
+   purple. The lights are the strip's background, cut into segments by a mask; a dark cover moved with transform (hud.js) dims the
+   ones not lit, so an unlit light still shows its colour faintly. */
+.hud-rev { position: relative; height: 7px; margin-bottom: 10px; overflow: hidden; border-radius: 1px;
+  background: linear-gradient(90deg, var(--timing-pb) 0 46.67%, var(--hud-yel) 46.67% 73.34%, var(--bad) 73.34%);
+  -webkit-mask: repeating-linear-gradient(90deg, var(--pit-0) 0 calc(100% / 15 - 2px), transparent calc(100% / 15 - 2px) calc(100% / 15));
+  mask: repeating-linear-gradient(90deg, var(--pit-0) 0 calc(100% / 15 - 2px), transparent calc(100% / 15 - 2px) calc(100% / 15)); }
+.hud-rev i { position: absolute; inset: 0; background: color-mix(in srgb, var(--pit-0) 80%, transparent); }
+.hud-rev.hot { background: var(--accent-soft); animation: hud-shift 140ms steps(1) infinite; }
+.hud-rev.hot i { visibility: hidden; }
+@keyframes hud-shift { 50% { background: color-mix(in srgb, var(--pit-0) 70%, var(--accent-soft)); } }
 .hud-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .hud-speed { display: flex; align-items: baseline; min-width: 0; }
 .hud-speed b { font-family: var(--f-display); font-style: italic; font-weight: 800; font-size: 56px; line-height: .9; letter-spacing: 0; color: var(--hud-paper); text-shadow: var(--hud-shade); }
@@ -737,6 +745,7 @@ body.report-mode #touch { display: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   .sess-banner { animation-name: hud-fade; }
+  .hud-rev.hot { animation: none; }
   .hud-flash, .hud-warn, .hud-flash.show, .hud-warn.show { transform: translate(-50%, 0) scale(var(--hs, 1)); }
   .t-top button, .t-pedals button { transition: none; }
   .t-top button:active, .t-pedals button:active { transform: none; }

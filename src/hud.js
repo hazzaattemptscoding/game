@@ -50,7 +50,7 @@ export class Hud {
       <div class="hud-warn" id="h-warn"></div>
       <div class="hud-dash">
         <div class="hud-slip" id="h-slip" hidden><i class="hud-slip-dot"></i><span>SLIPSTREAM</span><span class="hud-slip-bar"><i id="h-slip-bar"></i></span></div>
-        <div class="hud-rev"><i id="h-rev"></i></div>
+        <div class="hud-rev" id="h-revs"><i id="h-rev"></i></div>
         <div class="hud-main">
           <div class="hud-speed"><b id="h-speed">0</b><span id="h-unit">mph</span></div>
           <div class="hud-gear" id="h-gear">1</div>
@@ -66,7 +66,7 @@ export class Hud {
       <pre class="hud-debug" id="h-debug"></pre>
       <div class="hud-help" id="h-help">Arrows or WASD to drive · Space for DRS · R reset · C camera · L racing line · Esc menu</div>`;
     const $ = id => root.querySelector('#' + id);
-    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), mini: $('h-mini'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), ping: $('h-ping'), live: $('h-live'), liveT: $('h-live-t'), liveBar: $('h-live-bar'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr'), slip: $('h-slip'), slipBar: $('h-slip-bar') };
+    this.el = { lap: $('h-lap'), last: $('h-last'), best: $('h-best'), sec: $('h-sec'), mini: $('h-mini'), flash: $('h-flash'), warn: $('h-warn'), limits: $('h-limits'), rev: $('h-rev'), revs: $('h-revs'), speed: $('h-speed'), unit: $('h-unit'), gear: $('h-gear'), pit: $('h-pit'), drs: $('h-drs'), tc: $('h-tc'), abs: $('h-abs'), esc: $('h-esc'), debug: $('h-debug'), help: $('h-help'), fps: $('h-fps'), ping: $('h-ping'), live: $('h-live'), liveT: $('h-live-t'), liveBar: $('h-live-bar'), brk: $('h-brk'), thr: $('h-thr'), ku: $('h-ku'), kl: $('h-kl'), kd: $('h-kd'), kr: $('h-kr'), slip: $('h-slip'), slipBar: $('h-slip-bar') };
     this.root = root;
     this._layout = '';
     this.perf = 'FPS';    // the FPS readout text, set from the loop (src/main.js)
@@ -137,9 +137,11 @@ export class Hud {
     text(e.speed, Math.round(Math.abs(car.fwdSpeed) * (mph ? 2.23694 : 3.6)));
     text(e.unit, mph ? 'mph' : 'km/h');
     text(e.gear, car.gear < 0 ? 'R' : car.gear);
-    const rev = Math.max(0, (car.rpm - car.cfg.idleRpm) / (car.cfg.redline - car.cfg.idleRpm));
-    style(e.rev, `scaleX(${Math.min(1, rev).toFixed(3)})`);
-    cls(e.rev, car.rpm > car.cfg.upshiftRpm - 300 ? 'hot' : '');
+    // shift lights: the first lights at 40% of the way from idle to the upshift point, all 15 at it (the cover slides off them)
+    const from = car.cfg.idleRpm + 0.4 * (car.cfg.upshiftRpm - car.cfg.idleRpm);
+    const lit = Math.round(Math.max(0, Math.min(1, (car.rpm - from) / (car.cfg.upshiftRpm - from))) * 15);
+    style(e.rev, `translateX(${(lit / 15 * 100).toFixed(2)}%)`);
+    cls(e.revs, car.rpm > car.cfg.upshiftRpm - 300 ? 'hud-rev hot' : 'hud-rev');
 
     // slipstream chip: shows while the eased wake strength is over 0.1 (and stays until it is under 0.07, so it does not flicker at the edge)
     const wk = car.wake || 0, slipShown = !e.slip.hidden;
