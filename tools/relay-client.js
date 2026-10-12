@@ -89,7 +89,7 @@ console.log('FRAMING');
     const d = decodeState(unpackState(packState(encodeState(sample({ col })))));
     check(d && d.col === col && d.drs === drs, `flags through the frame: ${label}`);
   }
-  for (const col of [9, -3, 1e6]) {
+  for (const col of [17, -3, 1e6]) {
     const d = decodeState(unpackState(packState(encodeState(sample({ col })))));
     check(d && d.col === 0 && d.drs === false, `a bad flags value (${col}) reads as 0`);
   }

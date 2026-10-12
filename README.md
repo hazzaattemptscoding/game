@@ -1,6 +1,6 @@
 # Lakeside
 
-Browser racing game. GT cars, one circuit, solo or online with friends.
+Browser racing game: a GT4, a GT1, a Peugeot 108 cup car, a Formula 4 and a Formula 1 on one circuit, solo or online with friends.
 Vite, three.js and plain JavaScript. Builds to a static site for Cloudflare Pages.
 
 ## Run it

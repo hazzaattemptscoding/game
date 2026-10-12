@@ -1,5 +1,4 @@
-// Cameras. Phase 1 has the chase camera and a bonnet camera (C to switch).
-// Cockpit and broadcast cameras come later.
+// Cameras: the chase camera and a bonnet camera (C to switch); on the open cars the second one is the onboard camera over the airbox.
 
 import * as THREE from 'three';
 import { ease } from './loop.js';
@@ -58,6 +57,8 @@ export class CameraRig {
 
   update(view, car, dt) {
     const cam = this.camera, pos = view.root.position;
+    // a long car (the F1) gets the camera a little further back, so as much road shows past it; every other class is unchanged
+    const back = CHASE_DISTANCE + Math.max(0, ((view.cfg && view.cfg.length) || 0) - 5) * 0.8;
     const heading = -view.root.rotation.y;
     const pitch = view.slope.rotation.z;
     this._updateLook(dt);
@@ -76,7 +77,7 @@ export class CameraRig {
       // the camera does not tip down with a climb (it would sit low behind the car, looking up at it, with the car covering
       // the road): it keeps its height over the car, never closer than CHASE_CLEAR to the ground, and aims at the road ahead
       const ground = this.groundAt || (() => -Infinity);
-      const bx = pos.x - cx * CHASE_DISTANCE, bz = pos.z - cz * CHASE_DISTANCE;
+      const bx = pos.x - cx * back, bz = pos.z - cz * back;
       const camY = Math.max(this.height + CHASE_HEIGHT, ground(bx, bz) + CHASE_CLEAR);
       const gAhead = ground(pos.x + cx * CHASE_AHEAD, pos.z + cz * CHASE_AHEAD);
       const aimRise = Number.isFinite(gAhead) ? Math.max(-6, Math.min(6, gAhead - (pos.y - 0.3))) : Math.tan(pitch) * CHASE_AHEAD;
@@ -85,9 +86,9 @@ export class CameraRig {
       const lookAt = (k) => this._look.set(pos.x + cx * 4 * k, pos.y + 0.9 + this.aim * (4 / CHASE_AHEAD) * k + this.aim * 0.12 * k, pos.z + cz * 4 * k);
       if (this.lookYaw || this.lookPitch) {
         // orbit the car at the chase distance, looking at its middle
-        const a = this.yaw + this.lookYaw, up = this.lookPitch, r = CHASE_DISTANCE * Math.cos(up);
+        const a = this.yaw + this.lookYaw, up = this.lookPitch, r = back * Math.cos(up);
         const ox = pos.x - Math.cos(a) * r, oz = pos.z - Math.sin(a) * r;
-        cam.position.set(ox, Math.max(this.height + CHASE_HEIGHT + CHASE_DISTANCE * Math.sin(up), ground(ox, oz) + CHASE_CLEAR), oz);
+        cam.position.set(ox, Math.max(this.height + CHASE_HEIGHT + back * Math.sin(up), ground(ox, oz) + CHASE_CLEAR), oz);
         const blend = Math.min(1, (Math.abs(this.lookYaw) + Math.abs(this.lookPitch)) * 3);   // from looking ahead of the car to looking at it
         lookAt(1 - blend);
       } else {
@@ -96,11 +97,12 @@ export class CameraRig {
       }
       cam.lookAt(this._look);
     } else {
-      const cx = Math.cos(heading), cz = Math.sin(heading);
-      cam.position.set(pos.x + cx * 0.6, pos.y + 1.15, pos.z + cz * 0.6);
+      // over the bonnet; on an open car (the F4, the F1) the onboard camera over the airbox (the shape's `cam`, src/carShapes.js)
+      const cx = Math.cos(heading), cz = Math.sin(heading), [fwd, up] = (view.spec && view.spec.cam) || [0.6, 1.15];
+      cam.position.set(pos.x + cx * fwd, pos.y + up, pos.z + cz * fwd);
       // free look turns the driver's head
       const hx = Math.cos(heading + this.lookYaw), hz = Math.sin(heading + this.lookYaw);
-      this._look.set(cam.position.x + hx * 20, pos.y + 1.0 + Math.tan(pitch) * 20 + Math.tan(this.lookPitch * 0.6) * 20, cam.position.z + hz * 20);
+      this._look.set(cam.position.x + hx * 20, pos.y + up - 0.15 + Math.tan(pitch) * 20 + Math.tan(this.lookPitch * 0.6) * 20, cam.position.z + hz * 20);
       cam.lookAt(this._look);
       this.yaw = null;
     }

@@ -242,8 +242,167 @@ export const GT1 = {
   escMax: 14000,
 };
 
-export const CARS = { GT, GT1, CITY };
-export const CAR_LIST = [GT, GT1, CITY];
+// Formula 4, modelled on the Tatuus F4-T421 (second generation FIA F4, 2022 on, with the halo). Sources, per number:
+//   length 4700 mm, width 1750 mm, height 950 mm: fiaformula4.com/technical (also given by F4 Spain teams).
+//   wheelbase 2750 mm, track 1510 mm front and 1460 mm rear: en.wikipedia.org/wiki/Tatuus_F4-T421 (a British F4 team gives 2800 mm).
+//   mass: 570 kg with driver (Wikipedia) to 605 kg with driver (fiaformula4.com). 590 kg is used.
+//   engine: Abarth 1.4 litre turbocharged four, 180 to 185 hp (Wikipedia; 160 hp before the new mapping). Six-speed sequential
+//   gearbox with paddles. Torque curve, ratios, final drive, tyre size, grip and aero: ESTIMATE.
+export const F4 = {
+  id: 'F4',
+  label: 'Formula 4',
+  name: 'Formula 4',
+  drive: 'rear',
+  hasDRS: false,       // the F4 has no DRS
+  open: true,          // open wheels: no bodywork round the tyres (src/carShapes.js)
+
+  // --- Body -------------------------------------------------------------
+  mass: 590,           // kg, with driver (see the note above)
+  yawInertia: 700,     // ESTIMATE: the mass sits low and close to the middle of a long, narrow car
+  wheelbase: 2.75,     // Wikipedia
+  frontWeight: 0.42,   // ESTIMATE: engine behind the driver
+  cgHeight: 0.28,      // ESTIMATE
+  length: 4.7,         // fiaformula4.com
+  width: 1.75,         // fiaformula4.com
+  height: 0.95,        // fiaformula4.com
+  trackWidth: 1.49,    // Wikipedia: 1510 front, 1460 rear; the physics takes one
+  wheelRadius: 0.28,   // ESTIMATE: 13 inch wheels with slicks
+
+  // --- Tyres ------------------------------------------------------------
+  grip: 1.6,           // ESTIMATE: slicks on a light car
+  frontGrip: 1.0,
+  rearGrip: 1.06,
+  loadSensitivity: 0.15,
+  peakSlipFront: 0.09,
+  peakSlipRear: 0.085,
+  slideGripFront: 0.7,
+  slideGripRear: 0.84,
+  wheelspinGrip: 0.85,
+  slipLateral: 0.35,
+
+  // --- Aero -------------------------------------------------------------
+  dragArea: 0.72,      // ESTIMATE: top speed about 215 km/h
+  downforceArea: 1.2,  // ESTIMATE: small wings, flat floor
+  aeroBalance: 0.4,
+  drsDragCut: 0,
+  draftDrag: 0.24,
+  drsDownforceCut: 0,
+  rollingResistance: 0.013,
+
+  // --- Engine and gearbox -----------------------------------------------
+  // [rpm, torque in Nm]. Peak power about 133 kW (180 hp) at 6200 rpm; curve ESTIMATE.
+  torqueCurve: [[1500, 150], [3000, 230], [4000, 250], [5500, 236], [6200, 205], [6800, 160]],
+  idleRpm: 1200,
+  redline: 6800,
+  upshiftRpm: 6600,
+  downshiftRpm: 4600,
+  gears: [2.92, 2.06, 1.6, 1.32, 1.14, 1.0],   // ESTIMATE: six-speed sequential, about 215 km/h at the limiter in sixth
+  finalDrive: 3.25,                           // ESTIMATE
+  driveEfficiency: 0.9,
+  shiftTime: 0.05,     // paddle shift
+  engineBraking: 450,
+  reverseForce: 2500,
+
+  // --- Brakes -----------------------------------------------------------
+  brakeForce: 14000,   // about 2.4 g at 590 kg
+  brakeBias: 0.6,
+
+  // --- Steering ---------------------------------------------------------
+  maxLock: 0.4,
+  steerRate: 2.8,
+  steerLimit: 1.05,
+  steerSlack: 0.02,
+
+  // --- Assists ----------------------------------------------------------
+  tcFloor: 0.25,
+  escThreshold: 0.06,
+  escSlipGain: 2,
+  escGain: 7000,       // a light car with little inertia needs less yaw to hold it
+  escMax: 5000,
+};
+
+// Formula 1, a current car (2022 to 2025 rules, ground effect, halo). Sources, per number:
+//   width 2000 mm, wheelbase up to 3600 mm, minimum mass 798 kg without fuel (800 kg from 2025): the FIA technical regulations, as
+//   given at en.wikipedia.org/wiki/Formula_One_regulations. Length about 5.6 m and height 950 mm: ESTIMATE (the cars run close to
+//   the wheelbase limit; the height is the rules' limit).
+//   power about 750 kW (1000 hp) from the 1.6 litre V6 turbo and the hybrid system together: ESTIMATE, the figure usually quoted.
+//   eight-speed gearbox: the regulations. Torque curve, ratios, grip, drag and downforce: ESTIMATE, shaped to a top speed of about
+//   330 km/h with a high downforce set and the cornering a modern car does (well over 4 g in fast corners).
+export const F1 = {
+  id: 'F1',
+  label: 'Formula 1',
+  name: 'Formula 1',
+  drive: 'rear',
+  hasDRS: true,
+  open: true,
+
+  // --- Body -------------------------------------------------------------
+  mass: 830,           // kg: 798 minimum plus a part load of fuel
+  yawInertia: 1250,    // ESTIMATE: long, but the mass is low and central
+  wheelbase: 3.6,      // the rules' limit
+  frontWeight: 0.45,   // ESTIMATE
+  cgHeight: 0.26,      // ESTIMATE
+  length: 5.6,         // ESTIMATE
+  width: 2.0,          // the rules' limit
+  height: 0.95,        // the rules' limit
+  trackWidth: 1.6,     // ESTIMATE
+  wheelRadius: 0.36,   // 18 inch wheels, 720 mm tyres
+
+  // --- Tyres ------------------------------------------------------------
+  grip: 1.9,           // ESTIMATE: wide slicks
+  frontGrip: 1.0,
+  rearGrip: 1.06,
+  loadSensitivity: 0.1,  // ESTIMATE: tyres built for three times the car's weight in downforce lose less grip per kilo than a GT's
+  peakSlipFront: 0.085,
+  peakSlipRear: 0.08,
+  slideGripFront: 0.7,
+  slideGripRear: 0.82,
+  wheelspinGrip: 0.85,
+  slipLateral: 0.35,
+
+  // --- Aero -------------------------------------------------------------
+  dragArea: 1.25,      // ESTIMATE: high downforce set, top speed about 330 km/h
+  downforceArea: 4.6,  // ESTIMATE: the car's own weight in downforce at about 165 km/h
+  aeroBalance: 0.43,
+  drsDragCut: 0.18,
+  draftDrag: 0.3,
+  drsDownforceCut: 0.15,
+  rollingResistance: 0.014,
+
+  // --- Engine and gearbox -----------------------------------------------
+  // [rpm, torque in Nm]. Peak power about 750 kW at 11000 rpm (engine and hybrid together); curve ESTIMATE.
+  torqueCurve: [[4000, 420], [7000, 560], [9000, 630], [10500, 665], [11500, 630], [12200, 540], [12600, 300]],
+  idleRpm: 4000,
+  redline: 12200,
+  upshiftRpm: 11900,
+  downshiftRpm: 9200,
+  gears: [4.2, 3.15, 2.55, 2.12, 1.8, 1.55, 1.34, 1.16],   // ESTIMATE: eight forward gears
+  finalDrive: 3.9,                                        // ESTIMATE
+  driveEfficiency: 0.92,
+  shiftTime: 0.03,     // seamless shift
+  engineBraking: 2600, // the engine and the hybrid harvesting
+  reverseForce: 3500,
+
+  // --- Brakes -----------------------------------------------------------
+  brakeForce: 46000,   // about 5.6 g at 830 kg, reached only with the downforce of high speed
+  brakeBias: 0.57,
+
+  // --- Steering ---------------------------------------------------------
+  maxLock: 0.4,
+  steerRate: 2.6,
+  steerLimit: 1.05,
+  steerSlack: 0.02,
+
+  // --- Assists ----------------------------------------------------------
+  tcFloor: 0.25,
+  escThreshold: 0.06,
+  escSlipGain: 2,
+  escGain: 12000,
+  escMax: 9000,
+};
+
+export const CARS = { GT, GT1, CITY, F4, F1 };
+export const CAR_LIST = [GT, GT1, CITY, F4, F1];
 export const CAR_IDS = CAR_LIST.map(c => c.id);
 // The class with this id. An unknown or missing id is the GT, the car everyone had before there were classes.
 export const carById = id => (typeof id === 'string' && Object.hasOwn(CARS, id) ? CARS[id] : GT);     // hasOwn: 'constructor' or 'toString' is not a class

@@ -31,7 +31,7 @@ const lightness = c => { const h = {}; c.getHSL(h, THREE.SRGBColorSpace); return
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
 
 // The three classes, from their real configs.
-const CONFIGS = { GT: CARS.GT, GT1: CARS.GT1, CITY: CARS.CITY };
+const CONFIGS = { GT: CARS.GT, GT1: CARS.GT1, CITY: CARS.CITY, F4: CARS.F4, F1: CARS.F1 };
 const GT = CARS.GT;
 
 // The livery canvases need a 2D context, which node does not have: a stub that draws nothing.
@@ -95,7 +95,16 @@ for (const [name, cfg] of Object.entries(CONFIGS)) {
 
   // 5. fenders: the GT1's are part of the skin. Its width and height along the car, read from the body's own vertices.
   check((bodySpec(cfg).arches || []).length === 0, `${name} has no pasted wheel arch flares`);
-  check(!!v.liners && v.liners.geometry.getAttribute('position').count >= 4 * 30, `${name} has a liner behind each wheel (one mesh for the four)`);
+  const open = !!bodySpec(cfg).open;
+  if (!open) check(!!v.liners && v.liners.geometry.getAttribute('position').count >= 4 * 30, `${name} has a liner behind each wheel (one mesh for the four)`);
+  else {
+    // open wheels: no liners, the tyres stand outside the body at both axles, and there is a driver under a halo
+    const sp = bodySpec(cfg), fx = cfg.wheelbase * (1 - cfg.frontWeight), rx = fx - cfg.wheelbase;
+    check(!v.liners, `${name} has no liners (open wheels)`);
+    for (const [x, tw] of [[fx, sp.tyreW], [rx, sp.tyreWR]]) check(sp.hull.w(x) < cfg.trackWidth / 2 - tw / 2, `${name} body at x ${x.toFixed(2)} (half width ${sp.hull.w(x).toFixed(2)}) is inside the tyres (inner face ${(cfg.trackWidth / 2 - tw / 2).toFixed(2)})`);
+    check(!!sp.helmet && sp.tubes.length === 2, `${name} has a driver's helmet and a halo (hoop and pillar)`);
+    check(sp.helmet.p[1] + sp.helmet.r < cfg.height, `${name} helmet stays under the roll hoop (top ${(sp.helmet.p[1] + sp.helmet.r).toFixed(2)} m)`);
+  }
   if (name === 'GT1') {
     const pos = bodyOf(v).geometry.getAttribute('position'), a = cfg.wheelbase * (1 - cfg.frontWeight), b = a - cfg.wheelbase;
     const around = x => { let z = 0, y = 0; for (let i = 0; i < pos.count; i++) if (Math.abs(pos.getX(i) - x) < 0.05) { z = Math.max(z, Math.abs(pos.getZ(i))); y = Math.max(y, pos.getY(i)); } return { z, y }; };
@@ -108,7 +117,7 @@ for (const [name, cfg] of Object.entries(CONFIGS)) {
     for (let x = a; x >= b; x -= 0.05) { const z = around(x).z; step = Math.max(step, Math.abs(z - prev)); prev = z; }
     check(step < 0.03, `GT1 fender surface is continuous from the front arch to the rear arch (largest step ${step.toFixed(3)} m per 5 cm)`);
   }
-  {
+  if (!open) {
     const tyreW = bodySpec(cfg).tyreW, outer = cfg.trackWidth / 2 + tyreW / 2;
     check(outer < cfg.width / 2 - 0.01, `${name} tyre outer face ${outer.toFixed(3)} m is inside the body width ${(cfg.width / 2).toFixed(3)} m`);
   }
@@ -121,7 +130,7 @@ for (const [name, cfg] of Object.entries(CONFIGS)) {
   check(bare === 0, `${name} every mesh has a material`);
 
   // glass
-  check(v.materials().some(m => m.roughness <= 0.16 && m.color.b > m.color.r && lightness(m.color) > 0.2 && lightness(m.color) < 0.5), `${name} glass is a dark blue grey with some lightness`);
+  if (!open) check(v.materials().some(m => m.roughness <= 0.16 && m.color.b > m.color.r && lightness(m.color) > 0.2 && lightness(m.color) < 0.5), `${name} glass is a dark blue grey with some lightness`);
 
   // 7. livery
   v.setLivery({ body: '#2f8fe0', stripe: '#f4f4f0', wing: '#d3202b', style: 1, number: 7, sponsor: '', name: '' });

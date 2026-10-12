@@ -12,7 +12,7 @@ import { addNightLight } from './nightLight.js';
 import { ease } from './loop.js';
 import { acquireTextures, releaseTextures, SIDE_W, SIDE_H } from './liveryTex.js';
 import { stepFlap, flapAngle } from './drsFlap.js';
-import { cityShape, gt1Shape, gt4Shape } from './carShapes.js';
+import { cityShape, gt1Shape, gt4Shape, f4Shape, f1Shape } from './carShapes.js';
 import { GT } from './cars.js';
 
 const VIBRATION = 0.006;   // metres of body movement per unit of surface roughness (rumble is 1.2, gravel 0.6)
@@ -49,7 +49,7 @@ function stripeGeometry(pieces, zc, w) {
 //   liners    the dark liner behind each wheel; tyreW, rim and glass: the wheels and the glass
 // Local x runs from the tail (negative) to the nose (positive), and y is up from the road.
 
-const SHAPES = { GT: gt4Shape, GT1: gt1Shape, CITY: cityShape };
+const SHAPES = { GT: gt4Shape, GT1: gt1Shape, CITY: cityShape, F4: f4Shape, F1: f1Shape };
 
 // The shape of a car class. A config with no id, or an id with no shape of its own, is the GT. One shape per config is kept (the
 // shapes are plain numbers and lofted skins, built once however many cars of the class there are).
@@ -220,7 +220,7 @@ export class CarView {
       this.flapPivot.add(flap);
       this.wing.add(this.flapPivot);
       if (wg.plate) {                  // end plates on the main plane, both in one mesh
-        const ends = [-1, 1].map(sd => placed(new THREE.BoxGeometry(wg.plate.len, wg.plate.h, 0.02), [wg.x - wg.flap / 2 + wg.plate.len / 2 - 0.05, wg.y + 0.02, sd * (wg.span / 2)]));
+        const ends = [-1, 1].map(sd => placed(new THREE.BoxGeometry(wg.plate.len, wg.plate.h, 0.02), [wg.x - wg.flap / 2 + wg.plate.len / 2 - 0.05, wg.plate.y ?? wg.y + 0.02, sd * (wg.span / 2)]));
         this.wing.add(new THREE.Mesh(mergeGeometries(ends), this.wingMat));
       }
     }
@@ -239,7 +239,13 @@ export class CarView {
     const darkGeos = [], paintGeos = [];
     if (sp.wing) for (const s of [-1, 1]) darkGeos.push(placed(new THREE.BoxGeometry(WING_POST_W, sp.wing.post.h, WING_POST_T), [sp.wing.post.x, sp.wing.post.y, s * sp.wing.post.z]));
     for (const d of sp.dark) (d.paint ? paintGeos : darkGeos).push(part(d));
+    for (const t of sp.tubes || []) darkGeos.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(t.pts.map(q => new THREE.Vector3(q[0], q[1], q[2]))), 40, t.r, 8, false));   // the halo
     merged(darkGeos, dark);
+    if (sp.helmet) {       // an open car's driver: a helmet in the livery's wing colour
+      const h = new THREE.Mesh(new THREE.SphereGeometry(sp.helmet.r, 20, 14).translate(sp.helmet.p[0], sp.helmet.p[1], sp.helmet.p[2]), this.wingMat);
+      h.castShadow = true;
+      hull.add(h);
+    }
     merged(paintGeos, paint, true);
     const linerMat = new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.9, side: THREE.DoubleSide });
     this.liners = merged((sp.liners || []).map(linerGeometry), linerMat);
@@ -251,7 +257,7 @@ export class CarView {
     // Wheels: a tyre with rounded shoulders, a rim (lip, spokes, centre lock) with the brake disc behind it, and on your own car a
     // caliper that turns with the steering but does not spin. The rim's colours are vertex colours, so rim and disc are one draw.
     const tw = sp.tyreW || 0.3;
-    const wp = wheelParts(sp, r, tw, ghost);
+    const wp = wheelParts(sp, r, tw, ghost), wpR = sp.tyreWR && sp.tyreWR !== tw ? wheelParts(sp, r, sp.tyreWR, ghost) : wp;   // an open car's rear tyres are wider
     const tyreMat = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.88 });
     const rimMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: sp.rim.roughness ?? 0.35, metalness: sp.rim.metalness ?? 0.6, vertexColors: true });
     const caliperMat = new THREE.MeshStandardMaterial({ color: sp.caliper ?? 0xc8102e, roughness: 0.4, metalness: 0.2 });
@@ -261,14 +267,15 @@ export class CarView {
       const steer = new THREE.Group();
       steer.position.set(x, r, z * cfg.trackWidth / 2);
       const spin = new THREE.Group();
-      const tyre = new THREE.Mesh(wp.tyre, tyreMat);
+      const parts = front ? wp : wpR;
+      const tyre = new THREE.Mesh(parts.tyre, tyreMat);
       tyre.castShadow = true;
-      const rim = new THREE.Mesh(wp.rim, rimMat);
+      const rim = new THREE.Mesh(parts.rim, rimMat);
       if (z < 0) rim.rotation.y = Math.PI;     // the spokes face outwards on both sides
       spin.add(tyre, rim);
       steer.add(spin);
       if (!ghost) {
-        const cal = new THREE.Mesh(wp.caliper, caliperMat);
+        const cal = new THREE.Mesh(parts.caliper, caliperMat);
         if (z < 0) cal.rotation.y = Math.PI;
         steer.add(cal);
       }

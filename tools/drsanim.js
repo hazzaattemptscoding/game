@@ -125,8 +125,8 @@ console.log('WIRE');
     const d = decodeState(unpackState(packState(encodeState({ ...open, col }))));
     check(d && d.col === col && d.drs === want, `flags ${col} give DRS ${want}`);
   }
-  // a bad flags value clamps to 0 (and so no DRS), and nothing else in the packet is touched
-  for (const bad of [8, 9, 99, -1, -7, 1e6]) {
+  // a bad flags value (flags are 0 to 15: DRS and three bits of car class) clamps to 0 (and so no DRS), and nothing else in the packet is touched
+  for (const bad of [16, 17, 99, -1, -7, 1e6]) {
     const d = decodeState(decodeJsonRound(encodeState({ ...open, col: bad })));
     check(d && d.col === 0 && d.drs === false && d.lap === 2 && d.name === 'Ann', `a bad flags value (${bad}) clamps to 0`);
   }

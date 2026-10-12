@@ -18,15 +18,16 @@ export const MAX_BODY = 64 * 1024;
 export const NAME_MAX = 16, BUILD_MAX = 40;
 export const MIN_TIME = 60, MAX_TIME = 900, MIN_SECTOR = 5, SECTOR_TOLERANCE = 0.05;
 // The car classes (src/cars.js CAR_IDS, kept in step: tools/cars.js checks it). The GT is the default for a lap with no car.
-export const CAR_IDS = ['GT', 'GT1', 'CITY'];
+export const CAR_IDS = ['GT', 'GT1', 'CITY', 'F4', 'F1'];
 export const TOKEN_RE = /^[0-9a-f]{32}$/;
 export const GHOST_TOP = 10;
 export const GHOST_MIN_PER_S = 8, GHOST_MAX_PER_S = 12, GHOST_SLACK = 10;
 export const GHOST_START_TOL = 0.5, GHOST_END_TOL = 0.05;   // s: the first sample against 0, the last against the posted time
 export const GHOST_MAX_SPEED = 120;   // m/s, over any one step
 // The fastest any one step of a ghost may be, per class. The class is chosen by the poster, so a lap of a quick car must not pass as a
-// 108 (peak about 40 m/s; the GT peaks near 68 and the GT1 near 74). The margins are for a sample that catches the top of a straight.
-export const GHOST_PEAK_BY_CAR = { GT: 85, GT1: 90, CITY: 45 };
+// slower one (peaks: the 108 about 40 m/s, the F4 59, the GT 68, the GT1 74, the F1 85). The margins are for a sample that catches the
+// top of a straight, with DRS and a tow.
+export const GHOST_PEAK_BY_CAR = { GT: 85, GT1: 90, CITY: 45, F4: 66, F1: 100 };
 export const carPeakSpeed = car => GHOST_PEAK_BY_CAR[car] || GHOST_MAX_SPEED;
 
 // The lap (TRACK, from src/layout.js: tools/globaltimes.js checks it stays in step). The fastest autopilot lap (tools/laptest.js,
@@ -35,8 +36,10 @@ export const carPeakSpeed = car => GHOST_PEAK_BY_CAR[car] || GHOST_MAX_SPEED;
 export const LAP_LENGTH = TRACK.length;   // m
 export const MAX_AVG_SPEED = 53;          // m/s, the GT and the GT1
 // The cap per class. The GT1 is quicker than the GT, so it has the same cap (its floor is the same 72.4 s); the 108 averages about
-// 30 m/s on this lap (2:15 to 2:20 on the autopilot), so 40 m/s is far above it and far below any GT or GT1 lap.
-export const MAX_AVG_SPEED_BY_CAR = { GT: MAX_AVG_SPEED, GT1: MAX_AVG_SPEED, CITY: 40 };
+// 30 m/s on this lap (2:15 to 2:20 on the autopilot), so 40 m/s is far above it and far below any GT or GT1 lap. The F4 averages about
+// 40 m/s (1:35 on the autopilot): 50 m/s, a 76.7 s floor. The F1 averages about 54 m/s (1:11): 63 m/s, a 60.9 s floor, just above
+// MIN_TIME.
+export const MAX_AVG_SPEED_BY_CAR = { GT: MAX_AVG_SPEED, GT1: MAX_AVG_SPEED, CITY: 40, F4: 50, F1: 63 };
 export const carMaxSpeed = car => MAX_AVG_SPEED_BY_CAR[car] || MAX_AVG_SPEED;
 // the fastest lap of this length a class can post, in seconds (72.4 for the GT and GT1, about 96 for the 108)
 export const carMinTime = car => LAP_LENGTH / carMaxSpeed(car);

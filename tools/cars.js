@@ -1,11 +1,11 @@
 // Car classes tests (src/cars.js): every class has the numbers the GT has; front drive launches, spins with traction control off
-// and holds with it on; the 108 never opens DRS; the lap times of each class are in their ranges on the autopilot; the car id
-// goes round the state packet and defaults to the GT; personal bests and global times are kept per class.
+// and holds with it on; the 108 and the F4 never open DRS; the lap times of each class are in their ranges on the autopilot; the car
+// id goes round the state packet and defaults to the GT; personal bests and global times are kept per class.
 // Run with `node tools/cars.js`. No browser needed.
 
 import { buildTrack } from '../src/track.js';
 import { Car, STEP } from '../src/physics.js';
-import { GT, GT1, CITY, CARS, CAR_LIST, CAR_IDS, carById } from '../src/cars.js';
+import { GT, GT1, CITY, F4, F1, CARS, CAR_LIST, CAR_IDS, carById } from '../src/cars.js';
 import { LapTimer } from '../src/timing.js';
 import { Autopilot, computeRacingLine } from '../src/autopilot.js';
 import { encodeState, decodeState, packState, unpackState, stateFromCar, FIELDS, FLAG_DRS, Ghosts, PROTO } from '../src/ghosts.js';
@@ -25,7 +25,7 @@ const line = computeRacingLine(track);
 console.log('CLASSES');
 {
   const keys = Object.keys(GT);
-  for (const c of [GT1, CITY]) {
+  for (const c of [GT1, CITY, F4, F1]) {
     const missing = keys.filter(k => !(k in c));
     check(missing.length === 0, `${c.id} has every field GT has (missing: ${missing.join(', ') || 'none'})`);
     const wrongType = keys.filter(k => typeof GT[k] !== typeof c[k] || Array.isArray(GT[k]) !== Array.isArray(c[k]));
@@ -37,9 +37,9 @@ console.log('CLASSES');
   check(CITY.drive === 'front' && GT.drive === 'rear' && GT1.drive === 'rear', 'the 108 is front drive, the GT and GT1 rear drive');
   check(GT.hasDRS === true && GT1.hasDRS === true && CITY.hasDRS === false, 'DRS: GT and GT1 yes, the 108 no');
   check(carById('constructor') === GT && carById('toString') === GT && carById('__proto__') === GT && carById(undefined) === GT && carById('CITY') === CITY, 'carById: only a real class id gives a class, anything else is the GT');
-  check(JSON.stringify(CAR_IDS) === '["GT","GT1","CITY"]' && CAR_LIST.length === 3 && CARS.CITY === CITY, 'CARS, CAR_LIST and CAR_IDS list the three classes');
-  check(carById('GT1') === GT1 && carById('CITY') === CITY && carById('nope') === GT && carById(undefined) === GT, 'carById: known ids, and unknown or missing is the GT');
-  check(GT.id === 'GT' && GT1.id === 'GT1' && CITY.id === 'CITY', 'every class has its id');
+  check(JSON.stringify(CAR_IDS) === '["GT","GT1","CITY","F4","F1"]' && CAR_LIST.length === 5 && CARS.CITY === CITY && CARS.F1 === F1, 'CARS, CAR_LIST and CAR_IDS list the five classes, the old three first (their codes on the wire stay the same)');
+  check(carById('GT1') === GT1 && carById('CITY') === CITY && carById('F4') === F4 && carById('F1') === F1 && carById('nope') === GT && carById(undefined) === GT, 'carById: known ids, and unknown or missing is the GT');
+  check(GT.id === 'GT' && GT1.id === 'GT1' && CITY.id === 'CITY' && F4.id === 'F4' && F1.id === 'F1', 'every class has its id');
   check(GT.yawInertia === 2300 && GT.mass === 1300 && GT.torqueCurve[0][1] === 330, 'the GT is unchanged');
 }
 
@@ -87,6 +87,8 @@ console.log('DRS');
   check(drsOpened(GT), 'control: the GT opens DRS in the zone');
   check(drsOpened(GT1), 'the GT1 opens DRS in the zone');
   check(!drsOpened(CITY), 'the 108 never opens DRS, even holding the button in the zone');
+  check(!drsOpened(F4), 'the F4 never opens DRS');
+  check(drsOpened(F1), 'the F1 opens DRS in the zone');
 }
 
 // ---- lap times on the autopilot ----
@@ -106,6 +108,13 @@ function lapOf(cfg, skill) {
   check(g1.every(t => t > 72.4), 'GT1 never below the 72.4 s floor');
   check(c.every(t => t != null && t >= 120 && t <= 140), `108 laps 2:00 to 2:20 (${c.map(fmt).join(', ')})`);
   check(g1[0] < g && c[0] > g, 'the GT1 is quicker than the GT, the 108 slower');
+  // the open wheel cars: the F4 a little slower than the GT, the F1 far quicker than anything else
+  const f4 = [lapOf(F4, 0.9), lapOf(F4, 0.8)], f1 = [lapOf(F1, 0.9), lapOf(F1, 0.8)];
+  console.log(`  F4 0.9 ${fmt(f4[0])} 0.8 ${fmt(f4[1])}   F1 0.9 ${fmt(f1[0])} 0.8 ${fmt(f1[1])}`);
+  check(f4.every(t => t != null && t >= 93 && t <= 101), `F4 laps 1:33 to 1:41 (${f4.map(fmt).join(', ')})`);
+  check(f1.every(t => t != null && t >= 69 && t <= 77), `F1 laps 1:09 to 1:17 (${f1.map(fmt).join(', ')})`);
+  check(f1.every(t => t > T.carMinTime('F1')) && f4.every(t => t > T.carMinTime('F4')), 'the F1 and F4 laps stay above their relay floors');
+  check(f1[0] < g1[0] && f4[0] > g && f4[0] < c[0], 'the F1 is the quickest class, the F4 between the GT and the 108');
 }
 
 // ---- the car id on the wire ----
@@ -122,11 +131,16 @@ console.log('CAR ID ON THE STATE PACKET');
     const withDrs = decodeState(encodeState({ ...st, col: st.col | FLAG_DRS }));
     check(withDrs && withDrs.car === cfg.id && withDrs.drs === true, `${cfg.id} keeps its DRS flag beside it`);
   }
-  // an old client sends no class bits: the car is a GT; an unknown class (index 3) or a value out of range is a GT too
+  // an old client sends no class bits: the car is a GT; an unknown class (index 7) or a value out of range is a GT too
   const old = decodeState(encodeState(stateFromCar(fakeCar(GT), 2, 'Ann', 1000)).map((v, i, a) => (i === 15 ? 0 : v)));
   check(old && old.car === 'GT', 'a packet with no class reads as a GT');
-  check(decodeState(encodeState({ ...stateFromCar(fakeCar(GT), 2, 'Ann', 1000), col: 6 })).car === 'GT', 'class index 3 (not a class) reads as a GT');
-  check(decodeState(encodeState({ ...stateFromCar(fakeCar(GT), 2, 'Ann', 1000), col: 9 })).car === 'GT', 'a flags value out of range reads as a GT');
+  check(decodeState(encodeState({ ...stateFromCar(fakeCar(GT), 2, 'Ann', 1000), col: 14 })).car === 'GT', 'class index 7 (not a class) reads as a GT');
+  check(decodeState(encodeState({ ...stateFromCar(fakeCar(GT), 2, 'Ann', 1000), col: 17 })).car === 'GT', 'a flags value out of range reads as a GT');
+  // a client from before the F4 and F1 (class in 2 bits, flags up to 7, codes 0 to 2 known) reads both as a GT: the F4's code 3 was
+  // not a class there, and the F1's flags are over 7, which it takes as none
+  const oldRead = col => { const f = col >= 0 && col <= 7 ? col : 0; return ['GT', 'GT1', 'CITY'][(f >> 1) & 3] || 'GT'; };
+  check(['F4', 'F1'].every(id => oldRead(stateFromCar(fakeCar(carById(id)), 2, 'Ann', 1000).col) === 'GT'), 'an older client draws an F4 or an F1 as a GT');
+  check(['GT1', 'CITY'].every(id => oldRead(stateFromCar(fakeCar(carById(id)), 2, 'Ann', 1000).col) === id), 'and still reads a GT1 and a 108 right');
 
   // a peer that never announced protocol 2 (an old build) sends a random colour 1..7 in col: that must not read as a class or DRS
   const seen = (proto, col) => {
@@ -165,9 +179,12 @@ console.log('PER CLASS STORAGE AND BOARDS');
   check(boardFor({ weather: 'clear', online: false, reverse: false, assists: { tc: true }, car: 'CITY' }).car === 'CITY', 'a lap records the class it was driven in');
   check(boardFor({ weather: 'clear', online: false, reverse: false, assists: { tc: true } }).car === 'GT', 'a lap with no class is a GT lap');
   check(JSON.stringify(T.CAR_IDS) === JSON.stringify(CAR_IDS), 'the relay knows the same classes as src/cars.js');
-  check(LABELS && T.BOARDS.length === 48 && new Set(T.BOARDS).size === 48, 'the relay has 48 boards, 16 for each class');
+  check(LABELS && T.BOARDS.length === 80 && new Set(T.BOARDS).size === 80, 'the relay has 80 boards, 16 for each of the 5 classes');
   check(T.carMinTime('GT') === T.LAP_MIN_TIME && T.carMinTime('GT1') === T.LAP_MIN_TIME, 'the GT and GT1 share the 72.4 s floor');
   check(T.carMinTime('CITY') > 90, `the 108 floor is well above a GT lap (${T.carMinTime('CITY').toFixed(1)} s)`);
+  check(T.carMinTime('F1') >= T.MIN_TIME && T.carMinTime('F1') < 62, `the F1 floor sits just above the relay's 60 s minimum (${T.carMinTime('F1').toFixed(1)} s)`);
+  check(T.carMinTime('F4') > T.LAP_MIN_TIME, `the F4 floor is above the GT's (${T.carMinTime('F4').toFixed(1)} s)`);
+  check(T.carPeakSpeed('F1') > 85 && T.carPeakSpeed('F4') < 68, 'the ghost peak caps: the F1 above its 85 m/s, the F4 below a GT\'s 68 m/s');
   // the relay's time rules: a 108 at 75 s is refused for speed; a GT1 at 75 s is not (the ghost is checked after)
   const body = (car, time) => ({ name: 'Ann', board: { ...board, car }, car, time, sectors: [time / 3, time / 3, time - 2 * time / 3], token: 'a'.repeat(32), ghost: 'AAAA' });
   check(/too fast/.test(T.validateLap(body('CITY', 75)).error || ''), 'the relay refuses a 108 lap at 75 s as too fast');

@@ -1,5 +1,36 @@
 # Changelog
 
+## Two new car classes: Formula 4 and Formula 1
+
+Asked for by the owner, with real numbers and a modern look (halo on both).
+
+- **Formula 4** (`F4` in `src/cars.js`): the Tatuus F4-T421, the second generation FIA F4 car. 4.7 m long, 1.75 m wide, 2.75 m
+  wheelbase, 590 kg with driver, the Abarth 1.4 turbo at 180 hp, six-speed sequential, small wings, no DRS. Sources and estimates are
+  in the comments. On the autopilot it laps in 1:35.2 (quick) and 1:38.4 (steady), tops out at 211 km/h and corners at 2.0 g: a little
+  slower than the GT.
+- **Formula 1** (`F1`): a current car. 2.0 m wide, 3.6 m wheelbase and 798 kg (the rules' limits, plus fuel: 830 kg), about 750 kW
+  from the V6 and the hybrid together, eight gears, DRS, about three times its weight in downforce at the top end. 1:11.1 quick and
+  1:14.5 steady on the autopilot, 305 km/h on the main straight, 3.8 g in fast corners and under braking. Its tyres lose less grip
+  per kilo of load than the others (`loadSensitivity` 0.1): with the GT's 0.15 the F1 hit the floor of that curve and ran wide.
+- **Models** (`openShape` in `src/carShapes.js`): a narrow nose into the monocoque, sidepods narrowing to the gearbox (one lofted
+  skin), an engine cover with the airbox and a fin, the cockpit opening, a helmet in the livery's wing colour, the halo, a front wing
+  with flaps and end plates, a rear wing (with the DRS flap on the F1, fixed on the F4), the F1's beam wing, the floor and a diffuser
+  with fins, wishbones and push rods out to the wheels, mirrors, a rain light, and the F1's end plate lights. The rear tyres are wider
+  than the front ones (`tyreWR`). Number on the nose, side panel on the sidepod.
+- **Cameras.** The second camera (C) on the open cars is the onboard camera over the airbox; on the others it is the bonnet camera
+  as before. The chase camera stands back 0.8 m further for each metre a car is longer than 5 m (the F1 only).
+- **Online.** The class goes in bits 1 to 3 of the state's flags (it was bits 1 and 2): flags are 0 to 15. A client from before this
+  draws an F4 or an F1 as a GT (the F4's code 3 was never a class, the F1's flags are over 7, which it reads as none) and still reads
+  the GT1 and the 108 right.
+- **Relay** (`worker/src/times.js`): the F4 and F1 have their own 16 boards each (80 in all), ghost peak speeds of 66 and 100 m/s, and
+  average speed caps of 50 m/s (a 76.7 s floor) and 63 m/s (60.9 s). **Deploy the worker before the game**, as for the GT1 and 108:
+  until the relay lists a class, the game keeps that class's laps queued.
+
+Tests: `tools/cars.js` (the five classes, DRS on the F1 and never on the F4, the F4 and F1 lap ranges and their relay floors, an older
+client reading both new classes as a GT), `tools/carmodels.js` (open wheels: no liners, the tyres outside the body at both axles, a
+helmet under the roll hoop and a halo), `tools/times.js`, `tools/drsanim.js`, `tools/relay-client.js` (80 boards, flags up to 15).
+The GT, GT1 and 108 lap times are unchanged.
+
 ## Cars: the GT is a GT4, real wheels on every class, fewer draw calls a car
 
 - **The GT is a GT4 coupe** (`gt4Shape` in `src/carShapes.js`), asked for by the owner. The old GT was a flat side profile pushed

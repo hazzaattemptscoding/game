@@ -74,8 +74,8 @@ for (const bad of ['', '   ', '\u0000', 'a<b', 'a/b', 'a@b', 'a!', '😀', 'a,b'
 eq(T.driverKey('HaRRy'), 'harry', 'driver key is lowercase');
 
 // ---- boards ----
-eq(T.BOARDS.length, 48, '16 boards for each of the three car classes');
-check(new Set(T.BOARDS).size === 48 && T.BOARDS.includes(BK) && T.BOARDS.includes('wet-online-rev-off') && T.BOARDS.includes('wet-online-rev-off-city'), 'board keys (the GT keeps the old names)');
+eq(T.BOARDS.length, 80, '16 boards for each of the five car classes');
+check(new Set(T.BOARDS).size === 80 && T.BOARDS.includes(BK) && T.BOARDS.includes('wet-online-rev-off') && T.BOARDS.includes('wet-online-rev-off-city') && T.BOARDS.includes('dry-solo-fwd-on-f1') && T.BOARDS.includes('wet-online-rev-off-f4'), 'board keys (the GT keeps the old names)');
 eq(T.boardKey({ ...board, car: 'CITY' }), BK + '-city', 'a 108 board has the car on the end');
 eq(T.boardKey({ ...board, car: 'XX' }), null, 'an unknown car is no board');
 eq(T.boardKey(board), BK, 'board key from fields');

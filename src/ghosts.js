@@ -28,8 +28,9 @@ export const MAX_PLAYERS = 8;
 // car looks the same on every screen. `col` is the car's flags (bit 0: DRS open); the field keeps its old place in the packet so
 // old clients, which ignore it, can still talk to new ones.
 
-// The car class is in col too, bits 1 and 2 (the index in CAR_IDS, src/cars.js). An old client reads only the DRS bit and
-// accepts the value (it is at most 7), so it keeps working and draws every car as a GT. A missing or unknown class reads as GT.
+// The car class is in col too, bits 1 to 3 (the index in CAR_IDS, src/cars.js). An old client reads only the DRS bit and accepts
+// a value up to 7: a GT1 or a 108 (codes 1 and 2) still reads right there, a newer class (the F4 and F1, codes 3 and 4) arrives as
+// a value over 7, which an old client takes as no flags, so it draws that car as a GT. A missing or unknown class reads as GT.
 // An OLD client puts a random colour 1..7 in col, which would read as a class and a DRS flag, so col means flags only for a peer
 // that announced protocol 2 (PROTO: `v` in its hello and livery messages, Ghosts.setProto). For any other peer col is a legacy
 // colour: the car is a GT with the DRS shut.
@@ -47,7 +48,7 @@ export function cleanName(s) {
 const round = (n, d) => { const k = 10 ** d; return Math.round(n * k) / k; };
 const TAU = Math.PI * 2;
 const wrapAngle = a => Math.atan2(Math.sin(a), Math.cos(a));
-// The bits of `col`: bit 0 is DRS open, bits 1 and 2 are the car class (the index in CAR_IDS, 0 = GT).
+// The bits of `col`: bit 0 is DRS open, bits 1 to 3 are the car class (the index in CAR_IDS, 0 = GT).
 export const FLAG_DRS = 1;
 export const CAR_SHIFT = 1;
 const carCode = id => { const i = CAR_IDS.indexOf(id); return i < 0 ? 0 : i; };
@@ -116,9 +117,9 @@ export function decodeState(a) {
   if (Math.abs(o.h) > 1e3 || Math.abs(o.st) > 3 || Math.abs(o.pz) > 3 || Math.abs(o.rx) > 3) return null;
   o.thr = Math.max(0, Math.min(1, o.thr)); o.brk = Math.max(0, Math.min(1, o.brk));
   const flags = Math.round(o.col);
-  o.col = flags >= 0 && flags <= 7 ? flags : 0;      // a flags value out of range reads as none
+  o.col = flags >= 0 && flags <= 15 ? flags : 0;     // a flags value out of range reads as none
   o.drs = (o.col & FLAG_DRS) !== 0;
-  o.car = CAR_IDS[(o.col >> CAR_SHIFT) & 3] || 'GT';   // the car class; index 3 is not a class, so it reads as GT
+  o.car = CAR_IDS[(o.col >> CAR_SHIFT) & 7] || 'GT';   // the car class; an index with no class reads as GT
   o.lap = Math.max(0, Math.min(9999, Math.round(o.lap)));
   o.s = Math.max(0, Math.min(1e5, o.s));
   o.name = cleanName(a[FIELDS.length + 1]);
