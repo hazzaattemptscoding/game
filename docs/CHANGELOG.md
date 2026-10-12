@@ -1,5 +1,21 @@
 # Changelog
 
+## A garage behind the main menu
+
+The owner asked for a real garage on the home screen instead of the camera circling the car on the grid. `src/homeGarage.js` is a
+small scene of its own, drawn in place of the circuit while the main menu is open (cheaper than the whole circuit, about 30 draw
+calls with the car):
+
+- a modern pit garage: light grey epoxy floor with the bay marked in yellow, white wall panels with a band in your car's body colour,
+  the PowerMedia banner over a row of red tool chests, a workbench with a timing screen and a laptop, stacked tyres and a wheel rack,
+  strip lights, and the roller door open onto a bright pit lane;
+- your car, in your class and livery, front wheels turned, under a soft light from above that casts its shadow, with studio
+  reflections;
+- the camera drifts slowly round the front three-quarter and frames the car in the part of the screen the menu leaves visible. The
+  walls face inwards, so a wall between the camera and the car is not drawn.
+
+Built on first use, so the game's start is not slower. Leaving the menu redraws the sun's shadow map at once.
+
 ## Two new car classes: Formula 4 and Formula 1
 
 Asked for by the owner, with real numbers and a modern look (halo on both).

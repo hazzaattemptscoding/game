@@ -56,6 +56,7 @@ import '@fontsource/barlow/latin-600.css';
 import { createCarFx } from './carFx.js';
 import { wakeFor } from './slipstream.js';
 import { createSlipFx } from './slipFx.js';
+import { createHomeGarage } from './homeGarage.js';
 const params = new URLSearchParams(location.search);
 // ?norender=1 is for the menu tests only (tools/menuflow.js): the game runs but no picture is drawn, so a menu walk does not wait on software GL.
 // Nothing sets it in normal play.
@@ -158,6 +159,9 @@ trackScene.userData.gantryScreenMaterial.map = gantryTex;
 trackScene.userData.gantryScreenMaterial.color.set(0xffffff);
 trackScene.userData.gantryScreenMaterial.needsUpdate = true;
 const menuEl = document.getElementById('menu');
+// the garage behind the main menu (src/homeGarage.js): drawn in place of the circuit while the main menu is open, built on first use
+const homeGarage = createHomeGarage({ renderer, logo: loadImage(powermediaLogo) });
+const menuRail = menuEl.querySelector('.rail');
 let gantryDrawn = -1;
 const gantryFrustum = new THREE.Frustum(), gantryBall = new THREE.Sphere(trackScene.userData.gantryPosition, 30), gantryPV = new THREE.Matrix4();
 function gantryInView() {
@@ -349,7 +353,7 @@ const loop = new FixedStep(STEP);
 const stats = new FrameStats();
 let linePrimed = false;
 const wakeOut = { strength: 0, distance: 0, leaderIndex: -1 };   // wakeFor fills this each physics step (no allocation)
-let simTime = 0, last = performance.now(), hudDue = Infinity, audioDue = 0, frameNo = 0;
+let simTime = 0, last = performance.now(), hudDue = Infinity, audioDue = 0, frameNo = 0, wasHome = false;
 let poseAt = performance.now();   // the clock time the car's pose is for: the last physics step, less the time not yet simulated (sent by src/lobby.js)
 document.addEventListener('visibilitychange', () => { last = performance.now(); });   // no frame time spans the time the tab was hidden
 
@@ -503,7 +507,22 @@ function frame(now) {
   carFx.update(dt, rig.camera, lobby.ghosts.fx, selfFx, env.resolved, topDown);
   // behind a menu that covers the world (every one but the main menu, .m-shade) at half the rate; in a room the world stays live
   const covered = dir.menuOpen && !lobby.active && menuEl.dataset.home !== '1';
-  if (!noRender && !(covered && frameNo % 2)) renderer.render(scene, rig.camera);
+  const atHome = dir.menuOpen && menuEl.dataset.home === '1' && !reportTool.opened && !topDown && !fixedView;
+  if (noRender) { /* menu tests: no picture */ }
+  else if (atHome) {
+    // the main menu: the garage, with the car framed in what the menu's rail leaves visible
+    const share = menuRail && !menuRail.hidden ? Math.min(0.45, menuRail.getBoundingClientRect().right / Math.max(1, innerWidth)) : 0;
+    const g = homeGarage.frame(dt, car.cfg, myLivery(), innerWidth / innerHeight, share);
+    const exposure = renderer.toneMappingExposure;
+    renderer.toneMappingExposure = 1;
+    renderer.shadowMap.needsUpdate = homeGarage.shadowDue();
+    renderer.render(g.scene, g.camera);
+    renderer.toneMappingExposure = exposure;
+  } else if (!(covered && frameNo % 2)) {
+    if (wasHome) renderer.shadowMap.needsUpdate = true;   // back from the garage: the sun's shadow map is redrawn at once
+    renderer.render(scene, rig.camera);
+  }
+  wasHome = atHome;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(now => { frame(now); bootDone(); });
