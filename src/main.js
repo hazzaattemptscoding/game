@@ -525,6 +525,10 @@ function frame(now) {
   wasHome = atHome;
   requestAnimationFrame(frame);
 }
+// the shaders for everything in view, compiled before the first frame without blocking the page where the browser can compile in
+// parallel (KHR_parallel_shader_compile), so the loading screen keeps painting while they build
+await bootStep('Preparing the shaders', 0.9);
+await renderer.compileAsync(scene, rig.camera).catch(() => {});
 requestAnimationFrame(now => { frame(now); bootDone(); });
 // for quick checks from the browser console
 window.lakeside = { optimised, rig, quality, stats, loop, car, track, timer, settings, racingLine, reportTool, lobby, board, input, view, scene, dir, renderer, env, carFx, gantryScreen, marshal, globalTimes, boardGhost, simTime: () => simTime };

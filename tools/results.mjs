@@ -20,7 +20,7 @@ const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 try {
   await page.goto('http://localhost:5197/?menu=results');
-  await page.waitForSelector('#menu[data-screen=results] .res-table tbody tr', { timeout: 20000 });
+  await page.waitForSelector('#menu[data-screen=results] .res-table tbody tr', { timeout: 120000 });   // the page builds the world first (a slow machine takes a while, as in perf.js and menuflow.js)
   await page.waitForTimeout(1200);
   const dev = await page.evaluate(() => {
     const body = document.querySelector('#menu .m-body');
