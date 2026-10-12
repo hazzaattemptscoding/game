@@ -1,4 +1,4 @@
-// Trackside detail: marshal posts, 50 m distance boards, lamp posts, flag masts, advertising hoardings and tree lines.
+// Trackside detail: marshal posts, 50 m distance boards, lamp posts, flag masts, advertising hoardings, and trees (src/trees.js) in lines and clumps.
 //
 // Everything here is placed behind the containment wall and checked against the barrier lines, the pit lane, the
 // grandstands and the buildings before it is drawn; whatever fails the check is simply left out. Repeated things are
@@ -12,6 +12,7 @@ import { nearBarrier } from './trackNear.js';
 import { garageBay } from './pitBuilding.js';
 import { flagMaterial, addFlag } from './lamps.js';
 import { boardOffset } from './track.js';
+import { treeKinds, treeMaterial, bushGeometry, FAR_TREE } from './trees.js';
 
 const wrapN = (i, n) => ((i % n) + n) % n;
 
@@ -261,7 +262,7 @@ export function buildProps(T, ground, blockers, stands) {
     stats.hoardings = count;
   }
 
-  // ---- tree lines, well away from the circuit ------------------------------------------------------------------------------
+  // ---- tree lines and clumps, well away from the circuit -------------------------------------------------------------------
   {
     const trees = [];
     for (let s = 0; s < T.length; s += 11) {
@@ -278,36 +279,42 @@ export function buildProps(T, ground, blockers, stands) {
         if (trees.length >= 900) break;
       }
     }
+    // clumps further out, three to five trees of one kind together, so the view past the tree lines is not bare
+    for (let s = 20; s < T.length && trees.length < 900; s += 45) {
+      for (const side of [0, 1]) {
+        const hs = Math.round(s);
+        if (hash01(hs, side, 31) > 0.45) continue;
+        const i = wrapN(Math.round(s / T.ds), T.N), sg = side ? 1 : -1;
+        const c = trackPoint(T, s, sg * (T.wall[side][i] + 80 + hash01(hs, side, 32) * 60));
+        const kind = Math.floor(hash01(hs, side, 33) * 4), n = 3 + Math.floor(hash01(hs, side, 34) * 3), clump = [];
+        for (let k = 0; k < n; k++) {
+          const a = hash01(hs + side, k, 35) * 6.283, r = 2 + hash01(hs + side, k, 36) * 9, x = c.x + Math.cos(a) * r, z = c.z + Math.sin(a) * r;
+          if (clump.some(t => Math.hypot(t[0] - x, t[1] - z) < 4) || wallClearance(T, x, z) < 60) continue;
+          if (blockers.some(b => Math.hypot(x - b.x, z - b.z) < b.r + 10) || inStand(stands, x, z, 25)) continue;
+          clump.push([x, z, 0.85 + hash01(hs + side, k, 37) * 0.8, hash01(hs + side, k, 38), kind]);
+        }
+        trees.push(...clump);
+      }
+    }
     if (trees.length) {
-      // five kinds: oak, pine, poplar, birch and a low bush, each an instanced trunk and crown
-      const crownOf = (...parts) => mergeTwo(parts[0], parts[1] || parts[0]);
-      const oakC = crownOf((() => { const c = new THREE.IcosahedronGeometry(2.7, 0); c.translate(0, 5.4, 0); return c; })(), (() => { const c = new THREE.IcosahedronGeometry(1.9, 0); c.translate(0.5, 7.4, 0.3); return c; })());
-      const pineC = (() => { const a1 = new THREE.ConeGeometry(2.6, 4.2, 7); a1.translate(0, 4.2, 0); const a2 = new THREE.ConeGeometry(1.8, 3.6, 7); a2.translate(0, 6.9, 0); return mergeTwo(a1, a2); })();
-      const popC = (() => { const c = new THREE.IcosahedronGeometry(1.5, 0); c.scale(1, 3.4, 1); c.translate(0, 7.2, 0); return c; })();
-      const birchC = (() => { const c = new THREE.IcosahedronGeometry(1.9, 0); c.scale(1, 1.3, 1); c.translate(0, 5.8, 0); return c; })();
-      const trunk = (r, h, c) => ({ g: (() => { const t = new THREE.CylinderGeometry(r * 0.65, r, h, 6); t.translate(0, h / 2, 0); return t; })(), c });
-      const kinds = [
-        { crown: oakC, ...trunk(0.34, 3.2, 0x5b4632), hue: [0.24, 0.07], l: [0.2, 0.08] },
-        { crown: pineC, ...trunk(0.3, 2.4, 0x4a3a2a), hue: [0.36, 0.04], l: [0.13, 0.05] },
-        { crown: popC, ...trunk(0.22, 3.0, 0x6a5a44), hue: [0.2, 0.06], l: [0.22, 0.08] },
-        { crown: birchC, ...trunk(0.2, 3.6, 0xdad6cc), hue: [0.18, 0.06], l: [0.28, 0.08] },
-      ];
+      // four kinds (oak, pine, poplar, birch), one draw call each, trunk and crown together (src/trees.js), and a low bush
+      const kinds = treeKinds(), mat = treeMaterial();
       const byKind = kinds.map(() => []);
-      trees.forEach(t => { const r = hash01(Math.round(t[0] * 3), Math.round(t[1] * 3), 12); byKind[r < 0.4 ? 0 : r < 0.62 ? 1 : r < 0.8 ? 2 : 3].push(t); });
+      trees.forEach(t => { const r = hash01(Math.round(t[0] * 3), Math.round(t[1] * 3), 12); byKind[t[4] ?? (r < 0.4 ? 0 : r < 0.62 ? 1 : r < 0.8 ? 2 : 3)].push(t); });
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), c = new THREE.Color();
       kinds.forEach((kd, ki) => {
         const list = byKind[ki];
         if (!list.length) return;
-        const tr = new THREE.InstancedMesh(kd.g, new THREE.MeshLambertMaterial({ color: kd.c }), list.length);
-        const lv = new THREE.InstancedMesh(kd.crown, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), list.length);
+        const mesh = new THREE.InstancedMesh(kd.far, mat, list.length);
+        Object.assign(mesh.userData, { nearGeometry: kd.geometry, farGeometry: kd.far, nearDist: FAR_TREE });   // the full tree near by (src/cull.js propCuller)
         list.forEach(([x, z, sc, h], k) => {
           e.set(0, h * 6.28, 0);
-          m4.compose(new THREE.Vector3(x, yAt(x, z) - 0.2, z), q.setFromEuler(e), new THREE.Vector3(sc, sc * (0.9 + h * 0.3), sc));
-          tr.setMatrixAt(k, m4); lv.setMatrixAt(k, m4);
-          lv.setColorAt(k, c.setHSL(kd.hue[0] + h * kd.hue[1], 0.42, kd.l[0] + ((h * 31) % 1) * kd.l[1]));
+          m4.compose(new THREE.Vector3(x, yAt(x, z) - 0.2, z), q.setFromEuler(e), new THREE.Vector3(sc * (0.9 + ((h * 13) % 1) * 0.2), sc * (0.9 + h * 0.3), sc));
+          mesh.setMatrixAt(k, m4);
+          mesh.setColorAt(k, c.setHSL(kd.hue[0] + h * kd.hue[1], 0.42, kd.l[0] + ((h * 31) % 1) * kd.l[1]));
         });
-        tr.userData.debug = lv.userData.debug = 'grass';
-        g.add(tr, lv);
+        mesh.userData.debug = 'grass';
+        g.add(mesh);
       });
       // bushes close to the fence line, behind the catch fence
       const bushes = [];
@@ -318,8 +325,8 @@ export function buildProps(T, ground, blockers, stands) {
         if (free(p.x, p.z, { behind: 11, fromBarrier: 9, pad: 4 }) && !T.street[side][i] && !T.isBridge[i]) bushes.push([p.x, p.z, 0.7 + hash01(Math.round(s), side, 23) * 0.8, hash01(Math.round(s), side, 24)]);
       }
       if (bushes.length) {
-        const bg = new THREE.IcosahedronGeometry(1.1, 0); bg.scale(1.3, 0.8, 1.1); bg.translate(0, 0.7, 0);
-        const bm = new THREE.InstancedMesh(bg, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), bushes.length);
+        const bm = new THREE.InstancedMesh(bushGeometry(0), mat, bushes.length);
+        Object.assign(bm.userData, { nearGeometry: bushGeometry(1), farGeometry: bm.geometry, nearDist: FAR_TREE });
         bushes.forEach(([x, z, sc, h], k) => { e.set(0, h * 6.28, 0); m4.compose(new THREE.Vector3(x, yAt(x, z) - 0.15, z), q.setFromEuler(e), new THREE.Vector3(sc, sc, sc)); bm.setMatrixAt(k, m4); bm.setColorAt(k, c.setHSL(0.22 + h * 0.08, 0.4, 0.17 + ((h * 17) % 1) * 0.08)); });
         bm.userData.debug = 'grass';
         g.add(bm);

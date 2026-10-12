@@ -1,11 +1,14 @@
 // People as one InstancedMesh: a torso (a box with no bottom, 10 triangles) and a head (a three-sided double pyramid, 6 triangles)
 // in one geometry, so a crowd is one draw call and 16 triangles a person. The instance colour is the shirt; the head takes a skin
-// tone picked in the vertex shader from the instance number, so it needs no second mesh.
+// tone picked in the vertex shader from the instance number, so it needs no second mesh. About half of a crowd moves a little.
 //
 // spots: [x, y, z, colour, random 0..1, standing] in the parent's frame (y is the floor the person stands on).
 
 import * as THREE from 'three';
+import { wind } from './lamps.js';
 
+// what most people wear: dark, denim, white, grey and a few colours (the stands add blocks of team colours on top)
+export const CLOTHES = [0x24262b, 0x2c3a55, 0xe8e6e0, 0x7d8287, 0x3d5a80, 0x8c2f39, 0x5b6b3a, 0xc9b79c, 0x1d4e9e, 0xc8102e, 0x33363b, 0xd8d4c8];
 const SKIN = [0xf1c9a5, 0xe0ac88, 0xc68a62, 0x9a6540, 0x6b4328, 0xf6d6bd];
 const HEAD_Y = 0.64, HEAD_R = 0.155;
 export const CROWD_FAR = 400;   // metres: beyond this a crowd is not drawn (src/cull.js propCuller); a person there is about three pixels tall
@@ -101,15 +104,24 @@ export function standingPersonGeometry() {
   return g;
 }
 
-let shared = null;
-function parts() {
-  if (shared) return shared;
-  const geo = personGeometry(), far = farGeometry();
+// The people's material: shirt from the instance colour, skin and helmet from the attribute `skin`. In a crowd (moves) about half
+// of them move a little, a bounce now and then and a slow sway, each in their own time; the marshals and crews stand still.
+function personMaterial(moves) {
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const tones = SKIN.map(h => new THREE.Color(h)).map(c => `vec3(${c.r.toFixed(4)}, ${c.g.toFixed(4)}, ${c.b.toFixed(4)})`);
   mat.onBeforeCompile = sh => {
+    sh.uniforms.uTime = wind.uTime;
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float skin;')
+      .replace('#include <common>', '#include <common>\nattribute float skin; uniform float uTime;')
+      .replace('#include <begin_vertex>', moves ? `#include <begin_vertex>
+#ifdef USE_INSTANCING
+      {
+        float ph = fract(sin(float(gl_InstanceID) * 78.233 + 1.7) * 43758.5453) * 6.2832;
+        float on = step(0.5, fract(ph * 3.7));
+        transformed.y += on * max(0.0, sin(uTime * 2.3 + ph) - 0.6) * 0.09;
+        transformed.x += on * sin(uTime * 0.8 + ph) * 0.05 * position.y;
+      }
+#endif` : '#include <begin_vertex>')
       .replace('#include <color_vertex>', `#include <color_vertex>
 #ifdef USE_INSTANCING_COLOR
       {
@@ -120,8 +132,14 @@ function parts() {
       }
 #endif`);
   };
-  mat.customProgramCacheKey = () => 'crowd-skin';
-  shared = { geo, far, mat };
+  mat.customProgramCacheKey = () => moves ? 'crowd-skin-moves' : 'crowd-skin';
+  return mat;
+}
+
+let shared = null;
+function parts() {
+  if (shared) return shared;
+  shared = { geo: personGeometry(), far: farGeometry(), mat: personMaterial(true), still: personMaterial(false) };
   return shared;
 }
 
@@ -134,7 +152,7 @@ export function crowdMesh(spots) {
   spots.forEach(([a, y, z, colour, h, standing], k) => {
     m4.compose(p.set(a, y + 0.45 + (standing ? 0.42 : 0), z), q, s.set(0.9 + h * 0.25, standing ? 1.25 : 1, 1));
     im.setMatrixAt(k, m4);
-    im.setColorAt(k, c.setHex(colour));
+    im.setColorAt(k, c.setHex(colour).multiplyScalar(0.82 + h * 0.3));   // no two shirts quite the same
   });
   im.instanceMatrix.needsUpdate = true;
   im.castShadow = false;
@@ -149,9 +167,9 @@ export function crowdMesh(spots) {
 let standing = null;
 export function standingCrowd(spots) {
   if (!spots.length) return null;
-  const { mat } = parts();
+  const { still } = parts();
   standing = standing || standingPersonGeometry();
-  const im = new THREE.InstancedMesh(standing, mat, spots.length);
+  const im = new THREE.InstancedMesh(standing, still, spots.length);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), p = new THREE.Vector3(), s = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
   spots.forEach(([x, y, z, colour, h, yaw], k) => {
     const f = 1.3 + h * 0.12;

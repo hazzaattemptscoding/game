@@ -11,7 +11,7 @@ import { frame, checkStand, wallClearance, standDepth, GAP } from './grandstands
 import { nearBarrier } from './trackNear.js';
 import { lampMaterial, flagMaterial, addFlag, onLampLevel, wind } from './lamps.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { crowdMesh } from './crowd.js';
+import { crowdMesh, CLOTHES } from './crowd.js';
 import { CORNERS } from './corners.js';
 import { vehicleBlockers } from './vehicleBays.js';
 
@@ -294,7 +294,7 @@ function fanZone(kit, st, spots) {
     const x = x0 + 1.5 + hash01(k, Math.round(st.s), 1) * (len - 3), z = 3 + hash01(k, Math.round(st.s), 2) * (depth - 6);
     if (tents.some(([tx, tz]) => Math.abs(x - tx) < 2.8 && Math.abs(z - tz) < 2.8)) continue;
     const h = hash01(k, 7, Math.round(st.s));
-    spots.push([x, 0.02, z, PALETTE[(h * 97 | 0) % PALETTE.length], h, true]);
+    spots.push([x, 0.02, z, CLOTHES[(h * 97 | 0) % CLOTHES.length], h, true]);
   }
 }
 
@@ -328,7 +328,7 @@ function mediaTower(kit, st, spots) {
   kit.box('steel', 0.1, 7, 0.1, -3.8, h[3] + 3.5, 8.4);
   kit.box('lamp', 8, 0.1, 0.3, 0, h[2] - 0.3, 3.0);
   sponsorPanel(kit, 'sponsor', 0, 4, 3.0, -4, 3.0, h[2] + 3.4, h[2] + 4.2, -1);
-  for (let k = 0; k < 6; k++) spots.push([-4 + k * 1.5, h[3] + 0.02, 2.4 + (k % 2) * 0.7, PALETTE[(k * 3) % PALETTE.length], hash01(k, 2, 3), false]);
+  for (let k = 0; k < 6; k++) spots.push([-4 + k * 1.5, h[3] + 0.02, 2.4 + (k % 2) * 0.7, CLOTHES[(k * 3) % CLOTHES.length], hash01(k, 2, 3), false]);
 }
 
 function footbridge(kit, b, videoGroup) {
@@ -428,7 +428,7 @@ function marquee(kit, st, spots) {
     for (let t = 0; t < 2; t++) {
       const tx = xc + (t ? 2.4 : -2.4), tz = z0 + 4;
       kit.box('white', 1.6, 0.06, 1.6, tx, 0.95, tz); kit.box('steel', 0.08, 0.95, 0.08, tx, 0.47, tz);
-      for (const [dx, dz] of [[-1, 0], [1, 0], [0, 1.1]]) if (hash01(k, t, dx * 3 + dz * 7) < 0.8) spots.push([tx + dx * 1.1, 0.02, tz + dz, PALETTE[((k + t) * 3 + dx + 5) % PALETTE.length], hash01(k, t, 9 + dx), true]);
+      for (const [dx, dz] of [[-1, 0], [1, 0], [0, 1.1]]) if (hash01(k, t, dx * 3 + dz * 7) < 0.8) spots.push([tx + dx * 1.1, 0.02, tz + dz, CLOTHES[((k + t) * 3 + dx + 5) % CLOTHES.length], hash01(k, t, 9 + dx), true]);
     }
   }
   // flag poles in front, every 8 m
@@ -550,7 +550,7 @@ function paddock(kit, st, spots) {
     for (let t = 0; t < 3; t++) {
       const tx = xa + 2 + t * (xb - xa - 4) / 2, tz = z0 + 3;
       kit.box('white', 1.4, 0.06, 0.9, tx, 0.95, tz); kit.box('steel', 0.08, 0.95, 0.08, tx, 0.47, tz);
-      if (hash01(k, t, 4) < 0.7) spots.push([tx + 0.9, 0.02, tz + 0.2, PALETTE[(k * 2 + t) % PALETTE.length], hash01(k, t, 6), true]);
+      if (hash01(k, t, 4) < 0.7) spots.push([tx + 0.9, 0.02, tz + 0.2, CLOTHES[(k * 2 + t) % CLOTHES.length], hash01(k, t, 6), true]);
     }
     kit.box('steel', 0.1, 7, 0.1, xc, 3.5, 0.6);
     addFlag(kit, ['flagR', 'flagB', 'flagY', 'flagW'][k % 4], xc + 0.05, 4.8, 0.6, 1, 0, 2.2, 1.5, 5);
@@ -770,7 +770,7 @@ export function buildExtras(T, ground, plan) {
       at('tent0', 5.0, 0.1, 1.6, 0, 2.75, -1.6);
       at('steel', 4.4, 0.1, 0.5, 0, 1.15, -1.0);
       at('lamp', 4.0, 0.08, 0.15, 0, 2.6, -1.0);
-      for (let k = 0; k < 3; k++) people.push([c.x + c.ex[0] * (k - 1) * 1.2 - c.ez[0] * 2.1, y + 0.25, c.z + c.ex[1] * (k - 1) * 1.2 - c.ez[1] * 2.1, PALETTE[(k * 4 + 1) % PALETTE.length], hash01(k, 3, 8), true]);
+      for (let k = 0; k < 3; k++) people.push([c.x + c.ex[0] * (k - 1) * 1.2 - c.ez[0] * 2.1, y + 0.25, c.z + c.ex[1] * (k - 1) * 1.2 - c.ez[1] * 2.1, CLOTHES[(k * 4 + 1) % CLOTHES.length], hash01(k, 3, 8), true]);
     }
   }
   for (const p of plan.small.photo) {

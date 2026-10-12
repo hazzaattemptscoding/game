@@ -10,7 +10,7 @@ import * as tex from './textures.js';
 import { Kit, metreUV, sponsorPanel, sponsorRow, trackPoint, hash01 } from './meshKit.js';
 import { entryRoadAt } from './track.js';
 import { lampMaterial, flagMaterial, addFlag } from './lamps.js';
-import { crowdMesh } from './crowd.js';
+import { crowdMesh, CLOTHES } from './crowd.js';
 import { vehicleBlockers } from './vehicleBays.js';
 import { wallClearance, nearBarrier } from './trackNear.js';
 
@@ -251,7 +251,7 @@ function buildStand(T, ground, st, kit) {
       const h = hash01(Math.round(a * 10), r, seed);
       if (h > fill + (r === rows - 1 ? 0.05 : 0)) continue;
       const block = hash01(Math.floor((a - x0) / 6), Math.floor(r / 4), seed);
-      const colour = block < 0.45 ? team[Math.floor(block / 0.45 * 3) % 3] : PALETTE[(hash01(Math.round(a * 10), r, 5) * PALETTE.length) | 0];
+      const colour = block < 0.35 ? team[Math.floor(block / 0.35 * 3) % 3] : CLOTHES[(hash01(Math.round(a * 10), r, 5) * CLOTHES.length) | 0];
       const hh = hash01(r, Math.round(a * 10), 9);
       spots.push([a, tread(r), r * ROW + 0.5, colour, hh, hh < standingShare]);
     }
@@ -288,7 +288,7 @@ function hospitality(kit, st, low, spots) {
   for (let a = x0 + 1; a < x1 - 1; a += 1.1) {
     const h = hash01(Math.round(a * 10), 3, Math.round(st.s));
     if (h > 0.6) continue;
-    spots.push([a, H1 + 0.02, 1.1 + h * 1.4, PALETTE[((h * 40) | 0) % PALETTE.length], h, h < 0.1]);
+    spots.push([a, H1 + 0.02, 1.1 + h * 1.4, CLOTHES[((h * 40) | 0) % CLOTHES.length], h, h < 0.1]);
   }
 }
 

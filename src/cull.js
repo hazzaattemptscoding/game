@@ -6,7 +6,8 @@
 //     it too. Each is cut into pieces on a square grid, sharing the material, so a view only draws the pieces it can see. The grid grows
 //     for light geometry (a piece should carry thousands of triangles, or it costs more in draw calls than it saves).
 //  2. Batching. Hundreds of small separate meshes (posts, signs, cones, stand parts) are merged per material and grid cell.
-//  3. `propCuller` hides small instanced props (crowds, trees, bins) beyond a distance on the lower graphics tiers.
+//  3. `propCuller` hides small instanced props (crowds, trees, bins) beyond a distance on the lower graphics tiers, and draws crowds and
+//     trees with their simple version when they are far away.
 //
 // Materials are shared, so wet roads, lamp levels, flags and the Blockout and debug views carry on working on the pieces.
 
@@ -228,7 +229,7 @@ export function propCuller(root) {
       for (const p of props) {
         const gap = Math.hypot(p.x - cx, p.z - cz) - p.r, show = gap <= Math.min(limit, p.cap);
         if (p.o.visible !== show) p.o.visible = show;
-        // a crowd with a simple person (src/crowd.js) uses it while no part of the crowd is within `nearDist`
+        // crowds and trees with a simple version (src/crowd.js, src/trees.js) use it while no part of them is within `nearDist`
         if (p.lod && show) { const g = gap > p.lod.nearDist ? p.lod.farGeometry : p.lod.nearGeometry; if (p.o.geometry !== g) p.o.geometry = g; }
       }
     },
