@@ -1,5 +1,34 @@
 # Changelog
 
+## Graphics: sky reflections, clear coat paint, a rubbered-in line, and the whole circuit lit at night
+
+- **Floodlights light the whole track** (`src/nightLight.js`, `src/floodlights.js`). The owner reported that at night most of the
+  lap was dark: 33 masts with a 24 m pool of light each left long stretches black (none at all from s 500 to 750). Now:
+  - masts every 70 m round the lap on alternating sides, then a fill pass that keeps adding a mast as close as the rules allow
+    (behind the wall, off the barriers, clear of buildings and stands) to the darkest point of the road until every part of it is
+    lit. 83 masts; they are instanced, so the draw calls do not change;
+  - the light they throw is baked once into a light map over the venue (2 m a texel), with the direction it comes from. Every lit
+    material in the world, the marshals, the service vehicles and the cars adds it as one more light in three.js's own light loop,
+    so diffuse and gloss are right: a wet road and a car's clear coat shine under it. One texture read a pixel at night, none by day;
+  - the old light pools on the ground are gone (one draw call fewer).
+- **Reflections** (`src/environment.js`, `src/lamps.js`, `src/car.js`). A small sky of the current time and weather (sky, a band of
+  trees and stands on the horizon, the ground, the sun) is prefiltered for reflections at every time and weather, not only in the
+  rain. The cars reflect it (paint, glass, wing, wheels, lamps) and so does the bare metal of the venue (armco, steel). Before, a
+  glossy body had nothing to reflect and looked like matt plastic.
+- **Clear coat paint.** The body and the stripes are a base coat under a glossy lacquer (`MeshPhysicalMaterial`, clearcoat 1).
+- **The racing surface** (`src/roadDetail.js`). A darker band of rubber along the racing line with the two tyre tracks in it, heavier
+  where the cars brake, with streaky braking marks, and large patches of older and newer tarmac so the 8 m texture does not repeat
+  visibly. It follows the reference lap in `src/racingLineData.js`; the road's texture coordinates already carry the lap distance and
+  the offset, so no vertex data was added.
+- **Rain clouds are grey, not pink.** The lit tops of the clouds were warmed in red only; now in the sun's own colour and only as far
+  as the sun gets through.
+- Shader additions stack on one material (`src/shaderPatch.js`): the wet road, the rubber and the floodlight light each add theirs.
+- The garage preview has its own studio reflections (three.js `RoomEnvironment`).
+
+Tests: `tools/venue.js` checks that the whole road is lit at night (the least floodlight on the centre and both edges, every metre,
+is 0.46 against a target of 0.5; average 0.69). `tools/carmodels.js` takes the GT's new paint values. Lap times are unchanged to the
+millisecond.
+
 ## Two new car classes: GT1 and the Peugeot 108 Cup
 
 The garage has a Car choice. The GT is still the default. Every mode uses the chosen car, and other players see it.

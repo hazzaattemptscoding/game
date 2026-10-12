@@ -11,6 +11,7 @@
 
 import * as THREE from 'three';
 import { CarView } from './car.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { previewFrame, PREVIEW_AZ, PREVIEW_FOV } from './preview.js';
 import { CAR_LIST, carById } from './cars.js';
 import { BODY_COLOURS, ACCENT_COLOURS, STRIPE_STYLES, LIVERY_SPONSORS, SPONSOR_NAMES, MAX_NAME, normaliseLivery, cleanLiveryName, ownLivery, localPlayerId, liveryEquals } from './livery.js';
@@ -92,7 +93,7 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
   left.append(viewBox, nameLine);
 
   // 3D preview, or a flat swatch when WebGL is not there
-  let renderer = null, scene = null, camera = null, car = null, raf = 0, ro = null, flat = null;
+  let renderer = null, scene = null, camera = null, car = null, raf = 0, ro = null, flat = null, roomEnv = null;
   try {
     if (new URLSearchParams(location.search).has('norender')) throw new Error('norender');   // menu tests: the flat swatch, no GL (see main.js)
     const canvas = el('canvas');
@@ -106,7 +107,12 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
     const rim = new THREE.DirectionalLight(0x9fc4ff, 0.9); rim.position.set(5, 3, -6); scene.add(rim);
     const floor = new THREE.Mesh(new THREE.CircleGeometry(4.2, 48), new THREE.MeshStandardMaterial({ color: 0x1a1e23, roughness: 0.9 }));
     floor.rotation.x = -Math.PI / 2; scene.add(floor);
-    car = new CarView(carById(settings.car), livery);
+    // a studio room for the paint and glass to reflect (the world's sky map belongs to the game's renderer, not this one)
+    const pmrem = new THREE.PMREMGenerator(renderer), room = new RoomEnvironment();
+    roomEnv = pmrem.fromScene(room, 0.04);
+    room.dispose(); pmrem.dispose();
+    car = new CarView(carById(settings.car), livery, { studio: true });
+    car.setEnvironment(roomEnv.texture);
     scene.add(car.root);
     camera = new THREE.PerspectiveCamera(PREVIEW_FOV, 1.6, 0.1, 100);
     const size = () => {
@@ -249,7 +255,7 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
     settings.car = id;
     save();
     if (car) { scene.remove(car.root); car.dispose(); }
-    if (scene) { car = new CarView(carById(id), livery); scene.add(car.root); }
+    if (scene) { car = new CarView(carById(id), livery, { studio: true }); if (roomEnv) car.setEnvironment(roomEnv.texture); scene.add(car.root); }
     sync(false);
     onCar(id);
     showNote();
@@ -295,6 +301,7 @@ export function mountGarage(container, { settings, save = () => {}, onChange = (
       if (ro) ro.disconnect();
       if (car) { scene.remove(car.root); car.dispose(); }
       if (scene) scene.traverse(o => { if (o.isMesh) { o.geometry.dispose(); if (o.material.dispose) o.material.dispose(); } });
+      if (roomEnv) roomEnv.dispose();
       if (renderer) { renderer.dispose(); if (renderer.forceContextLoss) renderer.forceContextLoss(); }
       style.remove(); root.remove();
     },

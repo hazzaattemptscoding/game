@@ -23,7 +23,8 @@ import { trackPoint } from '../src/meshKit.js';
 import { planExtras, footBlockers, smallBlockers, footprintPoints, SMALL_RULES, PIT_ARROWS } from '../src/venueExtras.js';
 import { planFences } from '../src/grandstands.js';
 import { entryRoadAt } from '../src/track.js';
-import { planMasts, MAST_BEHIND, MAST_BARRIER } from '../src/floodlights.js';
+import { planMasts, MAST_BEHIND, MAST_BARRIER, LIT_TARGET } from '../src/floodlights.js';
+import { bakeNightLight, nightLightAt } from '../src/nightLight.js';
 import { vehicleBlockers, bayDistance, BAY_CLEAR, VEHICLE_BAYS, VEHICLE_ZONES } from '../src/vehicleBays.js';
 import { planPitDressing, fenceOpenings, itemPoints, PIT_DRESS } from '../src/pitDressing.js';
 
@@ -141,6 +142,18 @@ for (const m of masts) {
   if (T.segs.some(sg => segDist(m.x, m.z, sg) < MAST_BARRIER - 0.3)) fail(`mast at s ${m.s.toFixed(0)} is within ${MAST_BARRIER} m of a barrier line`);
   if (withSmall.some(bl => Math.hypot(m.x - bl.x, m.z - bl.z) < bl.r)) fail(`mast at s ${m.s.toFixed(0)} is on a building or a kiosk`);
   if (inObstacle(m.x, m.z)) fail(`mast at s ${m.s.toFixed(0)} is on a stand`);
+}
+// the whole track is lit at night: the floodlight on the centre and both edges of the road, every metre round the lap
+{
+  const lit = bakeNightLight(T, masts);
+  let least = Infinity, at = 0, sum = 0, n = 0;
+  for (let i = 0; i < T.N; i++) for (const f of [-1, 0, 1]) {
+    const v = nightLightAt(lit, T.x[i] + T.nx[i] * f * T.hw[i], T.z[i] + T.nz[i] * f * T.hw[i]);
+    sum += v; n++;
+    if (v < least) { least = v; at = T.s[i]; }
+  }
+  console.log(`  floodlights: ${masts.length} masts, least light on the road ${least.toFixed(2)} (s ${at.toFixed(0)}), average ${(sum / n).toFixed(2)}, target ${LIT_TARGET}`);
+  if (least < LIT_TARGET - 0.1) fail(`the road is dark at night at s ${at.toFixed(0)}: floodlight ${least.toFixed(2)}, wanted ${LIT_TARGET} or more`);
 }
 // ---- ground kept for the parked service vehicles (src/vehicleBays.js): nothing of the venue within BAY_CLEAR of a vehicle's spot,
 // and no stand or building in the pit exit side or the paddock zone (the paddock awnings excepted, 25 m or more behind the garages).

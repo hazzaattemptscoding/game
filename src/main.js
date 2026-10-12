@@ -132,7 +132,8 @@ env.registerWorld(world);
 const marshal = createMarshalLights(track, ground, planMarshal(track, ground, scenery.userData.keepClear));   // LED panels at the minisector boundaries (src/marshal.js)
 scene.add(marshal.group);
 const marshalProps = propCuller(marshal.group);   // the marshals go beyond their draw distance like the crowds
-addServiceVehicles(scene, track, ground, scenery.userData.keepClear);   // parked ambulances, fire engines, the safety car and the rest (src/serviceVehicles.js)
+const service = addServiceVehicles(scene, track, ground, scenery.userData.keepClear);   // parked ambulances, fire engines, the safety car and the rest (src/serviceVehicles.js)
+env.lightAtNight(marshal.group); env.lightAtNight(service.group);   // the floodlights light them too (src/nightLight.js)
 const marshalWatch = new MarshalWatch(marshal, track);
 const racingLine = createRacingLine(track);   // optional colour coded racing line (L key, Settings); the page ?line=1 turns it on
 scene.add(racingLine.group);

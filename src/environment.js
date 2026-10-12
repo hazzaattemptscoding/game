@@ -14,7 +14,9 @@
 
 import * as THREE from 'three';
 import { resolveEnv, blendEnv, shadowsOn, DEFAULT_ENV, cleanEnv, sameEnv } from './weather.js';
-import { setLampLevel, setTopDown as setTopDownLight, light, wind } from './lamps.js';
+import { setLampLevel, setTopDown as setTopDownLight, setReflections, light, wind } from './lamps.js';
+import { chainShader } from './shaderPatch.js';
+import { setNightLevel, addNightLight } from './nightLight.js';
 
 const FADE_S = 1.2;
 const CLEAR_CLOUD = 0.18;   // sky cover shown at clear weather
@@ -199,9 +201,7 @@ export function makeSpray(max = 160) {
 // surface where it is wet. Everything else only gets a little darker.
 const WET_ROAD = { uWet: { value: 0 } };
 function patchRoad(m) {
-  if (m.onBeforeCompile && m.onBeforeCompile.toString().length > 40 && !m.userData.wetPatched) return;
-  m.userData.wetPatched = true;
-  m.onBeforeCompile = sh => {
+  chainShader(m, 'wet-road', sh => {
     sh.uniforms.uWet = WET_ROAD.uWet;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWorldXYZ;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldXYZ = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
@@ -214,8 +214,7 @@ float puddleMask() { vec2 p = vWorldXYZ.xz; float n = wn(p * 0.045) * 0.55 + wn(
       { float pd = puddleMask(); roughnessFactor = mix(roughnessFactor, 0.035, pd); }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
       { float pd = puddleMask(); diffuseColor.rgb *= 1.0 - 0.38 * pd * uWet; }`);
-  };
-  m.customProgramCacheKey = () => 'wet-road';
+  });
 }
 
 // Lightning: two quick pulses and a fading tail over 0.8 s. 0..1.
@@ -240,6 +239,7 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
   let car = null, head = null, headTarget = null;
   const bolt = { next: 6 + Math.random() * 14, t: -1, flash: 0, fogOn: false };
   const wetMats = [];       // { m, kind, color, rough }
+  const shinyMats = [];     // metal and glass of the venue that reflect the sky in any weather (registerWorld)
   let pmrem = null, envRT = null, envKey = '';
   const out = { sun: new THREE.Color(), tmp: new THREE.Color() };
 
@@ -262,6 +262,7 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
     renderer.toneMappingExposure = r.exposure;
     setLampLevel(r.lamps);
     light.night = r.night;
+    setNightLevel(topDown ? 0 : r.lamps * Math.min(1, r.night / 0.6));   // the floodlights' light on everything (src/nightLight.js)
     light.headlamps = Math.max(r.night > 0.4 ? Math.min(1, (r.night - 0.4) / 0.4) : 0, r.weather === 'heavyrain' ? 0.8 : 0, r.weather === 'fog' ? 0.5 : 0);
     wind.uWind.value = r.wind;
     // sky dome
@@ -270,7 +271,10 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
     u.uCloud.value = Math.max(r.cloud, CLEAR_CLOUD); u.uStars.value = r.stars;   // a few thin clouds even when it is clear
     const dark = r.cloudDark, dayK = 1 - r.night, lit = 0.35 + 0.65 * dayK;
     const sb = r.skyBottom, base = [0.55 + sb[0] * 0.45, 0.55 + sb[1] * 0.45, 0.58 + sb[2] * 0.42];
-    u.uCloudLight.value.setRGB(base[0] * lit * (1 - dark * 0.55) + r.sun[0] * 0.08 * dayK, base[1] * lit * (1 - dark * 0.55), base[2] * lit * (1 - dark * 0.5), THREE.LinearSRGBColorSpace);
+    // the sun warms the lit tops of the clouds a little, in its own colour and only as far as it gets through (a red-only lift
+    // turned the dark rain clouds pink)
+    const warm = 0.08 * dayK * (1 - dark);
+    u.uCloudLight.value.setRGB(base[0] * lit * (1 - dark * 0.55) + r.sun[0] * warm, base[1] * lit * (1 - dark * 0.55) + r.sun[1] * warm * 0.9, base[2] * lit * (1 - dark * 0.5) + r.sun[2] * warm * 0.7, THREE.LinearSRGBColorSpace);
     u.uCloudShade.value.setRGB((r.sky[0] * 0.6 + 0.12) * lit * (1 - dark * 0.6), (r.sky[1] * 0.6 + 0.13) * lit * (1 - dark * 0.6), (r.sky[2] * 0.6 + 0.15) * lit * (1 - dark * 0.55), THREE.LinearSRGBColorSpace);
     const above = r.dir[1] > 0.03 ? 1 : 0;
     u.uDisc.value = above * (r.time === 'night' ? 0.9 : 1) * (1 - r.cloud * 0.8) * (r.weather === 'fog' ? 0.2 : 1);
@@ -292,9 +296,11 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
     // wet road
     WET_ROAD.uWet.value = r.wet;
     for (const w of wetMats) wetMaterial(w, r.wet);
-    if (car) {
-    }
     if (head) head.visible = light.headlamps > 0.05;
+  }
+
+  function lightAtNight(root) {
+    root.traverse(o => { if (o.isMesh) for (const m of Array.isArray(o.material) ? o.material : [o.material]) addNightLight(m); });
   }
 
   function wetMaterial(w, wet) {
@@ -309,27 +315,48 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
     }
   }
 
-  // a small sky of the target look, reflected by the wet road
+  // A small sky of the target look, prefiltered for reflections: the wet road shows it, and so do the cars (paint, glass, wheels)
+  // and the shiny metal of the venue at every time and weather. Sky above, a darker band of trees and stands along the horizon,
+  // the ground below, and the sun as a bright spot, so a glossy body shows a horizon line and a glint like a real one.
   function buildReflection(r) {
     const key = `${r.time}|${r.weather}`;
-    if (key === envKey || r.wet < 0.04) return;
+    if (key === envKey) return;
     envKey = key;
     try {
       pmrem ||= new THREE.PMREMGenerator(renderer);
       const s = new THREE.Scene();
+      const c3 = a => new THREE.Color().setRGB(a[0], a[1], a[2], THREE.SRGBColorSpace);
+      const dayK = 1 - r.night, sunK = Math.min(1.2, r.sunI / 2.4) * (1 - 0.85 * r.cloud);
+      const ground = c3(r.hemiGround).multiplyScalar(0.55 + 0.6 * r.hemiI * dayK);
+      const band = c3(r.hemiGround).lerp(c3(r.fog), 0.35).multiplyScalar(0.5 + 0.3 * dayK);
       const mat = new THREE.ShaderMaterial({
         side: THREE.BackSide, depthWrite: false, fog: false,
-        uniforms: { top: { value: new THREE.Color().setRGB(r.sky[0], r.sky[1], r.sky[2], THREE.SRGBColorSpace) }, bot: { value: new THREE.Color().setRGB(r.skyBottom[0], r.skyBottom[1], r.skyBottom[2], THREE.SRGBColorSpace) }, sunDir: { value: new THREE.Vector3(...r.dir) }, sunCol: { value: new THREE.Color().setRGB(r.sun[0], r.sun[1], r.sun[2], THREE.SRGBColorSpace) }, sunK: { value: Math.min(1, r.sunI / 2.4) * 6 } },
+        uniforms: {
+          top: { value: c3(r.sky) }, bot: { value: c3(r.skyBottom) }, ground: { value: ground }, band: { value: band },
+          sunDir: { value: new THREE.Vector3(...r.dir) }, sunCol: { value: c3(r.sun) }, sunK: { value: sunK },
+        },
         vertexShader: 'varying vec3 vD; void main() { vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'varying vec3 vD; uniform vec3 top, bot, sunDir, sunCol; uniform float sunK; void main() { vec3 d = normalize(vD); float k = smoothstep(-0.1, 0.8, d.y); vec3 c = mix(bot, top, k); c += sunCol * sunK * pow(max(dot(d, sunDir), 0.0), 60.0); if (d.y < 0.0) c = mix(bot, bot * 0.4, min(1.0, -d.y * 3.0)); gl_FragColor = vec4(c, 1.0); }',
+        fragmentShader: `varying vec3 vD; uniform vec3 top, bot, ground, band, sunDir, sunCol; uniform float sunK;
+          void main() {
+            vec3 d = normalize(vD);
+            vec3 c = mix(bot, top, smoothstep(0.0, 0.7, d.y));
+            float a = atan(d.z, d.x), edge = 0.035 + 0.025 * sin(a * 7.0) * sin(a * 3.0 + 1.0) + 0.015 * sin(a * 23.0);
+            c = mix(c, band, (1.0 - smoothstep(edge - 0.01, edge + 0.01, d.y)) * step(0.0, d.y));
+            if (d.y < 0.0) c = mix(band, ground, smoothstep(0.0, 0.25, -d.y));
+            float sd = max(dot(d, sunDir), 0.0);
+            c += sunCol * sunK * (40.0 * pow(sd, 900.0) + 0.6 * pow(sd, 24.0)) * step(-0.02, d.y);
+            gl_FragColor = vec4(c, 1.0);
+          }`,
       });
-      const sphere = new THREE.SphereGeometry(50, 16, 12);
+      const sphere = new THREE.SphereGeometry(50, 48, 24);
       s.add(new THREE.Mesh(sphere, mat));
-      const rt = pmrem.fromScene(s, 0.03);
+      const rt = pmrem.fromScene(s, 0.01);
       sphere.dispose();
       if (envRT) envRT.dispose();
       envRT = rt;
       mat.dispose();
+      setReflections(envRT.texture);
+      for (const w of shinyMats) if (w.envMap !== envRT.texture) { const was = !!w.envMap; w.envMap = envRT.texture; if (!was) w.needsUpdate = true; }
     } catch (e) { envRT = null; }
   }
 
@@ -357,10 +384,19 @@ export function createEnvironment({ renderer, scene, sun, hemi, sunDir, camera, 
           const kind = m.userData.wet === 'road' ? 'road' : m.userData.wet === 'surface' ? 'surface' : 'other';
           if (kind === 'road') patchRoad(m);
           wetMats.push({ m, kind, color: m.color.clone(), rough: m.roughness });
+          // bare metal and glass reflect the sky whatever the weather (the wet surfaces get theirs from wetMaterial)
+          if (kind === 'other' && !m.envMap && !m.map && (m.metalness >= 0.35 || m.roughness <= 0.3)) {
+            m.envMapIntensity = m.metalness >= 0.35 ? 0.7 : 0.45;
+            shinyMats.push(m);
+          }
         }
       });
       if (cur.wet > 0) for (const w of wetMats) wetMaterial(w, cur.wet);
+      if (envRT) for (const m of shinyMats) { m.envMap = envRT.texture; m.needsUpdate = true; }
+      lightAtNight(root);
     },
+    // floodlight light at night (src/nightLight.js) for everything lit under `root`: the world, and the groups added beside it
+    lightAtNight,
     attachCar(view) {
       car = view;
       if (!head) {

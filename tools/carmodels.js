@@ -175,7 +175,7 @@ const GT_FINGERPRINT = [
     "CylinderGeometry 40 fe7e62a6e7d8c97c18d2d26b999c2add 0,0,0 9aa0a6:0.3:0.8:000000",
     "CylinderGeometry 40 fe7e62a6e7d8c97c18d2d26b999c2add 0,0,0 9aa0a6:0.3:0.8:000000",
     "CylinderGeometry 40 fe7e62a6e7d8c97c18d2d26b999c2add 0,0,0 9aa0a6:0.3:0.8:000000",
-    "ExtrudeGeometry 1284 75be83889bce905ae39eea9550e9d6a7 0,0,0 ffd21f:0.35:0.3:000000",
+    "ExtrudeGeometry 1284 75be83889bce905ae39eea9550e9d6a7 0,0,0 ffd21f:0.42:0.2:000000",
     "ExtrudeGeometry 924 bb10cf53d54a40250ac0c89b0e37265f 0,0,0 14181d:0.1:0.6:000000",
     "PlaneGeometry 4 24241e2b7a1a169665023dd0c98d2699 1.9578,0.7042,0 ffffff:0.4:0.1:000000",
     "PlaneGeometry 4 f432b9630078a9668da214b1888d71d5 0.1,0.45,-1.004 ffffff:0.4:0.1:000000",

@@ -8,6 +8,11 @@ import * as THREE from 'three';
 export const light = { lamps: 0, night: 0, headlamps: 0, topDown: false };   // read by car.js for the tail lights and headlamps
 export const wind = { uTime: { value: 0 }, uWind: { value: 0.45 } };
 
+// The sky the cars reflect (paint, glass, wing, wheels): a prefiltered environment map of the current time and weather, made by
+// src/environment.js. `version` goes up each time it changes, so a car can pick up the new one with a single comparison a frame.
+export const reflections = { map: null, version: 0 };
+export function setReflections(map) { reflections.map = map; reflections.version++; }
+
 const listeners = new Set();
 const topDownListeners = new Set();
 export function onLampLevel(fn) { listeners.add(fn); fn(light.lamps); return fn; }

@@ -17,6 +17,7 @@ import { garageBay } from './pitBuilding.js';
 import { fenceOpenings } from './pitDressing.js';
 import { Kit } from './meshKit.js';
 import { crowdMesh } from './crowd.js';
+import { addRoadDetail } from './roadDetail.js';
 
 const FENCE_HEIGHT = 4;       // catch fence height, metres
 const ROAD_TIGHT = 80;       // metres: a cambered bend tighter than this gets four road strips across, not two
@@ -81,6 +82,7 @@ export function buildTrackScene(T, ground) {
     attenuator: new THREE.MeshStandardMaterial({ map: tex.chevronTexture('#f2c200', '#111111'), roughness: 0.6 }),
     lampOff: new THREE.MeshStandardMaterial({ color: 0x2a0606, emissive: 0xff1a1a, emissiveIntensity: 0 }),
   };
+  addRoadDetail(mat.road, T);   // rubber on the racing line, braking marks and worn patches (src/roadDetail.js)
   for (const k of ['road', 'line', 'kerb', 'sausage', 'apron', 'concrete', 'rumble', 'pit', 'island', 'islandPlain', 'attenuator']) mat[k].userData.wet = 'road';   // the weather (src/environment.js) makes these glossy and dark in the rain
   const DEBUG_OF = {
     road: 'road', line: 'line', kerb: 'kerb', sausage: 'sausage', apron: 'runoff', concrete: 'runoff', rumble: 'rumble', grass: 'grass',

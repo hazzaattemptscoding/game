@@ -6,7 +6,8 @@
 
 import * as THREE from 'three';
 import { normaliseLivery, liveryEquals, DEFAULT_LIVERY } from './livery.js';
-import { light } from './lamps.js';
+import { light, reflections } from './lamps.js';
+import { addNightLight } from './nightLight.js';
 import { ease } from './loop.js';
 import { acquireTextures, releaseTextures, SIDE_W, SIDE_H } from './liveryTex.js';
 import { stepFlap, flapAngle } from './drsFlap.js';
@@ -159,7 +160,8 @@ const HINGE_SINK = 0.03;     // how far the flap's hinge sits inside the main pl
 export class CarView {
   // `livery` is a livery object (src/livery.js), or a plain colour number as before.
   // `ghost` is for a remote car: it casts no shadow and swaps to a simple skin at a distance.
-  constructor(cfg, livery = DEFAULT_LIVERY, { ghost = false } = {}) {
+  // `studio`: a car shown in a scene of its own (the garage), not on the circuit: no floodlight at night.
+  constructor(cfg, livery = DEFAULT_LIVERY, { ghost = false, studio = false } = {}) {
     livery = typeof livery === 'number' ? { ...DEFAULT_LIVERY, body: livery } : livery;
     this.cfg = cfg;
     this.spec = bodySpec(cfg);
@@ -174,7 +176,8 @@ export class CarView {
     this.body.add(hull);
 
     const W = cfg.width, r = cfg.wheelRadius;
-    const paint = this.paint = new THREE.MeshStandardMaterial({ color: 0xffd21f, roughness: 0.35, metalness: 0.3 });
+    // paint under a clear coat: the base colour is a little rough, the lacquer on top is glossy and shows the sky (src/lamps.js reflections)
+    const paint = this.paint = new THREE.MeshPhysicalMaterial({ color: 0xffd21f, roughness: 0.42, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.07 });
     this.wingMat = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.5, metalness: 0.2 });
     this.wingFaceMat = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.5, metalness: 0.2, vertexColors: true });   // the main plane and the flap
     const dark = new THREE.MeshStandardMaterial({ color: 0x1b1d20, roughness: 0.6 });
@@ -330,7 +333,7 @@ export class CarView {
     // shown or hidden by setLivery, so the materials never change and a remote car's fade out keeps working.
     const decal = (map, extra = {}) => new THREE.MeshStandardMaterial({ map, transparent: true, roughness: 0.4, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, depthWrite: false, ...extra });
     this.sideMat = decal(null); this.plateMat = decal(null);
-    this.stripeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    this.stripeMat = new THREE.MeshPhysicalMaterial({ color: 0x111111, roughness: 0.42, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.07, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     for (const m of [this.sideMat, this.plateMat]) m.userData.alpha = true;
     this.decals = new THREE.Group();
     hull.add(this.decals);
@@ -365,6 +368,22 @@ export class CarView {
 
     if (ghost) this.root.traverse(o => { if (o.isMesh) o.castShadow = false; });   // a remote car casts no shadow (the shadow pass is the dearer part of a car)
     this._q = new THREE.Quaternion();
+
+    // how strongly each part reflects the sky: lacquer and glass most, rubber hardly at all
+    this._envMats = [[paint, 1], [this.stripeMat, 1], [glass, 1.3], [this.wingMat, 0.6], [this.wingFaceMat, 0.6], [dark, 0.45], [rimMat, 1],
+      [tyreMat, 0.12], [this.sideMat, 0.8], [this.plateMat, 0.8], [this.brakeMat, 0.6], [this.headMat, 0.6]];
+    this._envV = -1; this._ownEnv = false;
+    if (!studio) for (const m of this.materials()) addNightLight(m);   // the floodlights light the car at night (src/nightLight.js)
+  }
+
+  // The environment map the car reflects. Cars in the world follow the shared sky (src/lamps.js reflections, made by
+  // src/environment.js for the time and weather) by themselves; a car in its own scene (the garage) is given one here.
+  setEnvironment(map, own = true) {
+    this._ownEnv = own;
+    for (const [m, k] of this._envMats) {
+      if (!!m.envMap !== !!map) m.needsUpdate = true;
+      m.envMap = map || null; m.envMapIntensity = k;
+    }
   }
 
   // Every material of the car, for fading it out (src/ghosts.js) and for disposal.
@@ -425,6 +444,7 @@ export class CarView {
 
   // Place the model at the physics state, blended between the last two steps.
   update(car, alpha) {
+    if (!this._ownEnv && this._envV !== reflections.version) { this._envV = reflections.version; this.setEnvironment(reflections.map, false); }
     const p = car.prev, lerp = (a, b) => a + (b - a) * alpha;
     let dh = car.heading - p.heading;
     dh = Math.atan2(Math.sin(dh), Math.cos(dh));
