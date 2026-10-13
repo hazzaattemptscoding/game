@@ -1,10 +1,11 @@
 // Everything away from the racing surface: the ground, and what is left of
 // RAF Stanmere (reference/LAKESIDE_REFERENCE_PACK.md, section 2).
 //
-// Phase 2 builds the terrain, the old runway slab and perimeter track, the
-// Watch Office (now Race Control), the timekeepers' box, the old painted pit
-// wall, a Bellman hangar, the Dispersal Nissen huts and the water tower.
-// Grandstands, the gate guardian, the chapel, the lake and the rest come in phase 3.
+// The terrain, the old runway slab and perimeter track, the Watch Office (now
+// Race Control), the timekeepers' box, the old painted pit wall, a Bellman
+// hangar, the Dispersal Nissen huts and the water tower; then the grandstands
+// (src/grandstands.js), the fan zones and screens (src/venueExtras.js), the
+// trackside props and trees (src/props.js) and the floodlights (src/floodlights.js).
 
 import * as THREE from 'three';
 import { wrap, entryRoadAt } from './track.js';

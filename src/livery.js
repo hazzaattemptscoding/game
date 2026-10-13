@@ -8,7 +8,6 @@
 
 export const STRIPE_STYLES = ['None', 'Centre stripe', 'Twin stripes', 'Side flash'];   // style 0..3
 export const MAX_NAME = 16;
-export const MAX_STRING = 40;
 
 // 12 body colours (the first is the original yellow) and 8 accent colours for the stripe and the wing.
 export const BODY_COLOURS = ['#ffd21f', '#e23b3b', '#2f8fe0', '#3cc46a', '#e8863a', '#b15fe0', '#2fd0c8', '#f06fb0', '#f2f2ee', '#1b1d20', '#9aa0a6', '#1f3f9e'];
@@ -146,9 +145,6 @@ export function defaultLivery(id) {
 export function ownLivery(saved, id) {
   return saved && typeof saved === 'object' ? normaliseLivery(saved) : defaultLivery(id);
 }
-
-// The css colour of a livery's body, for dots in the standings.
-export const liveryColour = l => normaliseLivery(l).body;
 
 // A random id for this browser, kept in localStorage, so the default livery of someone who never customises stays the same
 // from one visit to the next. Falls back to a fresh random id when storage is not available.

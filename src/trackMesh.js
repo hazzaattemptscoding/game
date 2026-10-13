@@ -588,21 +588,6 @@ function crossLine(b, T, s, width, d0, d1, lift = DECAL) {
   b.strip(idx, i => [T.x[i] + T.nx[i] * d0, y(i, d0), T.z[i] + T.nz[i] * d0], i => [T.x[i] + T.nx[i] * d1, y(i, d1), T.z[i] + T.nz[i] * d1], () => 0, 0, 1);
 }
 
-// Is this point on any non-bridge tarmac (track or pit lane), with a margin?
-export function onAnyRoad(T, x, z, margin) {
-  for (let i = 0; i < T.N; i++) {
-    if (T.isBridge[i]) continue;
-    const dx = x - T.x[i], dz = z - T.z[i];
-    if (dx * dx + dz * dz > 60 * 60) continue;
-    const along = dx * T.tx[i] + dz * T.tz[i];
-    if (Math.abs(along) > 0.6) continue;
-    const d = dx * T.nx[i] + dz * T.nz[i];
-    if (Math.abs(d) < T.hw[i] + margin) return true;
-    if (T.pitOut[i] && d < 0 && -d > T.pitIn[i] - margin && -d < T.pitOut[i] + margin) return true;
-  }
-  return false;
-}
-
 // Run lengths of consecutive samples where test(i) is true, as index lists.
 export function runs(N, test) {
   const out = [];

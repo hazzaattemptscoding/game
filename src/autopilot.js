@@ -1,5 +1,5 @@
-// Autopilot: drives a car round a racing line. Used by the headless lap test
-// now, and as the base for AI opponents later.
+// Autopilot: drives a car round a racing line. Used by the lap tests in tools/,
+// the ?autopilot=1 view, the racing line display and the learning autopilot (src/learn.js).
 
 import { wrap } from './track.js';
 

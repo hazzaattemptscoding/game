@@ -164,9 +164,8 @@ export function estimateOffset(samples) {
   return { offset, rtt: byRtt[0].rtt, n: ok.length };
 }
 
-// host clock -> this machine's clock, and back
+// host clock -> this machine's clock
 export const toLocalTime = (hostTime, offset) => hostTime - offset;
-export const toHostTime = (localTime, offset) => localTime + offset;
 
 // The host decides at `hostNow` (its clock): the sequence begins LEAD_MS later and the lights go out at startAt, both in host time.
 export function scheduleStart(hostNow, hold, lead = START.LEAD_MS) {

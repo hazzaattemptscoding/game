@@ -1,4 +1,4 @@
-// Lakeside, phase 1: drive feel on the test track.
+// Lakeside: the game page. Builds the circuit and the venue, then runs the frame loop.
 //
 // Physics runs at a fixed 120 steps per second, separate from the frame
 // rate. Rendering runs on requestAnimationFrame at the display's rate (60,
@@ -90,7 +90,7 @@ let assistsTaken = false;   // the learned autopilot has switched the car's assi
 const canvas = document.getElementById('view');
 const phone = isPhone();
 // multisampling costs a lot at a phone's pixel density and shows little there
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: !phone, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !phone, powerPreference: 'high-performance' });   // the report reads the canvas right after a render in the same task, so the buffer need not be kept
 renderer.shadowMap.autoUpdate = false;   // refreshed from the loop, at the rate the graphics quality allows
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;

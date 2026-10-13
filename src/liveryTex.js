@@ -104,4 +104,3 @@ export function releaseTextures(livery) {
   if (l.number >= 0) unref('p' + l.number);
 }
 
-export const cacheSize = () => cache.size;

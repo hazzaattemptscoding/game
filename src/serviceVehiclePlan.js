@@ -8,7 +8,7 @@
 
 import { trackPoint } from './meshKit.js';
 import { wallClearance, GAP } from './grandstands.js';
-import { entryRoadAt } from './track.js';
+import { entryRoadAt, gridKey } from './track.js';
 import { planMarshal } from './marshal.js';
 import { planMasts } from './floodlights.js';
 
@@ -103,7 +103,7 @@ export function planVehicles(T, keep = {}, slots = SLOTS) {
     if (paddock ? !paddockOk(x, z) : wallClearance(T, x, z) < WALL_MIN) return false;
     const gx = Math.floor(x / cell), gz = Math.floor(z / cell);
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
-      const list = map.get((gx + a) + ',' + (gz + b));
+      const list = map.get(gridKey(gx + a, gz + b));
       if (list) for (const n of list) if (segDist(x, z, T.segs[n]) < BARRIER_MIN) return false;
     }
     const r = entryRoadAt(T, x, z, 6);

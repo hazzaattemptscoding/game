@@ -81,17 +81,6 @@ export function runwayTexture(seed = 7) {
   return finish(c);
 }
 
-// Mown grass with stripes running along the track. u = along, v = across.
-export function grassTexture(seed = 3) {
-  const [c, x] = canvas(256, 256), r = rng(seed);
-  for (let i = 0; i < 4; i++) {
-    x.fillStyle = i % 2 ? '#5c8a3e' : '#4f7d36';
-    x.fillRect(i * 64, 0, 64, 256);
-  }
-  speckle(x, 256, 256, r, 9000, ['#46702f', '#6a9a48', '#3e6629', '#78a352'], 1.4);
-  return finish(c);
-}
-
 // Gravel: rounded stones with raked lines across the trap.
 export function gravelTexture(seed = 5) {
   const [c, x] = canvas(256, 256), r = rng(seed);
@@ -206,21 +195,6 @@ export function facadeTexture({ wall = '#e8e2d2', glass = '#2b3640', frame = '#f
   const g = x.createLinearGradient(0, 200, 0, 256);
   g.addColorStop(0, 'rgba(60,50,40,0)'); g.addColorStop(1, 'rgba(60,50,40,.3)');
   x.fillStyle = g; x.fillRect(0, 0, 512, 256);
-  return finish(c);
-}
-
-// Pit garages: roller doors with team colour panels above.
-export function garageTexture() {
-  const [c, x] = canvas(512, 256);
-  x.fillStyle = '#d8d8d4'; x.fillRect(0, 0, 512, 256);
-  const team = ['#1d4e9e', '#c8102e', '#111111', '#f2b705', '#0d7a4f', '#6b2c91', '#e85d04', '#2b2d42'];
-  for (let i = 0; i < 4; i++) {
-    const x0 = i * 128;
-    x.fillStyle = team[i * 2 % team.length]; x.fillRect(x0 + 6, 18, 116, 34);
-    x.fillStyle = '#fff'; x.font = 'bold 18px Arial'; x.textAlign = 'center'; x.fillText('LAKESIDE', x0 + 64, 41);
-    x.fillStyle = '#5d6166'; x.fillRect(x0 + 10, 62, 108, 194);
-    for (let y = 66; y < 256; y += 7) { x.fillStyle = 'rgba(255,255,255,.12)'; x.fillRect(x0 + 10, y, 108, 2); }
-  }
   return finish(c);
 }
 
@@ -439,16 +413,6 @@ export function streetWallTexture() {
   speckle(x, 256, 64, r, 3000, ['#a8a69f', '#c6c4bd', '#9d9b94'], 1.3);
   for (let i = 0; i < 256; i += 43) { x.fillStyle = (i / 43) % 2 ? '#ededea' : '#c8102e'; x.fillRect(i, 0, 43, 10); }
   x.fillStyle = 'rgba(60,60,60,.6)'; x.fillRect(0, 0, 2, 64); x.fillRect(128, 0, 2, 64);
-  return finish(c);
-}
-
-// Pit lane markings: white edge line, dashed lane divider. v = 0 at the track side.
-export function pitLaneTexture() {
-  const [c, x] = canvas(256, 256), r = rng(29);
-  x.fillStyle = '#44474b'; x.fillRect(0, 0, 256, 256);
-  speckle(x, 256, 256, r, 9000, ['#36383c', '#55585c', '#5d6064'], 1.4);
-  x.fillStyle = '#f2f2ee'; x.fillRect(0, 0, 256, 6); x.fillRect(0, 250, 256, 6);
-  for (let i = 0; i < 256; i += 64) x.fillRect(i, 128, 34, 4);
   return finish(c);
 }
 

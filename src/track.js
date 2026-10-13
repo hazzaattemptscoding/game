@@ -415,7 +415,7 @@ function findNearest(T, px, pz, py) {
   let best = Infinity, bi = 0;
   for (let r = 1; r <= 4 && best === Infinity; r++) {
     for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) {
-      const list = T.grid.map.get(gx + a + ',' + (gz + b));
+      const list = T.grid.map.get(gridKey(gx + a, gz + b));
       if (!list) continue;
       for (const i of list) {
         const dy = Math.abs(T.h[i] - py);
@@ -1415,7 +1415,7 @@ function buildBarriers(T, corners) {
     const steps = Math.ceil(sg.len / cell) + 1;
     for (let k = 0; k <= steps; k++) {
       const x = sg.ax + (sg.bx - sg.ax) * k / steps, z = sg.az + (sg.bz - sg.az) * k / steps;
-      const key = Math.floor(x / cell) + ',' + Math.floor(z / cell);
+      const key = gridKey(Math.floor(x / cell), Math.floor(z / cell));
       let l = map.get(key); if (!l) map.set(key, l = []);
       if (l[l.length - 1] !== n) l.push(n);
     }
@@ -1496,7 +1496,7 @@ function collide(T, px, pz, cx, cz, py) {
   const { cell, map } = T.segGrid, gx = Math.floor(px / cell), gz = Math.floor(pz / cell);
   let best = null;
   for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
-    const list = map.get(gx + a + ',' + (gz + b));
+    const list = map.get(gridKey(gx + a, gz + b));
     if (!list) continue;
     for (const n of list) {
       const sg = T.segs[n];
@@ -1682,7 +1682,7 @@ function runsOf(N, test) {
 function otherSectionCloser(T, i, qx, qz, d) {
   const cell = T.grid.cell, gx = Math.floor(qx / cell), gz = Math.floor(qz / cell);
   for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
-    const list = T.grid.map.get(gx + a + ',' + (gz + b));
+    const list = T.grid.map.get(gridKey(gx + a, gz + b));
     if (!list) continue;
     for (const j of list) {
       let gap = Math.abs(T.s[j] - T.s[i]);
@@ -1694,10 +1694,14 @@ function otherSectionCloser(T, i, qx, qz, d) {
   return false;
 }
 
+// The key of a grid cell (the track samples' grid and the barrier grid): a number, so a lookup builds no string (collide runs every
+// physics step). Good for cells within 32768 of the origin each way.
+export const gridKey = (gx, gz) => (gx + 32768) * 65536 + (gz + 32768);
+
 function buildGrid(T) {
   const cell = 25, map = new Map();
   for (let i = 0; i < T.N; i++) {
-    const key = Math.floor(T.x[i] / cell) + ',' + Math.floor(T.z[i] / cell);
+    const key = gridKey(Math.floor(T.x[i] / cell), Math.floor(T.z[i] / cell));
     let l = map.get(key); if (!l) map.set(key, l = []);
     l.push(i);
   }

@@ -70,5 +70,3 @@ export function telemetryFromCar(car) {
   };
 }
 
-// The same codes as the ev messages in worker/README.md: what a player tells the room when something happens.
-export const EVENT_KINDS = ['lap', 'limits', 'jump', 'best', 'contact', 'join', 'leave'];
