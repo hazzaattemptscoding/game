@@ -3,6 +3,9 @@
 //
 // A genome is a flat vector of numbers in -1..1 (all zeros = today's autopilot, exactly). It holds
 //   - 80 lateral offsets of the line, spread round the lap and interpolated smoothly (added to the racing line, kept inside the edges),
+//   - 80 "reach" values at the same points: 0 or less keeps the line EDGE_MARGIN inside the white line, as the plain autopilot does;
+//     1 lets it out over the kerb and the paved run-off as far as the car stays on legal ground (no wheel on grass or gravel, clear
+//     of walls and the pit lane). Track limits only count wheels on grass or gravel, so that ground is the car's to use.
 //   - per corner: a brake point shift (metres, + brakes earlier) and a factor on the cornering speed,
 //   - three global knobs: throttle ramp, brake ramp, steering look-ahead,
 //   - the driver assists: per segment of the lap (24) and per assist (TC, ABS, ESC) off / keep the player's setting / on.
@@ -15,7 +18,7 @@
 
 import { SURF } from './track.js';
 import { carById } from './cars.js';
-import { Car, STEP } from './physics.js';
+import { Car, STEP, SURFACE } from './physics.js';
 import { LapTimer } from './timing.js';
 import { TrackLimits, limitZones } from './trackLimits.js';
 import { Autopilot, sharedRacingLine, lineFromOffsets, speedProfile, EDGE_MARGIN } from './autopilot.js';
@@ -25,6 +28,7 @@ export const NSEG = 24;           // assist segments round the lap
 export const OFFSET_RANGE = 5;    // metres a control point may move the line (the track edge limit still applies)
 export const BRAKE_RANGE = 20;    // metres of brake point shift
 export const SPEED_RANGE = 0.15;  // share of cornering speed
+const REACH_MARGIN = 0.25;        // metres the car's side keeps inside the legal ground when the line reaches over the line
 const SKILL = 0.9;                // the in-game autopilot
 const PENALTY = 1000;
 const wrapI = (i, n) => ((i % n) + n) % n;
@@ -109,9 +113,38 @@ export function findCorners(T, vmax, limit = 80, prominence = 4) {
 }
 
 // ---- the genome layout ----
+// The reach genes come last, so a genome saved before them (format 1) is the same genome with them at zero (genomeFromJSON pads it).
 export function layoutFor(nCorners) {
-  const off = 0, brake = off + NCTRL, speed = brake + nCorners, glob = speed + nCorners, assist = glob + 3;
-  return { nCorners, off, brake, speed, glob, assist, dim: assist + NSEG * 3 };
+  const off = 0, brake = off + NCTRL, speed = brake + nCorners, glob = speed + nCorners, assist = glob + 3, reach = assist + NSEG * 3;
+  return { nCorners, off, brake, speed, glob, assist, reach, dim: reach + NCTRL };
+}
+
+// How far the line's centre may go from the centre line on each side, per sample: [left, right], both as distances (positive).
+// `inner` is today's limit (EDGE_MARGIN inside the white line). `outer` is as far as the car (half its width plus REACH_MARGIN) stays on
+// ground worth driving on beyond the line: the paint, the flat kerb and plain paved run-off. A concrete apron's rumble bands and its
+// rough outer part (legal, but bumpy and losing grip towards the gravel), a raised sausage kerb, grass, gravel, the pit lane, a wall or
+// a bridge stop it. `outer` is eroded and smoothed along the lap, so the limit never jumps where a
+// kerb starts or ends (it only ever comes out less than the legal ground allows).
+const LEGAL = new Set([SURF.TARMAC, SURF.PAINT, SURF.KERB, SURF.RUNOFF]);
+export function edgeLimits(T, cfg) {
+  const N = T.N, half = (cfg.width || 2) / 2, inner = [new Float64Array(N), new Float64Array(N)], outer = [new Float64Array(N), new Float64Array(N)];
+  const pitSide = i => T.pitMouth?.[i] || T.pitOut?.[i] || T.pitIsland?.[i] || T.pitEntryZone?.[i] || T.pitEntryNear?.[i];
+  for (let side = 0; side < 2; side++) {
+    const sg = side ? 1 : -1, raw = new Float64Array(N);
+    for (let i = 0; i < N; i++) {
+      const hw = T.hw ? T.hw[i] : T.halfWidth;
+      inner[side][i] = hw - EDGE_MARGIN;
+      if (T.isBridge?.[i] || (side === 0 && pitSide(i)) || !T.surfaceAt) { raw[i] = inner[side][i]; continue; }
+      const wall = T.wall?.[side]?.[i] > 0 ? T.wall[side][i] - 0.5 : Infinity;
+      let a = hw;
+      while (a + 0.1 <= Math.min(hw + 15, wall) && LEGAL.has(T.surfaceAt(i, sg * (a + 0.1)))) a += 0.1;
+      raw[i] = Math.max(inner[side][i], a - half - REACH_MARGIN);
+    }
+    const w = Math.max(1, Math.round(4 / (T.ds || 1))), er = new Float64Array(N);
+    for (let i = 0; i < N; i++) { let m = Infinity; for (let d = -w; d <= w; d++) m = Math.min(m, raw[wrapI(i + d, N)]); er[i] = m; }
+    for (let i = 0; i < N; i++) { let t = 0; for (let d = -w; d <= w; d++) t += er[wrapI(i + d, N)]; outer[side][i] = Math.max(inner[side][i], t / (2 * w + 1)); }
+  }
+  return { inner, outer };
 }
 
 // periodic cubic (Catmull-Rom) through the control points, one value per track sample
@@ -170,18 +203,31 @@ export function restoreCar(snap, cfg, T) {
 // x: the genome. base: the player's assists { tc, abs, esc } (all on when missing).
 export function decode(ctx, x, base) {
   const { T, cfg, layout: L, baseLine, baseVmax, corners } = ctx, N = T.N;
-  let line = baseLine;
+  let line = baseLine, gripScale = null;
   let moved = false;
   for (let k = 0; k < NCTRL; k++) if (x[L.off + k] !== 0) { moved = true; break; }
   if (moved) {
-    const ctrl = new Float64Array(NCTRL);
-    for (let k = 0; k < NCTRL; k++) ctrl[k] = clamp1(x[L.off + k]) * OFFSET_RANGE;
-    const delta = interpolate(ctrl, N), off = new Float64Array(N);
+    const ctrl = new Float64Array(NCTRL), reachCtrl = new Float64Array(NCTRL);
+    let reaches = false;
+    for (let k = 0; k < NCTRL; k++) { ctrl[k] = clamp1(x[L.off + k]) * OFFSET_RANGE; reachCtrl[k] = Math.max(0, clamp1(x[L.reach + k] || 0)); if (reachCtrl[k] > 0) reaches = true; }
+    const delta = interpolate(ctrl, N), reach = reaches ? interpolate(reachCtrl, N) : null, off = new Float64Array(N);
+    const { inner, outer } = ctx.edges || (ctx.edges = edgeLimits(T, cfg));
     for (let i = 0; i < N; i++) {
-      const lim = (T.hw ? T.hw[i] : T.halfWidth) - EDGE_MARGIN;   // the same edge margin as computeRacingLine
-      off[i] = Math.max(-lim, Math.min(lim, baseLine.off[i] + delta[i]));
+      // reach 0: the same edge margin as computeRacingLine; reach 1: out to the legal ground (edgeLimits)
+      const r = reach ? Math.max(0, Math.min(1, reach[i])) : 0;
+      const limL = inner[0][i] + r * (outer[0][i] - inner[0][i]), limR = inner[1][i] + r * (outer[1][i] - inner[1][i]);
+      off[i] = Math.max(-limL, Math.min(limR, baseLine.off[i] + delta[i]));
     }
     line = lineFromOffsets(T, off);
+    // where the line takes the car's outer side over the white line (paint, kerb, run-off), the cornering speed allows for that
+    // surface's grip (speed goes with the square root of grip), so the autopilot does not arrive faster than the car can hold
+    const half = (cfg.width || 2) / 2;
+    if (reaches) for (let i = 0; i < N; i++) {
+      const side = off[i] > 0 ? 1 : 0;
+      if (Math.abs(off[i]) <= inner[side][i] + 1e-9) continue;
+      const g = SURFACE[T.surfaceAt(i, off[i] + (side ? half : -half))]?.grip ?? 1;
+      if (g < 1) (gripScale ||= new Float64Array(N).fill(1))[i] = Math.sqrt(g);
+    }
   }
   let scale = null, anySpeed = false, anyBrake = false;
   for (let c = 0; c < corners.length; c++) { if (x[L.speed + c] !== 0) anySpeed = true; if (x[L.brake + c] !== 0) anyBrake = true; }
@@ -192,6 +238,7 @@ export function decode(ctx, x, base) {
       for (let i = c.from; ; i = (i + 1) % N) { scale[i] = f; if (i === c.to) break; }
     });
   }
+  if (gripScale) scale = scale ? scale.map((v, i) => v * gripScale[i]) : gripScale;
   let vmax = baseVmax;
   if (moved || anySpeed) vmax = speedProfile(T, line, cfg, ctx.skill, scale);
   if (anyBrake) {
@@ -315,14 +362,45 @@ export class Learner {
   }
   get best() { return this.pop[0]; }
 
+  // The control points whose stretch of line pushes against today's limit (EDGE_MARGIN inside the white line) where there is legal
+  // ground beyond it (edgeLimits), for a genome. Kept per genome: parents are asked again and again.
+  pressing(x) {
+    this._pressing ||= new WeakMap();
+    let out = this._pressing.get(x);
+    if (out) return out;
+    const { T, cfg, layout: L, baseLine } = this.ctx, N = T.N, { inner, outer } = this.ctx.edges || (this.ctx.edges = edgeLimits(T, cfg));
+    const ctrl = new Float64Array(NCTRL);
+    for (let k = 0; k < NCTRL; k++) ctrl[k] = clamp1(x[L.off + k]) * OFFSET_RANGE;
+    const delta = interpolate(ctrl, N);
+    out = [];
+    for (let k = 0; k < NCTRL; k++) {
+      const i0 = Math.floor(k * N / NCTRL), i1 = Math.floor((k + 1) * N / NCTRL);
+      for (let i = i0; i < i1; i++) {
+        const t = baseLine.off[i] + delta[i], side = t > 0 ? 1 : 0;
+        if (Math.abs(t) > inner[side][i] - 0.05 && outer[side][i] - inner[side][i] > 0.3) { out.push(k); break; }
+      }
+    }
+    this._pressing.set(x, out);
+    return out;
+  }
+
   mutate(parentX) {
     const { layout: L } = this.ctx, r = this.rand, s = this.sigma, x = Float64Array.from(parentX);
     const ops = r() < 0.3 ? 2 : 1;
     for (let o = 0; o < ops; o++) {
       const p = r();
-      if (p < 0.35) {
+      if (p < 0.27) {
         const c = Math.floor(r() * NCTRL), w = [2, 4, 8][Math.floor(r() * 3)], a = r.normal() * s * 1.5;
         for (let d = -2 * w; d <= 2 * w; d++) { const k = L.off + wrapI(c + d, NCTRL); x[k] = clamp1(x[k] + a * Math.exp(-(d * d) / (w * w))); }
+        // half the time the same stretch also reaches further out over the kerb and run-off (or less far)
+        if (r() < 0.5) { const b = r.normal() * s * 2; for (let d = -2 * w; d <= 2 * w; d++) { const k = L.reach + wrapI(c + d, NCTRL); x[k] = clamp1(x[k] + b * Math.exp(-(d * d) / (w * w))); } }
+      } else if (p < 0.35) {
+        // open one short stretch onto the kerb and run-off, where the line presses against today's limit and there is legal ground
+        const at = this.pressing(parentX);
+        if (at.length) {
+          const c = at[Math.floor(r() * at.length)], w = [1, 2, 3][Math.floor(r() * 3)], b = 0.1 + 0.4 * r();
+          for (let d = -2 * w; d <= 2 * w; d++) { const k = L.reach + wrapI(c + d, NCTRL); x[k] = clamp1(Math.max(0, x[k]) + b * Math.exp(-(d * d) / (w * w))); }
+        }
       } else if (p < 0.65) {
         const n = 1 + Math.floor(r() * 3);
         for (let q = 0; q < n; q++) {
@@ -387,13 +465,16 @@ export const localEvaluator = ctx => async (xs, ref) => xs.map(x => evaluate(ctx
 // ---- saving ----
 export const genomeKey = (T, carId) => `lakeside-learn-${carId}-${trackSig(T)}-${carSig(carById(carId))}`;     // track build, class and its numbers
 export function genomeToJSON(ctx, x, extra = {}) {
-  return JSON.stringify({ v: 1, car: ctx.carId, track: ctx.sig, cs: ctx.cs, corners: ctx.layout.nCorners, x: Array.from(x, v => Math.round(v * 1e6) / 1e6), ...extra });
+  return JSON.stringify({ v: 2, car: ctx.carId, track: ctx.sig, cs: ctx.cs, corners: ctx.layout.nCorners, x: Array.from(x, v => Math.round(v * 1e6) / 1e6), ...extra });
 }
 // Returns { x: Float64Array, ...extra } or null when the text is not a genome for this car and track.
 export function genomeFromJSON(ctx, text) {
   let o;
   try { o = typeof text === 'string' ? JSON.parse(text) : text; } catch { return null; }
-  if (!o || typeof o !== 'object' || o.v !== 1 || o.car !== ctx.carId || o.track !== ctx.sig || o.cs !== ctx.cs || o.corners !== ctx.layout.nCorners || !Array.isArray(o.x) || o.x.length !== ctx.layout.dim) return null;
+  if (!o || typeof o !== 'object' || o.car !== ctx.carId || o.track !== ctx.sig || o.cs !== ctx.cs || o.corners !== ctx.layout.nCorners || !Array.isArray(o.x)) return null;
+  // format 1 was saved before the reach genes: the same genome with them at zero (the line exactly as it drove then)
+  if (o.v === 1 && o.x.length === ctx.layout.reach) o = { ...o, v: 2, x: [...o.x, ...new Array(NCTRL).fill(0)] };
+  if (o.v !== 2 || o.x.length !== ctx.layout.dim) return null;
   if (!o.x.every(v => Number.isFinite(v) && v >= -1 && v <= 1)) return null;
   // the numbers the game shows and the worker starts from: a lap time, the generation, the evaluations and the line's time; any that is there must be sane
   const num = (v, lo, hi) => v === undefined || (typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi);
