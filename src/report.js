@@ -280,24 +280,28 @@ export class ReportTool {
       };
       const filename = `lakeside-report-${report.createdAt.replace(/[:.]/g, '-')}.json`;
       const json = JSON.stringify(report, null, 2), file = new File([json], filename, { type: 'application/json' });
-      const share = navigator.share && navigator.canShare?.({ files: [file] }) ? navigator.share({ files: [file], title: 'Lakeside track report' }) : null;
-      const localId = await this.store(report);
+      let failure = '';
+      // a share sheet that fails (other than the viewer closing it) is one channel less, not a failed save
+      const share = navigator.share && navigator.canShare?.({ files: [file] })
+        ? navigator.share({ files: [file], title: 'Lakeside track report' }).then(() => true, error => { if (error?.name !== 'AbortError') failure = failure || error?.message || 'share failed'; return false; })
+        : null;
+      const localId = await this.store(report).catch(() => null);   // the copy in this browser is best effort: blocked storage must not stop the rest
       let delivered = false;
       // In the live artifact a report goes into the artifact's own database, where the owner (and Claude) can read it
       // without a file. If that is not possible the viewer's downloads capability offers the file, with a confirmation.
-      // Anywhere else a plain download link works.
-      let sent = false, handed = false, failure = '';
+      // Anywhere else (neither capability served) a plain download link works. Both capabilities are asked for at once: one
+      // the host never answers resolves null only after a wait.
+      let sent = false, handed = false;
+      const ask = name => Promise.resolve(window.claude?.use?.(name)).catch(() => null);
+      const [db, downloads] = await Promise.all([ask('db'), ask('downloads')]);
       try {
-        const db = await window.claude?.use?.('db');
         if (db) { await db.collection('reports').doc(report.id).set(compactReport(report)); sent = true; delivered = true; }
       } catch (error) { failure = error?.code || error?.message || 'unknown error'; }
-      if (!sent) {
-        try {
-          const downloads = await window.claude?.use?.('downloads');
-          if (downloads) { await downloads.save({ filename, data: new Blob([json], { type: 'application/json' }) }); handed = true; delivered = true; }
-        } catch (error) { failure = error?.code === 'declined' ? 'download declined' : failure || error?.code || error?.message || 'unknown error'; }
+      if (!sent && downloads) {
+        try { await downloads.save({ filename, data: new Blob([json], { type: 'application/json' }) }); handed = true; delivered = true; }
+        catch (error) { failure = error?.code === 'declined' ? 'download declined' : failure || error?.code || error?.message || 'unknown error'; }
       }
-      if (!sent && !handed && !window.claude) {
+      if (!sent && !handed && !db && !downloads) {
         const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
         const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
         handed = true;   // the file is handed to the browser as a download (not a local-only save)
@@ -306,12 +310,9 @@ export class ReportTool {
         const response = await fetch('/__lakeside-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: json });
         delivered = response.ok;
       }
-      if (share) {
-        try { await share; delivered = true; }
-        catch (error) { if (error.name !== 'AbortError') throw error; }
-      }
-      if (delivered) await this.remove(localId);
-      const label = sent || delivered ? 'Report sent' : handed ? 'Report downloaded' : `Saved in this browser only${failure ? ` (${failure})` : ''}`;
+      if (share && await share) delivered = true;
+      if (delivered && localId != null) await this.remove(localId).catch(() => {});
+      const label = sent ? 'Report sent' : handed ? 'Report downloaded' : delivered ? 'Report sent' : localId != null ? `Saved in this browser only${failure ? ` (${failure})` : ''}` : `Not saved${failure ? ` (${failure})` : ''}`;
       done = sent || delivered || handed;
       if (done) {
         this.sentThisSession++;

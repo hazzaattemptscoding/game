@@ -79,15 +79,17 @@ export const bestKey = (reverse = false, car = 'GT') => {
   return !car || car === 'GT' ? base : base + '.' + String(car).toLowerCase();
 };
 
-export function loadBest(storage = globalThis.localStorage, key = BEST_KEY) {
+// `storage` defaults to localStorage, looked up inside the try: where site data is blocked, reading localStorage itself throws
+export function loadBest(storage, key = BEST_KEY) {
   try {
+    storage ??= globalThis.localStorage;
     const list = JSON.parse(storage.getItem(key) || '[]');
     return Array.isArray(list) ? list.map(cleanEntry).filter(Boolean).sort((a, b) => a.time - b.time).slice(0, TOP_N) : [];
   } catch (e) { return []; }
 }
 
-export function saveBest(list, storage = globalThis.localStorage, key = BEST_KEY) {
-  try { storage.setItem(key, JSON.stringify(list)); } catch (e) { /* private mode: the list lasts until the page closes */ }
+export function saveBest(list, storage, key = BEST_KEY) {
+  try { (storage ?? globalThis.localStorage).setItem(key, JSON.stringify(list)); } catch (e) { /* private mode: the list lasts until the page closes */ }
 }
 
 // your best time for each sector over a saved list
