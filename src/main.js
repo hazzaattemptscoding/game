@@ -634,8 +634,9 @@ function debugMarkers(T) {
   const g = new THREE.Group();
   const geo = new THREE.CylinderGeometry(1.2, 1.2, 30, 8);
   geo.translate(0, 15, 0);
+  const mats = {}, mat = colour => (mats[colour] ||= new THREE.MeshBasicMaterial({ color: colour }));   // one material a colour
   for (const f of T.furniture) {
-    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: DEBUG_COLOURS[f.type] }));
+    const m = new THREE.Mesh(geo, mat(DEBUG_COLOURS[f.type] ?? 0xffffff));   // a type with no debug colour is white
     m.position.set(f.x, f.y, f.z);
     g.add(m);
   }
@@ -643,7 +644,7 @@ function debugMarkers(T) {
   small.translate(0, 6, 0);
   for (const b of T.barriers) if (b.impact) {
     const k = Math.floor(b.pts.length / 2), [x, y, z] = b.pts[k];
-    const m = new THREE.Mesh(small, new THREE.MeshBasicMaterial({ color: 0xff2020 }));
+    const m = new THREE.Mesh(small, mat(0xff2020));
     m.position.set(x, y, z);
     g.add(m);
   }
