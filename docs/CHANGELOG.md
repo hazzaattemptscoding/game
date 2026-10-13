@@ -1,5 +1,28 @@
 # Changelog
 
+## The learning autopilot can use the kerbs and run-off
+
+The owner saw the trained F1 stay inside the white lines where it did not need to. It could not do anything else: the learner's line
+was held 1.4 m inside the white line everywhere (`EDGE_MARGIN`), while the game's track limits only count wheels on grass or gravel.
+
+- **New input** (`src/learn.js`): 80 "reach" genes, one per line control point. At 0 the line keeps today's limit; above 0 it may go
+  out over the paint, the flat kerb and plain paved run-off, as far as the car stays on that ground (`edgeLimits`: not the bumpy outer
+  part of a concrete apron, a raised kerb, grass, gravel, the pit lane, a wall or a bridge, and smoothed so the limit never jumps).
+- **Grip.** Where the line puts the car's outer side over the white line, the cornering speed allows for that surface's grip (paint
+  93%, kerb 95%, run-off 97% of tarmac), so the autopilot does not arrive faster than the car can hold.
+- **Searching for it.** Besides the old line changes (which now also move the reach half the time), the learner tries opening one
+  short stretch onto the run-off where its line presses against the old limit and there is legal ground beyond it.
+- **Saves carry over.** A driver saved before this (format 1) loads with the reach at zero and drives exactly as before: the owner's
+  F1 saves still lap 1:07.092 and 1:06.817 in the two-lap check. New saves are format 2. The plain autopilot and the lap test are
+  unchanged. Not yet in the published test artifact.
+
+What else holds the owner's F1 back (the 1:06.817 save, generation 2148): the car cannot follow its own line at F1 speed. It runs
+3 to 6 m off it in nine places (Hurricane Sweep, Searchlight into the bridge, Station Corner, Scramble, Windsock Hairpin, Guardroom
+Chicane and others) and onto the run-off in seven of them, so the learner tunes a plan the car does not drive; at the bridge it misses
+the barrier by centimetres and almost any change before it ends in a hit. Five brake points and two corner speeds also sit at the end
+of their ranges, and a failed lap only scores as bad, with nothing saying where or why. Proposed next, not built: steering genes per
+corner, wider brake and speed ranges (saves converted to drive the same), and changes aimed where a lap failed.
+
 ## Trees, crowds, shift lights and a clean-up
 
 - **Trees** (`src/trees.js`, placed by `src/props.js`). The old trees were a flat-shaded solid or two on a six-sided trunk. Each
