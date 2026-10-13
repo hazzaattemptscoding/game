@@ -1,5 +1,30 @@
 # Changelog
 
+## Trees, crowds, shift lights and a clean-up
+
+- **Trees** (`src/trees.js`, placed by `src/props.js`). The old trees were a flat-shaded solid or two on a six-sided trunk. Each
+  kind (oak, pine, poplar, birch) is now one mesh with trunk and crown together, so a kind is one draw call, not two. A crown is a
+  few rough lumps whose normals point out from the middle of the whole crown, with vertex colour darker underneath and in the
+  hollows, so it shades as one leafy mass; oaks and birches have branches, pines ragged tiers, and the crowns sway a little in the
+  wind. A far version with fewer, plainer lumps (a quarter of the triangles) is swapped in by the prop culler beyond 120 m, the
+  way the crowds already were. Clumps of three to five trees of one kind now stand 80 to 140 m out, so the view past the tree lines
+  is not bare. Bushes use the same shading.
+- **Crowds** (`src/crowd.js`). Most people wear everyday colours (dark, denim, white, grey, `CLOTHES`) with blocks of team colours,
+  no two shirts quite the same shade, and about half of a crowd bounces or sways now and then. Marshals and crews stand still.
+- **Shift lights.** The HUD's rev bar is a strip of 15 lights, green, yellow then red, lit one by one up to the upshift point (an
+  unlit light faint); at the upshift the whole strip flashes the settings purple, steady with reduced motion. Recorded in
+  `.interface-design/system.md`.
+- **Shaders before the first frame.** `renderer.compileAsync` runs behind the loading screen, so everything in the world is compiled
+  up front instead of the first time it comes into view, and where the browser compiles in parallel the loading screen keeps
+  painting. The results screen test now waits as long as the other browser tests for the world to build (it timed out once in a
+  busy run).
+- **Clean-up.** Unused exports removed (`liveryColour`, `MAX_STRING`, `cacheSize`, `EVENT_KINDS`, `toHostTime`, `onAnyRoad`, and
+  the grass, garage and pit lane canvas textures). The track's two lookup grids use number keys (`gridKey` in `src/track.js`), so
+  the barrier test that runs every physics step builds no strings; the lap test output is the same to the last digit. The renderer
+  no longer keeps its drawing buffer between frames (the report reads the canvas straight after a render). Stale file headers fixed.
+
+Budget: the crowded view is 691k triangles (limit 700k) and 595 draw calls, 15 fewer than before.
+
 ## A garage behind the main menu
 
 The owner asked for a real garage on the home screen instead of the camera circling the car on the grid. `src/homeGarage.js` is a
